@@ -12,10 +12,9 @@ npm start          # http://localhost:3000  (docs + playground)
 npm run build      # static production build in build/
 ```
 
-> **Use Node 20 LTS.** Docusaurus 3.5.2 targets Node 18–20. On very new Node
-> (23+) webpack can throw a `ProgressPlugin` schema error during the build — that
-> is a Node/webpack incompatibility, not a problem with this site. `nvm use 20`
-> and it builds cleanly.
+> Needs **Node 18+**. (This uses Docusaurus 3.10+, which runs on current Node
+> including 23. Older Docusaurus 3.5.x had a webpack path bug on recent webpack —
+> if you ever pin it back, use Node 20 LTS.)
 
 `npm start` / `npm run build` first run `sync-lib.mjs`, which copies the current
 `shared/vocabulary.js`, `compiler/moomoo-compiler.js`, `loader/src/runtime.js`,
