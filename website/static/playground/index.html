@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>moomoo.js Playground</title>
+<meta name="description" content="Build MooMoo.io private-server mods with blocks or the moomoo.js language, then compile to a Tampermonkey plugin.">
+<link rel="stylesheet" href="playground.css">
+</head>
+<body>
+<header class="pg-top">
+  <div class="pg-brand"><span class="pg-cow">🐮</span> moomoo<span class="pg-dot">.js</span> <span class="pg-sub">playground</span></div>
+  <div class="pg-modes" role="tablist">
+    <button id="mode-blocks" class="pg-mode active" role="tab">Blocks</button>
+    <button id="mode-code" class="pg-mode" role="tab">Code</button>
+  </div>
+  <a class="pg-docs" href="../../docs/intro" title="Documentation">Docs ↗</a>
+</header>
+
+<div class="pg-config">
+  <label>Mod name <input id="modName" type="text" value="My Mod" spellcheck="false"></label>
+  <label class="grow">Loader <code>@require</code> URL
+    <input id="loaderUrl" type="text" placeholder="https://your-host.example/moomoo-loader.user.js" spellcheck="false">
+  </label>
+</div>
+
+<main class="pg-main">
+  <!-- EDITOR -->
+  <section class="pg-editor">
+    <!-- blocks -->
+    <div id="blocksView" class="pg-blocks">
+      <aside id="palette" class="pg-palette"></aside>
+      <div id="canvas" class="pg-canvas" aria-label="Your mod"></div>
+    </div>
+    <!-- code -->
+    <div id="codeView" class="pg-code" hidden>
+      <textarea id="codeArea" spellcheck="false" autocomplete="off"></textarea>
+    </div>
+  </section>
+
+  <!-- OUTPUT -->
+  <section class="pg-output">
+    <div class="pg-out-tabs" role="tablist">
+      <button class="pg-tab active" data-out="userscript">Userscript</button>
+      <button class="pg-tab" data-out="plugin">Plugin JS</button>
+      <button class="pg-tab" data-out="source" id="sourceTabBtn">moomoo.js</button>
+    </div>
+    <div id="status" class="pg-status">—</div>
+    <pre id="output" class="pg-outbox"><code></code></pre>
+    <div class="pg-actions">
+      <button id="copyBtn" class="pg-btn primary">Copy</button>
+      <button id="downloadBtn" class="pg-btn">Download .user.js</button>
+    </div>
+    <div class="pg-preview">
+      <div class="pg-preview-title">In-game Mods menu preview</div>
+      <div class="pg-preview-stage">
+        <div id="gameSettings" class="menuCard">
+          <div id="gameMenuTabs" class="menuHeader">
+            <a data-tab="settings">Settings</a><a data-tab="friends">Friends</a><a data-tab="clan">Clan</a><a data-tab="report">Report</a>
+          </div>
+          <div id="gameSettingsBody" style="min-height:60px;color:#9a9a9a;padding:16px 4px;font-size:14px;">Native settings…</div>
+          <div id="gameFriendsBody" style="display:none"></div>
+          <div id="reportMenu" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<section class="pg-ref">
+  <button id="refToggle" class="pg-ref-toggle">Packet reference (all events &amp; actions) ▾</button>
+  <div id="refBody" class="pg-ref-body" hidden></div>
+</section>
+
+<!-- canonical modules (UMD -> window.*) -->
+<script src="lib/vocabulary.js"></script>
+<script src="lib/moomoo-compiler.js"></script>
+<script src="lib/runtime.js"></script>
+<script src="lib/menu.js"></script>
+<script src="playground.js"></script>
+</body>
+</html>

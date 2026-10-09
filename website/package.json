@@ -1,0 +1,29 @@
+{
+  "name": "moomoo-js-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Documentation site + playground for moomoo.js.",
+  "scripts": {
+    "sync": "node sync-lib.mjs",
+    "start": "npm run sync && docusaurus start",
+    "build": "npm run sync && docusaurus build",
+    "serve": "docusaurus serve",
+    "clear": "docusaurus clear"
+  },
+  "dependencies": {
+    "@docusaurus/core": "3.5.2",
+    "@docusaurus/preset-classic": "3.5.2",
+    "@mdx-js/react": "3.0.1",
+    "clsx": "2.1.1",
+    "prism-react-renderer": "2.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "browserslist": {
+    "production": [">0.5%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+  },
+  "engines": {
+    "node": ">=18.0"
+  }
+}

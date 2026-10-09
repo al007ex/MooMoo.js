@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>moomoo.js — Mods menu preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Hammersmith+One&display=swap" rel="stylesheet">
+<style>
+  /* ---- a faithful reproduction of the game's menu styling, for preview ---- */
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:'Hammersmith One',sans-serif; -webkit-font-smoothing:antialiased;
+    display:flex; align-items:center; justify-content:center; gap:40px; flex-wrap:wrap;
+    background:#8aa05a;
+    background-image:linear-gradient(rgba(0,0,0,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.08) 1px,transparent 1px);
+    background-size:44px 44px;
+  }
+  .menuCard{
+    position:relative; vertical-align:top; text-align:left; width:300px; padding:18px; background:#fff;
+    border-radius:12px; box-shadow:0 7px #c4c4c4,0 16px 28px rgba(0,0,0,.28);
+  }
+  #gameMenuTabs{display:flex;gap:4px;padding:4px;border-radius:8px;background:#ececec;margin-bottom:8px;}
+  #gameMenuTabs a{flex:1 1 0;display:flex;align-items:center;justify-content:center;padding:6px 0;border-radius:6px;font-size:17px;color:#5a5a5a;cursor:pointer;}
+  #gameMenuTabs a:hover{background:#dedede;}
+  #gameMenuTabs a.active{background:#6cc24a;color:#fff;}
+  .cardClose{position:absolute;top:6px;right:6px;width:36px;height:36px;line-height:36px;display:flex;align-items:center;justify-content:center;color:#a8a8a8;cursor:pointer;border-radius:4px;font-size:22px;}
+  /* native settings tab placeholder content, mimicking the real menu */
+  .settingRow{display:flex;align-items:center;gap:12px;padding:7px 2px;color:#9a9a9a;font-size:17px;}
+  .settingRow .box{width:20px;height:20px;border-radius:5px;border:2px solid #d9d9d9;flex:0 0 auto;}
+  .settingRow.on{color:#8a8a8a;}
+  .settingRow.on .box{background:#6cc24a;border-color:#6cc24a;position:relative;}
+  .settingRow.on .box:after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
+  .expRow{display:flex;align-items:center;gap:12px;padding:12px 2px;color:#2f2f2f;font-size:18px;border-top:1px solid #eee;}
+  .expRow .chev{margin-left:auto;width:9px;height:9px;border-right:2px solid #c9c9c9;border-bottom:2px solid #c9c9c9;transform:rotate(-45deg);}
+  h4{font:inherit;color:#777;margin:16px 2px 2px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+
+  <!-- the in-game pause menu, exactly as the client builds it (minus internals) -->
+  <div id="gameSettings" class="menuCard">
+    <div id="gameMenuTabs" class="menuHeader">
+      <a data-tab="settings" class="active">Settings</a>
+      <a data-tab="friends">Friends</a>
+      <a data-tab="clan">Clan</a>
+      <a data-tab="report">Report</a>
+    </div>
+    <div id="gameSettingsBody">
+      <div class="settingRow on"><span class="box"></span>Use Native Resolution</div>
+      <div class="settingRow"><span class="box"></span>Show Ping</div>
+      <div class="settingRow"><span class="box"></span>Show FPS</div>
+      <div class="settingRow on"><span class="box"></span>Show Grid</div>
+      <div class="expRow">Social<span class="chev"></span></div>
+      <div class="expRow">Shop<span class="chev"></span></div>
+      <div class="expRow">Keys<span class="chev"></span></div>
+    </div>
+    <div id="gameFriendsBody" style="display:none;padding:30px 4px;color:#9a9a9a;">Friends list…</div>
+    <div id="reportMenu" style="display:none;padding:30px 4px;color:#9a9a9a;">Report…</div>
+    <div id="gameSettingsClose" class="cardClose">&times;</div>
+  </div>
+
+  <!-- load the REAL loader modules (UMD -> attach to window) -->
+  <script src="../shared/vocabulary.js"></script>
+  <script src="../loader/src/runtime.js"></script>
+  <script src="../loader/src/menu.js"></script>
+  <script>
+    // Build a runtime (no socket needed for a UI preview) and some demo mods.
+    const MooMoo = window.MooMooRuntime.createRuntime({ sink: { sendAction(){}, sendRaw(){} } });
+    window.MooMoo = MooMoo;
+
+    MooMoo.register({
+      name: "Health Logger", version: "1.0.0",
+      description: "Logs your health.",
+      settings: [ { key: "onlyMine", type: "boolean", default: true, label: "Only my health" } ]
+    }, function(){ /* demo */ });
+
+    MooMoo.register({
+      name: "Auto Heal", version: "2.3.0",
+      settings: [
+        { key: "enabled", type: "boolean", default: true, label: "Heal on hit" },
+        { key: "delay", type: "number", default: 120, min: 0, max: 500, step: 10, label: "Delay (ms)" },
+        { key: "foodItem", type: "select", default: "apple", options: ["apple", "cookie", "cheese"], label: "Food" }
+      ]
+    }, function(){});
+
+    MooMoo.register({
+      name: "Minimap+", version: "0.9.1",
+      description: "Bigger minimap with teammate dots.",
+      settings: [ { key: "label", type: "string", default: "my tribe", label: "Tribe label" } ]
+    }, function(){});
+
+    MooMoo.register({ name: "FPS Boost", version: "1.0.0", settings: [] }, function(){});
+    MooMoo.setModEnabled("fps-boost", false);
+
+    // Inject the Mods tab + panel, then open it so the preview shows it.
+    const menu = window.MooMooMenu.installMenu(window, MooMoo);
+    menu.showMods();
+    // expand the Auto Heal settings to show the controls
+    requestAnimationFrame(() => {
+      const heads = document.querySelectorAll("#gameModsBody .mmj-head.mmj-has-settings");
+      if (heads[1]) heads[1].click();
+    });
+  </script>
+</body>
+</html>

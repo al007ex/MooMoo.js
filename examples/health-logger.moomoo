@@ -1,0 +1,31 @@
+// health-logger.moomoo
+// The "hello world" of moomoo.js: log health to the console. Written entirely
+// against the stable vocabulary — no WebSocket, no packet letters, no crypto.
+// Compile it, paste it into a Tampermonkey script that @requires the loader,
+// and toggle it on/off (and change its setting) from the in-game Mods menu.
+
+mod "Health Logger" {
+    @description "Logs your current health to the console whenever it changes."
+    @version "1.0.0"
+    @match "*://*/*"
+
+    // A setting. It shows up (expandable) under this mod in the in-game Mods
+    // tab, persists across reloads, and is readable as `setting.onlyMine`.
+    setting onlyMine = true "Only my health"
+
+    // Fires once when you join. `setup` carries your own player id.
+    on setup(sid) {
+        log("joined the game — your sid is " + sid)
+    }
+
+    // Fires every time ANY player's health changes.
+    on health(sid, value) {
+        if (setting.onlyMine) {
+            if (sid == self.sid) {
+                log("My health is now " + value)
+            }
+        } else {
+            log("player " + sid + " health is now " + value)
+        }
+    }
+}

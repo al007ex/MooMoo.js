@@ -1,0 +1,110 @@
+/*
+ * Proves the ASSEMBLED userscript (dist/moomoo-loader.user.js) works, not just
+ * the src modules. Runs the bundle inside a node:vm sandbox whose global is a
+ * fake page window, then drives a loopback connection to a real server session.
+ *
+ * Run:  node extension/loader/build.mjs && node extension/tests/bundle.vm.test.mjs
+ */
+import vm from "node:vm";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { loadServer, skipIfUnavailable } from "./server-fixture.mjs";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const bundlePath = path.join(here, "..", "loader", "dist", "moomoo-loader.user.js");
+const bundle = fs.readFileSync(bundlePath, "utf8");
+
+skipIfUnavailable("bundle.vm");
+const { ProtocolSession, createProtocolBuild } = await loadServer();
+
+const build = await createProtocolBuild({ outDir: path.join(os.tmpdir(), "moomoojs-vm-" + Date.now()), pinFile: null });
+const mod = { mixKey: build.mixKey, BUILD_SALT: build.BUILD_SALT, BUILD_ID: build.BUILD_ID };
+
+const server = new ProtocolSession(build, crypto.randomBytes(8).toString("hex"));
+const accepted = [];
+let clientSocket = null;
+
+class FakeWebSocket {
+    constructor(url) { this.url = url; this.readyState = 1; this._m = new Set(); clientSocket = this; }
+    addEventListener(t, f) { if (t === "message") this._m.add(f); }
+    removeEventListener(t, f) { if (t === "message") this._m.delete(f); }
+    send(bytes) {
+        const buf = Buffer.from(bytes.buffer || bytes, bytes.byteOffset || 0, bytes.byteLength || bytes.length);
+        accepted.push(server.decode(buf));
+    }
+    _deliver(frame) {
+        const ev = { data: frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) };
+        for (const f of this._m) f(ev);
+    }
+}
+FakeWebSocket.OPEN = 1;
+
+// Build the fake page window and use it AS the sandbox global.
+const listeners = new Map();
+const win = {
+    WebSocket: FakeWebSocket,
+    document: { baseURI: "https://localhost/", querySelectorAll: () => [], createElement: () => ({ remove() {} }), documentElement: {}, head: { appendChild() {} } },
+    Event: class { constructor(t) { this.type = t; } },
+    addEventListener: (t, f) => { (listeners.get(t) || listeners.set(t, new Set()).get(t)).add(f); },
+    dispatchEvent: (ev) => { const s = listeners.get(ev.type); if (s) for (const f of s) f(ev); return true; },
+    console, setTimeout, clearTimeout, Promise, URL, TextEncoder, TextDecoder,
+    // our test resolver hook
+    __moomooResolveProtocol: () => Promise.resolve(mod)
+};
+win.window = win; win.self = win; win.globalThis = win;
+
+vm.createContext(win);
+vm.runInContext(bundle, win, { filename: "moomoo-loader.user.js" });
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
+let pass = 0, fail = 0;
+const ok = (name, fn) => Promise.resolve().then(fn).then(() => { pass++; console.log("  ✓ " + name); },
+    (e) => { fail++; console.log("  ✗ " + name + "\n      " + (e && (e.stack || e.message))); });
+
+console.log("\n== assembled bundle in a sandbox ==");
+await ok("window.MooMoo exists after the bundle runs", () => {
+    assert.ok(win.MooMoo, "window.MooMoo should be defined");
+    assert.ok(win.MooMooLoader, "window.MooMooLoader should be defined");
+    assert.strictEqual(win.__MOOMOO_LOADER__, "1.0.0");
+});
+
+await ok("end-to-end: health event + telemetry scrub + injection", async () => {
+    const health = [];
+    win.MooMoo.on("health", (e) => health.push(e));
+
+    new win.WebSocket("wss://localhost/?b=" + build.BUILD_ID);
+    clientSocket._deliver(server.handshakeFrame());
+    await tick(); await tick(); await tick();
+    if (!win.MooMoo.isReady()) {
+        console.log("    diag:", JSON.stringify(win.MooMooLoader.diag), "listeners:", clientSocket._m.size);
+    }
+    assert.ok(win.MooMoo.isReady(), "ready after io-init");
+
+    clientSocket._deliver(server.encode("C", [9]));
+    clientSocket._deliver(server.encode("O", [9, 55]));
+    assert.strictEqual(win.MooMoo.self.sid, 9);
+    assert.strictEqual(win.MooMoo.self.health, 55);
+    assert.deepStrictEqual(health.map((e) => [e.sid, e.value]), [[9, 55]]);
+
+    // telemetry scrub (simulate the client sending dirty flags)
+    const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0];
+    const Protocol = win.MooMooProtocol;
+    const client = new Protocol.ClientSession(payload, mod);
+    clientSocket.send(client.encodeC2S("T", [2, 30]));
+    const t = accepted.find((d) => d.name === "T");
+    assert.deepStrictEqual(t.args, [0, 0], "telemetry scrubbed");
+
+    // injection
+    win.MooMoo.send.chat("from the bundle");
+    const chat = accepted.find((d) => d.name === "6");
+    assert.ok(chat && !chat.error);
+    assert.deepStrictEqual(chat.args, ["from the bundle"]);
+});
+
+console.log("\n----------------------------------------");
+console.log((fail === 0 ? "ALL PASS" : "FAILURES") + ":  " + pass + " passed, " + fail + " failed");
+process.exit(fail === 0 ? 0 : 1);
