@@ -4,8 +4,8 @@ title: window.MooMoo API
 
 # `window.MooMoo` — runtime API
 
-The stable object the loader exposes. Hand-written mods (and everything the
-compiler emits) use only this. It never changes.
+the stable object the loader hands you. mods you write by hand (and everything the
+compiler spits out) only ever use this, and it doesn't change.
 
 ## Events
 
@@ -15,8 +15,8 @@ MooMoo.off(event, handler)
 MooMoo.once(event, handler)
 ```
 
-`handler` receives one payload object whose fields are the event's parameters
-(see the **[packet reference](./packets)**):
+`handler` gets one payload object, and its fields are the event's parameters (see
+the **[packet reference](./packets)**):
 
 ```js
 MooMoo.on("health", ({ sid, value }) => {
@@ -24,7 +24,7 @@ MooMoo.on("health", ({ sid, value }) => {
 });
 ```
 
-Subscribe to `"*"` to see every event: `MooMoo.on("*", (event, payload) => …)`.
+subscribe to `"*"` if you want to see every event: `MooMoo.on("*", (event, payload) => …)`.
 
 ## Actions
 
@@ -35,8 +35,8 @@ MooMoo.send.aim(1.57);
 MooMoo.send.raw("6", ["gg"]);   // escape hatch: a raw wire packet
 ```
 
-Each action accepts positional arguments (in the vocabulary's order) or a single
-named object: `MooMoo.send.spawn({ name: "Bob", moofoll: true, skin: 0 })`.
+each action takes positional arguments (in the vocabulary's order), or one named
+object if you'd rather: `MooMoo.send.spawn({ name: "Bob", moofoll: true, skin: 0 })`.
 
 ## State
 
@@ -48,9 +48,9 @@ MooMoo.isReady()       // connected + keys derived?
 MooMoo.onReady(cb)     // run cb once ready (now, if already)
 ```
 
-## Mods (managed units)
+## Mods
 
-A mod is a named unit the in-game **Mods** menu can toggle and configure.
+a mod is a named thing the in-game **Mods** menu can toggle and configure.
 
 ```js
 MooMoo.register({
@@ -91,7 +91,7 @@ MooMoo.setSetting(id, key, value)   // persisted; re-applies the mod
 MooMoo.onModsChanged(cb)            // the menu uses this to re-render
 ```
 
-Enabled state and settings persist in `localStorage` per mod.
+the enabled state and settings are saved per mod in `localStorage`.
 
 ## Settings schema
 
@@ -99,9 +99,9 @@ Enabled state and settings persist in `localStorage` per mod.
 { key, type, default, label?, options?, min?, max?, step? }
 ```
 
-`type` is `"boolean" | "number" | "string" | "select"` (inferred from `default`
-if omitted). `select` needs `options: [...]`; `number` may set `min`/`max`/`step`
-to render a slider.
+`type` is `"boolean" | "number" | "string" | "select"` (worked out from `default` if
+you leave it off). `select` needs `options: [...]`, and `number` can set
+`min`/`max`/`step` to get a slider.
 
 ## Logging
 

@@ -4,50 +4,55 @@ title: Getting started
 
 # Getting started
 
-You'll install the loader once, then write and run a mod.
+you install the loader once, then you write and run a mod. that's the whole flow.
 
-## 1. Build the loader
+## 1. build the loader
 
-From the repo:
+from the repo:
 
 ```bash
 npm run build
 ```
 
-This writes `loader/dist/moomoo-loader.user.js`. Open it and set the `@match`
-line to your server's origin:
+that writes `loader/dist/moomoo-loader.user.js`. open it and set the `@match` line
+to your server's origin:
 
 ```js
 // @match https://play.my-private-server.example/*
 ```
 
-Host that file somewhere your mods can reach it (a gist raw URL, your own static
-host, GitHub Pages…). That URL is what mods will `@require`.
+then host that file somewhere your mods can reach it (a gist raw url, your own
+static host, GitHub Pages, whatever). that url is what your mods will `@require`.
 
-## 2. Install the loader
+## 2. install the loader
 
-In Tampermonkey (or Violentmonkey), create a new script and paste the contents of
-`moomoo-loader.user.js`, **or** add it by URL. It runs at `document-start`, hooks
-the socket, and exposes `window.MooMoo`. Open the game — you'll see a **Mods** tab
-in the pause menu (empty for now) and this in the console:
+in Tampermonkey (or Violentmonkey), make a new script and paste in the contents of
+`moomoo-loader.user.js`, or just add it by url. it runs at `document-start`, hooks
+the socket, and sets up `window.MooMoo`. open the game and you should see a **Mods**
+tab in the pause menu (empty for now) and this in the console:
 
 ```
 [moomoo.js] loader 1.0.0 installed — window.MooMoo is ready for mods
 ```
 
-## 3. Write a mod
+:::tip don't minify the loader
+if you run the built userscript through a minifier it can break it. just use the
+file as it comes out of the build.
+:::
 
-Two ways:
+## 3. write a mod
 
-### A. In the playground (easiest)
+two ways to do this.
 
-Open the **[playground](/playground/)**, snap blocks together or write moomoo.js,
-paste your loader URL into the **Loader @require URL** box, and hit **Copy** or
-**Download .user.js**. Done.
+### a. in the playground (easiest)
 
-### B. With the compiler
+open the **[playground](/playground/)**, write your moomoo.js, paste your loader
+url into the **Loader @require URL** box, and hit **Copy** or **Download .user.js**.
+done.
 
-Write `health-logger.moomoo`:
+### b. with the compiler
+
+write `health-logger.moomoo`:
 
 ```
 mod "Health Logger" {
@@ -65,26 +70,26 @@ mod "Health Logger" {
 }
 ```
 
-Compile it to a userscript:
+compile it into a userscript:
 
 ```bash
 node compiler/cli.mjs health-logger.moomoo --loader "https://your-host/moomoo-loader.user.js"
 ```
 
-That produces `health-logger.user.js`.
+that gives you `health-logger.user.js`.
 
-## 4. Run it
+## 4. run it
 
-Install the compiled `health-logger.user.js` in Tampermonkey. Because it
-`@require`s your loader, the loader loads first. Join the game: open the **Mods**
-tab, and you'll see **Health Logger** with a toggle and an **Only my health**
-setting. Take a hit — the console logs your health.
+install the compiled `health-logger.user.js` in Tampermonkey. because it
+`@require`s your loader, the loader loads first. join the game, open the **Mods**
+tab, and you'll see **Health Logger** sitting there with a toggle and an **Only my
+health** setting. take a hit and watch the console log your health.
 
-## What just happened
+## what just happened
 
-- The **loader** hooked the socket, decoded the `health` packet, and fired the
+- the **loader** hooked the socket, decoded the `health` packet, and fired the
   `health` event.
-- Your **mod** (compiled to call `window.MooMoo`) received it.
-- The **Mods menu** let you toggle the mod and change its setting at runtime.
+- your **mod** (compiled down to `window.MooMoo` calls) got it.
+- the **Mods menu** let you toggle the mod and change its setting while playing.
 
-Next: **[Writing mods](./writing-mods)** for the full language.
+next up: **[Writing mods](./writing-mods)** for the rest of the language.

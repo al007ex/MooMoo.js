@@ -30,10 +30,18 @@
         const listeners = new Map();   // event -> Set<handler>
         const readyCbs = [];
         let ready = false;
+        // The loader injects game-specific ctx helpers here (see buildCtx). Set at
+        // creation via opts, or later via _setCtxExtensions (helpers often need to
+        // reference the finished MooMoo object, so they're wired after creation).
+        let ctxExtensions = opts.ctxExtensions || null;
 
         // ---- game state ----
         const players = new Map();     // sid -> player object
-        const self = { sid: -1, alive: false, health: 0, x: 0, y: 0, dir: 0 };
+        const self = {
+            sid: -1, alive: false, health: 0, x: 0, y: 0, dir: 0,
+            weaponIndex: 0, buildIndex: -1, hat: 0, accessory: 0,
+            weapons: [], items: []     // owned weapon ids / buildable item ids
+        };
 
         function playerFor(sid) {
             let pl = players.get(sid);
@@ -68,10 +76,25 @@
                         pl.x = pos.x; pl.y = pos.y; pl.dir = pos.dir; pl.visible = true;
                         if (pos.sid === self.sid) { self.x = pos.x; self.y = pos.y; self.dir = pos.dir; }
                     }
+                    // Attributes are sent only when changed — persist them per player.
+                    if (payload.attributes) for (const at of payload.attributes) {
+                        const pl = playerFor(at.sid);
+                        pl.weaponIndex = at.weaponIndex; pl.buildIndex = at.buildIndex;
+                        pl.variant = at.variant; pl.team = at.team; pl.isLeader = at.isLeader;
+                        pl.skin = at.skin; pl.tail = at.tail;
+                        if (at.sid === self.sid) {
+                            self.weaponIndex = at.weaponIndex; self.buildIndex = at.buildIndex;
+                            self.hat = at.skin; self.accessory = at.tail; self.team = at.team;
+                        }
+                    }
                     for (const sid of payload.hidden) {
                         const pl = players.get(sid);
                         if (pl) pl.visible = false;
                     }
+                    break;
+                case "inventory":
+                    if (payload.isWeapon) self.weapons = payload.list || [];
+                    else self.items = payload.list || [];
                     break;
                 case "playerValue":
                     // points, kills, wood, food, stone, gold, ...
@@ -137,6 +160,8 @@
         function _reset() {
             players.clear();
             self.sid = -1; self.alive = false; self.health = 0; self.x = 0; self.y = 0; self.dir = 0;
+            self.weaponIndex = 0; self.buildIndex = -1; self.hat = 0; self.accessory = 0;
+            self.weapons = []; self.items = [];
         }
 
         // ---- outgoing: build send.<action>(...) from the vocabulary ----
@@ -182,10 +207,12 @@
             const type = s.type || (typeof s.default === "boolean" ? "boolean" : typeof s.default === "number" ? "number" : s.options ? "select" : "string");
             return {
                 key: s.key, type,
-                default: s.default !== undefined ? s.default : (type === "boolean" ? false : type === "number" ? 0 : ""),
+                default: s.default !== undefined ? s.default : (type === "boolean" ? false : type === "number" ? 0 : type === "key" ? "" : ""),
                 label: s.label || titleCase(s.key),
                 options: s.options || null,
-                min: s.min, max: s.max, step: s.step
+                min: s.min, max: s.max, step: s.step,
+                category: s.category || null,   // which config-menu tab it belongs to
+                hint: s.hint || null            // small helper text under the control
             };
         }
 
@@ -197,9 +224,13 @@
         function buildCtx(rec) {
             const active = { unsubs: [], timers: [], cleanups: [] };
             const settings = {};
-            for (const s of rec.schema) Object.defineProperty(settings, s.key, { get: () => rec.values[s.key], enumerable: true });
+            for (const s of rec.schema) Object.defineProperty(settings, s.key, {
+                get: () => rec.values[s.key],
+                set: (v) => { setSetting(rec.id, s.key, v); },
+                enumerable: true
+            });
             rec._active = active;
-            return {
+            const ctx = {
                 mod: { id: rec.id, name: rec.name, version: rec.version },
                 settings,
                 self, players,
@@ -209,8 +240,22 @@
                 once: (ev, h) => { const un = once(ev, h); active.unsubs.push(un); return un; },
                 every: (ms, fn) => { const t = setInterval(fn, ms); active.timers.push(t); return t; },
                 onCleanup: (fn) => { active.cleanups.push(fn); },
+                // Live-settings mods react to a toggle/slider change here instead of
+                // being torn down and re-run. fn(key, newValue, oldValue).
+                onSettingChange: (fn) => { rec.settingCbs.add(fn); active.cleanups.push(() => rec.settingCbs.delete(fn)); return () => rec.settingCbs.delete(fn); },
+                setSetting: (key, value) => setSetting(rec.id, key, value),
                 log: function () { console.log(logPrefix + " " + rec.name, logStyle, ...arguments); }
             };
+            // The loader injects game-specific helpers (input, game data, combat,
+            // config menu) through ctxExtensions. They go onto a per-mod `active`
+            // scope so anything they register is torn down with the mod.
+            if (ctxExtensions) {
+                try {
+                    const extra = typeof ctxExtensions === "function" ? ctxExtensions(ctx, rec, active) : ctxExtensions;
+                    if (extra) for (const k in extra) if (!(k in ctx)) ctx[k] = extra[k];
+                } catch (e) { console.error(logPrefix + " ctxExtensions threw", logStyle, e); }
+            }
+            return ctx;
         }
 
         function teardown(rec) {
@@ -246,7 +291,15 @@
             const rec = {
                 id, name: meta.name || id, version: meta.version || "1.0.0",
                 description: meta.description || "", schema, setup, values,
-                enabled: false, _active: null
+                enabled: false, _active: null,
+                // A big mod with many live-read settings can opt out of the
+                // teardown+re-run that setSetting does by default, so toggling one
+                // setting doesn't reset every timer/handler. It just reads the new
+                // value live (settings getters are always current), and may react
+                // via onSettingChange.
+                reapply: !(meta.liveSettings === true || meta.reapplyOnSettingChange === false),
+                settingCbs: new Set(),
+                menu: meta.menu   // true = show in the tabbed config menu
             };
             mods.set(id, rec);
             const startEnabled = persisted.enabled !== undefined ? persisted.enabled : (meta.defaultEnabled !== false);
@@ -274,17 +327,21 @@
         function setSetting(id, key, value) {
             const rec = mods.get(id);
             if (!rec) return;
+            const old = rec.values[key];
             rec.values[key] = value;
             savePersist(id, { enabled: rec.enabled, settings: rec.values });
-            if (rec.enabled) { teardown(rec); runSetup(rec); } // re-apply with the new value
+            if (rec.enabled) {
+                if (rec.reapply) { teardown(rec); runSetup(rec); } // re-apply with the new value
+                else for (const cb of Array.from(rec.settingCbs)) { try { cb(key, value, old); } catch (e) { /* ignore */ } }
+            }
             emitModsChanged();
         }
 
         function getMods() {
             return Array.from(mods.values()).map((rec) => ({
                 id: rec.id, name: rec.name, version: rec.version, description: rec.description,
-                enabled: rec.enabled, hasSettings: rec.schema.length > 0,
-                settings: rec.schema.map((s) => ({ key: s.key, type: s.type, label: s.label, options: s.options, min: s.min, max: s.max, step: s.step, value: rec.values[s.key] }))
+                enabled: rec.enabled, hasSettings: rec.schema.length > 0, menu: rec.menu,
+                settings: rec.schema.map((s) => ({ key: s.key, type: s.type, label: s.label, options: s.options, min: s.min, max: s.max, step: s.step, category: s.category, hint: s.hint, value: rec.values[s.key] }))
             }));
         }
         function onModsChanged(cb) { modListeners.add(cb); return () => modListeners.delete(cb); }
@@ -322,7 +379,8 @@
             // logging
             log,
             // internal hooks used by the loader (underscore-prefixed)
-            _dispatch, _setReady, _reset, _clearMods
+            _dispatch, _setReady, _reset, _clearMods,
+            _setCtxExtensions: (ext) => { ctxExtensions = ext; }
         };
         return MooMoo;
     }

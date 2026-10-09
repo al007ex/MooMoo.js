@@ -4,17 +4,17 @@ title: Packet reference
 
 # Packet reference
 
-Every semantic packet moomoo.js knows about. These names are the **stable
-vocabulary**: they never change, even when the server reshuffles the wire. Mods
-written against them keep working across loader updates.
+every packet moomoo.js knows about by name. these names are the stable vocabulary:
+they don't change, even when the server reshuffles the wire. mods written against
+them keep working across loader updates.
 
-- **Events** are things the server tells you. Subscribe with `on <event>(…)`
+- **events** are things the server tells you. listen with `on <event>(…)`
   (moomoo.js) or `MooMoo.on("<event>", handler)` (JavaScript).
-- **Actions** are things you ask the server to do. Call `send.<action>(…)`
+- **actions** are things you ask the server to do. call `send.<action>(…)`
   (moomoo.js) or `MooMoo.send.<action>(…)` (JavaScript).
 
-Events marked *passthrough* hand you the raw decoded `args` array instead of
-named fields — full access to every packet, at the cost of shape stability.
+events marked *passthrough* give you the raw decoded `args` array instead of named
+fields, so you get at every packet but the shape isn't guaranteed to stay put.
 
 ## Events (server → you)
 

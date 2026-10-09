@@ -19,40 +19,41 @@ export default function Home() {
         <div className="cow">🐮</div>
         <h1>moomoo<span style={{ color: 'var(--ifm-color-primary)' }}>.js</span></h1>
         <p className="tagline">
-          A modding framework for MooMoo.io-style private servers. Write mods against a stable API —
-          the loader handles the WebSocket, the crypto, and the packets, so your mods never break.
+          a modding framework for my MooMoo.io-style private server. you write mods against an API
+          that doesn't change, and the loader deals with the websocket, the crypto, and the packets
+          so your mods don't break every time i touch the server.
         </p>
         <div className="hero--buttons">
-          <Link className="button button--primary button--lg" to="/docs/intro">Get started →</Link>
-          <Link className="button button--secondary button--lg" to="/playground/">Open the playground</Link>
+          <Link className="button button--primary button--lg" to="/docs/intro">get started →</Link>
+          <Link className="button button--secondary button--lg" to="/playground/">open the playground</Link>
         </div>
       </header>
 
       <main>
         <div className="features">
-          <Feature ico="🧩" title="Two parts, one stable">
-            A <b>loader</b> you update when the server changes, and a <b>runtime + language</b> that never
-            changes. Mods written today keep working forever.
+          <Feature ico="🧩" title="two parts">
+            a <b>loader</b> that gets updated when the server changes, and a <b>runtime + language</b> that
+            doesn't. a mod you write today keeps working after the server moves everything around.
           </Feature>
-          <Feature ico="🔌" title="No WebSocket wrangling">
-            Mods subscribe to named events — <code>on health(sid, value)</code> — and send named actions —
-            <code> send.chat("gg")</code>. No hooking, no msgpack, no packet letters.
+          <Feature ico="🔌" title="no websocket stuff">
+            mods just listen for events — <code>on health(sid, value)</code> — and send actions —
+            <code> send.chat("gg")</code>. no hooking, no msgpack, no packet letters to memorize.
           </Feature>
-          <Feature ico="🧱" title="Blocks or code">
-            Build mods by snapping blocks together like Scratch, or write the <b>moomoo.js</b> language.
-            Either way it compiles to a Tampermonkey plugin.
+          <Feature ico="📝" title="its own little language">
+            write mods in <b>moomoo.js</b> and compile them to a Tampermonkey plugin, either from the
+            command line or right in the playground.
           </Feature>
-          <Feature ico="🎛️" title="In-game Mods menu">
-            The loader adds a <b>Mods</b> tab to the game menu. Toggle every mod on/off at runtime and
-            expand its settings.
+          <Feature ico="🎛️" title="mods menu in-game">
+            the loader drops a <b>Mods</b> tab into the pause menu. flip any mod on or off while you play
+            and open up its settings.
           </Feature>
-          <Feature ico="🛡️" title="Undetectable loader">
-            The socket hook is a <code>Proxy</code> installed before the client runs, leaving
-            <code> WebSocket.prototype</code> pristine — the anti-tamper reference checks pass.
+          <Feature ico="🛡️" title="the hook stays hidden">
+            the socket hook is a <code>Proxy</code> that goes in before the client loads and leaves
+            <code> WebSocket.prototype</code> alone, so the anti-tamper checks don't notice it.
           </Feature>
-          <Feature ico="📦" title="One @require">
-            Players install one loader userscript. Every mod is a tiny userscript that
-            <code> @require</code>s it. Updating the loader updates every mod.
+          <Feature ico="📦" title="one @require">
+            you install one loader userscript. every mod is a tiny script that <code>@require</code>s it,
+            so updating the loader updates all your mods at once.
           </Feature>
         </div>
       </main>

@@ -4,68 +4,67 @@ title: Anti-tamper & the socket hook
 
 # Anti-tamper & the socket hook
 
-:::warning Educational, own-server only
-This page documents how the loader's socket hook stays invisible to the
-reference server's anti-tamper. It's here so you understand your **own** private
-server's defenses from both sides. Don't use it to gain an advantage on servers
-you don't run.
+:::warning educational, own-server only
+this page is about how the loader's socket hook stays invisible to my own server's
+anti-tamper. it's here so i (and you, if it's your server) understand the defense
+from both sides. don't use it to get an edge on servers you don't run.
 :::
 
-## How the server detects a hook
+## how the server spots a hook
 
-The reference server (`moomoo-clone`) trusts the client to self-report tampering.
-Every pinned client sends a telemetry packet, `T = [flags, untrustedEvents]`, 5s
-after joining and then every 60s. `flags` is a bitfield:
+the reference server (`moomoo-clone`) trusts the client to tell on itself. every
+pinned client sends a telemetry packet, `T = [flags, untrustedEvents]`, 5s after
+joining and then every 60s. `flags` is a bitfield:
 
-| Bit | Meaning | Server action |
+| bit | meaning | what the server does |
 | --- | --- | --- |
 | 1 | userscript manager present | flag |
 | 2 | **socket hooked** | **kick** |
 | 4 | render hooked | flag |
 | 8 | debugger trap tripped | flag |
 
-The client sets bit 2 when **either** of these is true:
+the client sets bit 2 if **either** of these is true:
 
 ```js
 window.WebSocket !== pr        // pr = the reference captured at client startup
-|| !isNative(WebSocket.prototype.send)   // toString() must contain "[native code]"
+|| !isNative(WebSocket.prototype.send)   // toString() has to contain "[native code]"
 ```
 
-Telemetry is also **required**: if it never arrives, or stops, the server kicks
-you. So you can't just suppress it.
+and telemetry is required: if it never shows up, or stops, you get kicked. so you
+can't just block it.
 
-## Why the loader's hook is invisible
+## why the hook doesn't get caught
 
-The loader satisfies **both** conditions by construction:
+the loader beats both checks by how it's built:
 
-1. **It replaces the *constructor*, not the prototype, and does it first.**
+1. **it swaps the constructor, not the prototype, and it does it first.**
    `window.WebSocket` becomes a `Proxy` of the native constructor, installed at
-   `document-start` — *before* the client runs and captures `pr`. So the client
-   captures the proxy as `pr`, and later `window.WebSocket === pr` is true.
-2. **It never touches `WebSocket.prototype`.** Every property read on the proxy
-   forwards to the native target, so `WebSocket.prototype.send` is the real
-   native function and `isNative(...)` passes. Interception happens per-socket in
-   the proxy's `construct` trap.
+   `document-start`, before the client runs and captures `pr`. so the client ends up
+   capturing the proxy as `pr`, and later `window.WebSocket === pr` is still true.
+2. **it never touches `WebSocket.prototype`.** every property you read off the proxy
+   forwards straight to the native target, so `WebSocket.prototype.send` is still the
+   real native function and `isNative(...)` passes. the interception happens
+   per-socket in the `construct` trap instead.
 
-Both reference checks therefore stay false — bit 2 is never set.
+so both checks stay false and bit 2 never gets set.
 
-## The belt-and-suspenders scrub
+## the extra scrub, just in case
 
-Because the loader already **owns** the client→server stream (it re-encodes every
-frame to assign its own sequence numbers, which is what makes packet injection
-possible), it also passes the outgoing `T` packet through a scrub that clears the
-tamper bits and zeroes the untrusted-event count. Even if some future detection
-path set a bit, the server would still receive clean telemetry. The heartbeat
-keeps flowing, so the "telemetry missing" kick never fires either.
+the loader already owns the client→server stream (it re-encodes every frame to put
+its own sequence numbers on, which is what makes injection work), so it also runs
+the outgoing `T` packet through a scrub that clears the tamper bits and zeroes the
+untrusted-event count. even if some future check did set a bit, the server would
+still get clean telemetry. the heartbeat keeps flowing too, so the "telemetry
+missing" kick never fires.
 
-This scrub lives in `loader/src/binding.js` (`telemetry.scrub`) — it's part of the
-volatile half, so it moves with the protocol.
+the scrub lives in `loader/src/binding.js` (`telemetry.scrub`), which is part of the
+changeable half, so it moves along with the protocol.
 
-## The lesson for your own anti-cheat
+## the takeaway for your own anti-cheat
 
-Client-reported telemetry is only as trustworthy as the client. A hook that
-installs before your detection code — and leaves the prototype native — defeats
-reference and `toString` checks. If you're hardening your own server, the takeaway
-is that **the client cannot be trusted to report on itself**: meaningful checks
-have to be server-side (movement validation, rate limits, sequence integrity —
-all of which the reference server also does, and which the loader respects).
+client-reported telemetry is only ever as trustworthy as the client. a hook that
+goes in before your detection code, and leaves the prototype native, beats both the
+reference check and the `toString` check. if you're trying to harden your own
+server, the lesson is the client can't be trusted to report on itself. the checks
+that actually matter are server-side: movement validation, rate limits, sequence
+integrity, all of which the reference server does and the loader respects.

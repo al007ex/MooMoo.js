@@ -24,7 +24,11 @@
             Binding: require("./binding.js"),
             Runtime: require("./runtime.js"),
             Anticheat: require("./anticheat.js"),
-            Menu: require("./menu.js")
+            Menu: require("./menu.js"),
+            GameData: require("../../shared/gamedata.js"),
+            Input: require("./input.js"),
+            Helpers: require("./helpers.js"),
+            ConfigMenu: require("./configmenu.js")
         }
         : null;
     const value = factory(deps);
@@ -46,7 +50,11 @@
             Binding: g.MooMooBinding,
             Runtime: g.MooMooRuntime,
             Anticheat: g.MooMooAnticheat,
-            Menu: g.MooMooMenu
+            Menu: g.MooMooMenu,
+            GameData: g.MooMooGameData,
+            Input: g.MooMooInput,
+            Helpers: g.MooMooHelpers,
+            ConfigMenu: g.MooMooConfigMenu
         };
     }
 
@@ -140,6 +148,21 @@
             sink,
             loaderInfo: diag
         });
+
+        // ---- game-specific extensions: input, combat/game helpers, config menu ----
+        // Input needs the DOM; in headless tests there's none, so it stays null and
+        // helpers degrade gracefully (aim-at-mouse etc. just no-op).
+        let input = null;
+        if (win.document && D.Input) {
+            try { input = D.Input.installInput(win); } catch (e) { errorSink(e); }
+        }
+        // Inject the combat/placement/targeting verbs into every mod's ctx.
+        if (D.Helpers && D.GameData) {
+            try {
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData });
+                MooMoo._setCtxExtensions(ext);
+            } catch (e) { errorSink(e); }
+        }
 
         function tapRaw(dir, name, args) {
             if (!rawTaps.size) return;
@@ -284,9 +307,17 @@
         win.MooMoo = MooMoo;
         win.MooMooLoader = MooMooLoader;
 
+        MooMooLoader.input = input;
+        MooMooLoader.gameData = D.GameData || null;
+
         // In-game Mods menu (only in a real page; skipped in headless tests).
         if (D.Menu && win.document) {
             try { MooMooLoader.menu = D.Menu.installMenu(win, MooMoo); }
+            catch (e) { errorSink(e); }
+        }
+        // Tabbed config menu (the rich settings overlay, toggled by a hotkey).
+        if (D.ConfigMenu && win.document) {
+            try { MooMooLoader.config = D.ConfigMenu.installConfigMenu(win, MooMoo, { input, toggleKey: opts.menuKey || "`", title: "moomoo.js" }); }
             catch (e) { errorSink(e); }
         }
         // Warm up the protocol module resolution so the first connection is instant.

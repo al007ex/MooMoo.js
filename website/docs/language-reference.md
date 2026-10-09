@@ -4,12 +4,12 @@ title: Language reference
 
 # moomoo.js language reference
 
-A compact reference for the whole language. moomoo.js compiles to JavaScript that
-targets `window.MooMoo`.
+the whole language in one place. moomoo.js compiles to JavaScript that targets
+`window.MooMoo`.
 
-## Program
+## program
 
-A file is exactly one mod:
+a file is exactly one mod:
 
 ```
 mod "Name" {
@@ -18,21 +18,21 @@ mod "Name" {
 }
 ```
 
-## Directives
+## directives
 
-Metadata, written `@key "value"`. Repeatable keys collect into a list.
+metadata, written `@key "value"`. keys that can repeat collect into a list.
 
-| Directive | Effect |
+| directive | what it does |
 | --- | --- |
-| `@name` | overrides the mod name (default: the `mod "…"` string) |
-| `@version` | userscript `@version` (default `1.0.0`) |
+| `@name` | overrides the mod name (defaults to the `mod "…"` string) |
+| `@version` | userscript `@version` (defaults to `1.0.0`) |
 | `@description` | userscript `@description` |
 | `@author` | userscript `@author` |
-| `@match` | userscript `@match` (repeatable; default `*://*/*`) |
-| `@require` | extra `@require` URLs (repeatable) |
-| `@grant` | userscript `@grant` (default `none`) |
+| `@match` | userscript `@match` (repeatable; defaults to `*://*/*`) |
+| `@require` | extra `@require` urls (repeatable) |
+| `@grant` | userscript `@grant` (defaults to `none`) |
 
-## Declarations
+## declarations
 
 ### `setting`
 
@@ -40,8 +40,9 @@ Metadata, written `@key "value"`. Repeatable keys collect into a list.
 setting <name> = <literal> [ "<label>" ]
 ```
 
-Declares a persistent, UI-exposed setting. `<literal>` is a number, string, or
-`true`/`false`; its type is inferred. Read it with `setting.<name>`.
+a setting that persists and shows up in the menu. `<literal>` is a number, string,
+or `true`/`false`, and the type is figured out from it. read it with
+`setting.<name>`.
 
 ### `fn`
 
@@ -49,7 +50,7 @@ Declares a persistent, UI-exposed setting. `<literal>` is a number, string, or
 fn <name>(<params>) { <statements> }
 ```
 
-A function. `return <expr>` returns a value.
+a function. `return <expr>` hands back a value.
 
 ### `let`
 
@@ -57,9 +58,9 @@ A function. `return <expr>` returns a value.
 let <name> = <expr>
 ```
 
-A variable, scoped to its block.
+a variable, scoped to its block.
 
-## Handlers
+## handlers
 
 ### `on`
 
@@ -67,9 +68,9 @@ A variable, scoped to its block.
 on <event>(<params>) { <statements> }
 ```
 
-Subscribes to a semantic event. Parameters bind positionally to the event's
-payload fields. See the **[packet reference](./packets)**. You may name fewer
-params than the event provides; naming more is a compile error.
+subscribes to an event. the params bind in order to the event's fields (see the
+**[packet reference](./packets)**). you can name fewer params than the event has;
+naming more is a compile error.
 
 ### `every`
 
@@ -77,12 +78,12 @@ params than the event provides; naming more is a compile error.
 every (<ms>) { <statements> }
 ```
 
-Runs the body every `<ms>` milliseconds. Cleared automatically when the mod is
-disabled.
+runs the body every `<ms>` milliseconds. cleared on its own when the mod is turned
+off.
 
-## Statements
+## statements
 
-| Statement | Meaning |
+| statement | means |
 | --- | --- |
 | `let x = e` | declare a variable |
 | `x = e` | assign (to a name, `a.b`, or `a[i]`) |
@@ -94,21 +95,21 @@ disabled.
 | `log(e)` | print to the console, tagged with the mod name |
 | `e` | any expression (usually a call) |
 
-## Expressions
+## expressions
 
-- Literals: numbers, `"strings"`, `true`, `false`, `null`, arrays `[a, b]`,
+- literals: numbers, `"strings"`, `true`, `false`, `null`, arrays `[a, b]`,
   objects `{ k: v }`.
-- Member `a.b`, index `a[i]`, call `f(a, b)`.
-- Unary `!x`, `-x`.
-- Binary, by precedence (low → high): `||`, `&&`, `== !=`, `< <= > >=`,
-  `+ -`, `* / %`.
-- Grouping `( … )`.
+- member `a.b`, index `a[i]`, call `f(a, b)`.
+- unary `!x`, `-x`.
+- binary, low to high precedence: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`,
+  `* / %`.
+- grouping `( … )`.
 
-## Built-ins
+## built-ins
 
-Available without import inside a mod:
+these are just there inside a mod, no import needed:
 
-| Name | Is |
+| name | what it is |
 | --- | --- |
 | `self` | your player: `sid`, `health`, `x`, `y`, `dir`, `points`, … |
 | `players` | a `Map` of sid → player |
@@ -119,15 +120,15 @@ Available without import inside a mod:
 | `now()` | `Date.now()` |
 | math | `abs floor ceil round min max sqrt pow sign random sin cos tan atan2 hypot pi` |
 
-## Comments
+## comments
 
 ```
 // line comment
 /* block comment */
 ```
 
-## Escape hatch
+## escape hatch
 
-Need a packet the vocabulary doesn't name yet? `send.raw("<wire>", [args])` sends
-a raw wire packet. Prefer named actions; see **[updating the loader](./updating-the-loader)**
-to add a proper name.
+need a packet the vocabulary doesn't have a name for yet? `send.raw("<wire>",
+[args])` sends a raw wire packet. use named actions when you can though, and see
+**[updating the loader](./updating-the-loader)** for how to add a proper name.

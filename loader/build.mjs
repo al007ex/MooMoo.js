@@ -21,13 +21,17 @@ const distDir = path.join(here, "dist");
 // Order matters: a module must appear after the ones it reads off the window.
 const MODULES = [
     { label: "vocabulary", file: path.join(sharedDir, "vocabulary.js") },
+    { label: "gamedata", file: path.join(sharedDir, "gamedata.js") },
     { label: "msgpack", file: path.join(srcDir, "msgpack.js") },
     { label: "sha256", file: path.join(srcDir, "sha256.js") },
     { label: "protocol", file: path.join(srcDir, "protocol.js") },
     { label: "binding", file: path.join(srcDir, "binding.js") },
     { label: "runtime", file: path.join(srcDir, "runtime.js") },
     { label: "anticheat", file: path.join(srcDir, "anticheat.js") },
+    { label: "input", file: path.join(srcDir, "input.js") },
+    { label: "helpers", file: path.join(srcDir, "helpers.js") },
     { label: "menu", file: path.join(srcDir, "menu.js") },
+    { label: "configmenu", file: path.join(srcDir, "configmenu.js") },
     { label: "loader", file: path.join(srcDir, "loader.js") }
 ];
 

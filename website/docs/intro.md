@@ -5,10 +5,10 @@ slug: /intro
 
 # moomoo.js
 
-**moomoo.js** is a modding framework for MooMoo.io-style **private servers**. It
-lets people write mods without ever touching the WebSocket, the crypto, or the
-packet format. You subscribe to named events and send named actions; the
-framework does the rest.
+moomoo.js is a modding framework for my MooMoo.io-style private server. the whole
+idea is you can write mods without ever having to touch the websocket, the crypto,
+or the packet format. you listen for events, you send actions, and the framework
+does the annoying parts for you.
 
 ```
 on health(sid, value) {
@@ -18,47 +18,48 @@ on health(sid, value) {
 }
 ```
 
-That is a complete, working mod.
+that's a full working mod. that's all of it.
 
-:::note Scope
-moomoo.js is built for **your own** private server — a hobby project you run and
-control. It is for learning how these systems fit together. Don't use it against
-servers you don't own.
+:::note heads up
+this is built for my own private server, basically a hobby thing i run, and for
+figuring out how all this stuff fits together. don't point it at servers you don't
+own.
 :::
 
-## Two parts
+## the two parts
 
-moomoo.js is deliberately split in two so that mods never rot:
+i split it in two on purpose, so that mods don't rot every time the server
+changes:
 
-1. **The loader** — a Tampermonkey userscript that hooks the game socket, speaks
-   the wire protocol, and exposes a stable `window.MooMoo` API. It also adds a
-   **Mods** tab to the in-game menu. The loader is the *only* piece that changes
+1. **the loader** is a Tampermonkey userscript. it hooks the game socket, speaks
+   the wire protocol, and hands you a stable `window.MooMoo` to work with. it also
+   adds the **Mods** tab to the in-game menu. this is the only part that changes
    when the server updates its protocol.
 
-2. **The runtime + language** — the stable half. `window.MooMoo` and the
-   **moomoo.js** language never change. A mod written today keeps working after
-   the server reshuffles every packet, because the loader re-points the wire at
-   the same stable names.
+2. **the runtime + language** is the stable half. `window.MooMoo` and the moomoo.js
+   language don't change. a mod you wrote months ago still works after the server
+   reshuffles every packet, because the loader just re-points the wire at the same
+   names.
 
 ```
  wire bytes ──(loader: hook + decode + binding)──▶ named events ──▶ your mod
  your mod ──▶ named actions ──(loader: binding + encode + send)──▶ wire bytes
 ```
 
-## What you get
+## what's in here
 
-- A zero-dependency **loader** userscript (`moomoo-loader.user.js`).
-- A stable **runtime** (`window.MooMoo`): events, actions, game state, and a
-  per-mod registry with an in-game Mods menu (enable/disable + settings).
-- The **moomoo.js language** and a **compiler** that turns it into a Tampermonkey
-  plugin which `@require`s the loader.
-- A **[playground](/playground/)**: build mods with Scratch-style blocks or by
-  writing moomoo.js, and compile right in the browser.
+- the **loader** userscript (`moomoo-loader.user.js`), no dependencies.
+- the stable **runtime** (`window.MooMoo`): events, actions, game state, and a
+  per-mod registry with the in-game Mods menu (on/off toggles + settings).
+- the **moomoo.js language** and a **compiler** that turns it into a Tampermonkey
+  plugin that `@require`s the loader.
+- a **[playground](/playground/)** where you write moomoo.js and compile it right
+  in the browser.
 
-## Next steps
+## where to go next
 
-- **[Architecture](./architecture)** — how the pieces fit together.
-- **[Getting started](./getting-started)** — install the loader and run your
-  first mod in five minutes.
-- **[Writing mods](./writing-mods)** — the moomoo.js language by example.
+- **[Architecture](./architecture)** — how the pieces actually fit together.
+- **[Getting started](./getting-started)** — install the loader and run your first
+  mod.
+- **[Writing mods](./writing-mods)** — the moomoo.js language, by example.
 - **[Packet reference](./packets)** — every event and action.

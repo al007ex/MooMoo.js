@@ -29,6 +29,9 @@
     };
 
     const STYLE = `
+    /* The client captures the tab bar's <a> list once at startup and hides any
+       tab it doesn't know about, so force ours to stay visible regardless. */
+    #gameMenuTabs a.mmj-tab{ display:flex !important; align-items:center; justify-content:center; }
     #gameModsBody.mmj-body{ color:#5a5a5a; max-height:340px; overflow-y:auto; overflow-x:hidden; margin:0 -4px; padding:0 4px; }
     #gameModsBody .mmj-empty{ padding:26px 8px; text-align:center; color:#9a9a9a; font-size:15px; line-height:1.5; }
     #gameModsBody .mmj-empty code{ background:#f0f0f0; border-radius:4px; padding:1px 5px; color:#6cc24a; }
@@ -107,7 +110,14 @@
 
             tab = el("a", "mmj-tab", { "data-tab": "mods" });
             tab.textContent = "Mods";
-            tab.addEventListener("click", (e) => { if (e.isTrusted === false) return; showMods(); });
+            // Capture phase + stopImmediatePropagation: the client rebinds every
+            // tab's onclick to its own handler (which would hide our tab), so we
+            // intercept the click before that handler ever runs.
+            tab.addEventListener("click", (e) => {
+                if (e.isTrusted === false) return;
+                e.stopImmediatePropagation();
+                showMods();
+            }, true);
             bar.appendChild(tab);
 
             panel = el("div", "mmj-body");
@@ -127,6 +137,7 @@
             for (const a of nativeTabs()) a.addEventListener("click", (e) => { if (e.isTrusted === false) return; hideMods(); });
 
             render();
+            try { win.console.log("%c[moomoo.js]", "color:#6cc24a;font-weight:bold", "Mods tab added to the game menu"); } catch (e) {}
             return true;
         }
 

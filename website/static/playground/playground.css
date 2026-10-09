@@ -19,9 +19,6 @@ code{font-family:var(--mono)}
 .pg-cow{filter:saturate(1.2)}
 .pg-dot{color:var(--green)}
 .pg-sub{color:var(--mut);font-size:15px;margin-left:4px}
-.pg-modes{display:flex;gap:4px;margin-left:10px;background:var(--bg3);border-radius:8px;padding:4px}
-.pg-mode{border:0;background:transparent;color:var(--mut);padding:6px 16px;border-radius:6px;cursor:pointer;font-size:15px}
-.pg-mode.active{background:var(--green);color:#10200a}
 .pg-docs{margin-left:auto;color:var(--mut);text-decoration:none;font-size:15px}
 .pg-docs:hover{color:var(--txt)}
 
@@ -36,37 +33,6 @@ code{font-family:var(--mono)}
 /* main split */
 .pg-main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);min-height:520px}
 .pg-editor,.pg-output{background:var(--bg);min-height:0;display:flex;flex-direction:column;overflow:hidden}
-
-/* blocks */
-.pg-blocks{display:grid;grid-template-columns:168px 1fr;height:100%;min-height:0}
-.pg-palette{background:var(--bg2);border-right:1px solid var(--line);overflow-y:auto;padding:8px}
-.pg-cat{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:12px 4px 5px}
-.pg-cat:first-child{margin-top:2px}
-.pal-block{display:block;width:100%;text-align:left;border:0;border-radius:7px;padding:7px 9px;margin:4px 0;color:#10200a;font-size:13px;cursor:pointer;line-height:1.2}
-.pal-block:hover{filter:brightness(1.08)}
-.pg-canvas{overflow:auto;padding:14px;min-height:0}
-.pg-canvas.empty::before{content:"Click blocks on the left to build your mod ↞";color:var(--faint);font-size:14px;display:block;padding:20px 6px}
-
-/* a block brick */
-.blk{border-radius:9px;margin:5px 0;color:#0e1a08;box-shadow:0 1px 0 rgba(0,0,0,.25);overflow:hidden}
-.blk-head{display:flex;align-items:center;gap:7px;padding:6px 8px;font-size:13px;flex-wrap:wrap}
-.blk-head .kw{font-size:13px;opacity:.85}
-.blk-head input,.blk-head select{background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.15);border-radius:5px;padding:2px 6px;font-size:12px;color:#182;min-width:40px;color:#1c2a12}
-.blk-head input.expr{min-width:90px}
-.blk-head .pnames{font-size:11px;opacity:.7;color:#143}
-.blk-tools{margin-left:auto;display:flex;gap:2px}
-.blk-tools button{border:0;background:rgba(0,0,0,.14);color:#0e1a08;width:20px;height:20px;border-radius:4px;cursor:pointer;font-size:12px;line-height:1;padding:0}
-.blk-tools button:hover{background:rgba(0,0,0,.28)}
-.blk-body{background:rgba(255,255,255,.14);margin:0 5px 5px;border-radius:7px;padding:5px 5px 5px 10px;min-height:14px}
-.blk-body.empty::before{content:"drop blocks here";color:rgba(0,0,0,.4);font-size:11px;font-style:italic}
-.blk-else{padding:3px 8px;font-size:12px;opacity:.85}
-/* category colors */
-.blk.event{background:var(--yellow)} .pal-block.event{background:var(--yellow)}
-.blk.packet{background:var(--blue)} .pal-block.packet{background:var(--blue)}
-.blk.control{background:var(--orange)} .pal-block.control{background:var(--orange)}
-.blk.value{background:var(--purple)} .pal-block.value{background:var(--purple)}
-.blk.console{background:var(--green)} .pal-block.console{background:var(--green)}
-.blk.setting{background:#5ec8c0} .pal-block.setting{background:#5ec8c0}
 
 /* code editor */
 .pg-code{height:100%}
@@ -106,4 +72,4 @@ code{font-family:var(--mono)}
 .pg-ref-item .nm{color:var(--txt)} .pg-ref-item .pr{color:var(--faint);font-family:var(--mono);font-size:11.5px}
 .pg-ref-item .ds{color:var(--mut);display:block;margin-top:2px;font-size:12px}
 
-@media(max-width:860px){.pg-main{grid-template-columns:1fr}.pg-ref-body{grid-template-columns:1fr}.pg-blocks{grid-template-columns:140px 1fr}}
+@media(max-width:860px){.pg-main{grid-template-columns:1fr}.pg-ref-body{grid-template-columns:1fr}}

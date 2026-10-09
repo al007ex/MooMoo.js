@@ -38,7 +38,7 @@ website/static/playground/index.html
 docs/                 the documentation (Markdown)
 src/pages/index.js    the landing page
 src/css/custom.css    the green theme
-static/playground/    the standalone blocks/code playground
+static/playground/    the standalone moomoo.js code playground
 static/img/           logo + favicon
 docusaurus.config.js  site config
 sidebars.js           docs sidebar

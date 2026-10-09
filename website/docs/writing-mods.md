@@ -4,11 +4,11 @@ title: Writing mods
 
 # Writing mods
 
-moomoo.js is a tiny language built for one job: react to game events and send
-game actions. This page teaches it by example. For the exact grammar see the
-**[language reference](./language-reference)**.
+moomoo.js is a tiny language that does one thing: react to game events and send
+game actions. this page just walks through it with examples. if you want the exact
+grammar, that's in the **[language reference](./language-reference)**.
 
-## A mod is a `mod` block
+## a mod is a `mod` block
 
 ```
 mod "My First Mod" {
@@ -20,14 +20,14 @@ mod "My First Mod" {
 }
 ```
 
-`@description`, `@version`, `@match`, `@author` are metadata. They flow into the
-Tampermonkey header when you compile.
+`@description`, `@version`, `@match`, `@author` are just metadata. they end up in
+the Tampermonkey header when you compile.
 
-## Reacting to events
+## reacting to events
 
-`on <event>(params) { ... }` runs every time that packet arrives. The parameter
-names are yours; they map, in order, onto the packet's fields (see the
-**[packet reference](./packets)**).
+`on <event>(params) { ... }` runs every time that packet shows up. the parameter
+names are yours to pick, they just map in order onto the packet's fields (the
+**[packet reference](./packets)** lists them all).
 
 ```
 on chat(sid, message) {
@@ -35,9 +35,9 @@ on chat(sid, message) {
 }
 ```
 
-## Reading game state
+## reading game state
 
-`self` is you; `players` is everyone in view.
+`self` is you. `players` is everyone you can see.
 
 ```
 on health(sid, value) {
@@ -47,12 +47,12 @@ on health(sid, value) {
 }
 ```
 
-`self` tracks `sid`, `health`, `x`, `y`, `dir`, and any value the server sends you
-(`points`, `kills`, `wood`, …). `player(sid)` looks up another player.
+`self` tracks `sid`, `health`, `x`, `y`, `dir`, and whatever else the server sends
+you (`points`, `kills`, `wood`, …). `player(sid)` looks up someone else.
 
-## Sending actions
+## sending actions
 
-`send.<action>(...)` puts a packet on the wire. Arguments are positional.
+`send.<action>(...)` puts a packet on the wire. the arguments are positional.
 
 ```
 on chat(sid, message) {
@@ -62,12 +62,12 @@ on chat(sid, message) {
 }
 ```
 
-See the **[packet reference](./packets)** for every action and its parameters.
+see the **[packet reference](./packets)** for every action and what it takes.
 
-## Settings
+## settings
 
-Declare a `setting` and it appears — expandable, persistent — under your mod in
-the in-game **Mods** menu. Read it as `setting.<name>`.
+declare a `setting` and it shows up under your mod in the in-game **Mods** menu,
+expandable and saved between reloads. read it back with `setting.<name>`.
 
 ```
 mod "Auto Reply" {
@@ -82,14 +82,14 @@ mod "Auto Reply" {
 }
 ```
 
-The type is inferred from the default: `true/false` → a toggle, a number → a
-number field, a string → a text field. Changing a setting re-applies the mod
-immediately.
+the type comes from the default you give it: `true`/`false` makes a toggle, a
+number makes a number field, a string makes a text field. changing a setting
+re-applies the mod right away.
 
-## Timers
+## timers
 
-`every (ms) { ... }` runs on an interval. Timers are cleaned up automatically when
-the mod is disabled.
+`every (ms) { ... }` runs on a loop. the timers get cleaned up on their own when
+you disable the mod.
 
 ```
 mod "Auto Ping" {
@@ -99,7 +99,7 @@ mod "Auto Ping" {
 }
 ```
 
-## Variables, functions, control flow
+## variables, functions, control flow
 
 ```
 mod "Math" {
@@ -114,21 +114,22 @@ mod "Math" {
 }
 ```
 
-moomoo.js has `let`, assignment, `if/else`, `while`, `repeat (n)`, `fn`, and the
-usual operators. Math helpers (`floor`, `round`, `min`, `max`, `random`, `sin`,
-`atan2`, `pi`, …) and `now()` are built in.
+you've got `let`, assignment, `if/else`, `while`, `repeat (n)`, `fn`, and the usual
+operators. the math helpers (`floor`, `round`, `min`, `max`, `random`, `sin`,
+`atan2`, `pi`, …) and `now()` are already there.
 
-## Enable, disable, and settings at runtime
+## turning mods on and off at runtime
 
-You don't write any of this — the loader's **Mods** menu gives every mod a toggle
-and renders its settings. Disabling a mod removes its event handlers and clears
-its timers; enabling re-runs it. State persists across reloads.
+you don't write any of this yourself. the loader's **Mods** menu gives every mod a
+toggle and draws its settings for you. turning a mod off removes its event handlers
+and clears its timers, turning it back on re-runs it. the state sticks around
+across reloads.
 
-## Compiling
+## compiling
 
 ```bash
 node compiler/cli.mjs my-mod.moomoo --loader "https://your-host/moomoo-loader.user.js"
 ```
 
-…or use the **[playground](/playground/)**, which compiles as you type. The output
-is a Tampermonkey userscript; install it and it works with the loader.
+or use the **[playground](/playground/)**, which compiles as you type. either way
+you get a Tampermonkey userscript, install it and it works with the loader.

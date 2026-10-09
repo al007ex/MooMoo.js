@@ -1,8 +1,8 @@
 # 🐮 moomoo.js
 
-A **modding framework** for MooMoo.io-style **private servers**. Write mods
-without ever touching the WebSocket, the crypto, or the packet format — subscribe
-to named events, send named actions, and let the framework do the rest.
+a modding framework for my MooMoo.io-style private server. you write mods without
+ever touching the websocket, the crypto, or the packet format. you just listen for
+events, send actions, and let the framework do the rest.
 
 ```
 on health(sid, value) {
@@ -12,25 +12,24 @@ on health(sid, value) {
 }
 ```
 
-That's a complete, working mod.
+that's a complete, working mod.
 
-> **Scope.** moomoo.js is built for **your own** private server — a hobby project
-> you run and control — and for learning how these systems fit together. It
-> targets the companion `moomoo-clone` server. Don't use it against servers you
-> don't own.
+> **heads up.** this is built for my own private server (a hobby thing i run) and
+> for figuring out how all this fits together. it targets the companion
+> `moomoo-clone` server. don't use it against servers you don't own.
 
 ---
 
-## Two parts, by design
+## two parts
 
-| | What | Changes when the server updates? |
+| | what | changes when the server updates? |
 | --- | --- | --- |
-| **The loader** | a Tampermonkey userscript that hooks the socket, speaks the protocol, exposes `window.MooMoo`, and adds an in-game **Mods** menu | **yes** — this is the only piece that does |
-| **The runtime + language** | the stable `window.MooMoo` API and the **moomoo.js** language; mods only ever touch these | **no, ever** |
+| **the loader** | a Tampermonkey userscript that hooks the socket, speaks the protocol, exposes `window.MooMoo`, and adds the in-game **Mods** menu | **yes** — it's the only piece that does |
+| **the runtime + language** | the stable `window.MooMoo` API and the **moomoo.js** language; mods only ever touch these | **never** |
 
-The hinge between them is a tiny **binding** that maps wire packets to stable
-names. Rename a packet on the server → change one line in the binding → every mod
-ever written keeps working.
+the thing connecting them is a tiny **binding** that maps wire packets to stable
+names. rename a packet on the server, change one line in the binding, and every mod
+anyone ever wrote keeps working.
 
 ```
 wire bytes ─(loader: hook + decode + binding)─▶ named events ─▶ your mod
@@ -73,27 +72,27 @@ npm run build     # build loader/dist/moomoo-loader.user.js
 npm test          # run all tests (checks the codec against the server if present)
 ```
 
-1. **Install the loader.** Set its `@match` to your server, host it somewhere,
-   and add it in Tampermonkey. Open the game — a **Mods** tab appears in the menu.
-2. **Write a mod** in the [playground](website/static/playground/index.html) or in
+1. **install the loader.** set its `@match` to your server, host it somewhere, and
+   add it in Tampermonkey. open the game and a **Mods** tab shows up in the menu.
+2. **write a mod** in the [playground](website/static/playground/index.html) or in
    moomoo.js, then compile it:
 
    ```bash
    node compiler/cli.mjs examples/health-logger.moomoo \
      --loader "https://your-host/moomoo-loader.user.js"
    ```
-3. **Install the compiled userscript.** It `@require`s the loader, so updating the
+3. **install the compiled userscript.** it `@require`s the loader, so updating the
    loader updates every mod at once.
 
-Full walkthrough: **`website/docs/getting-started.md`**.
+full walkthrough: **`website/docs/getting-started.md`**.
 
 ---
 
-## The moomoo.js language
+## the moomoo.js language
 
-A tiny language for one job: react to events, send actions. It has `mod`, `on`,
-`every`, `fn`, `let`, `if/else`, `while`, `repeat`, `send.*`, `log`, and
-per-mod `setting`s that show up in the in-game menu.
+a tiny language for one job: react to events, send actions. it's got `mod`, `on`,
+`every`, `fn`, `let`, `if/else`, `while`, `repeat`, `send.*`, `log`, and per-mod
+`setting`s that show up in the in-game menu.
 
 ```
 mod "Auto Reply" {
@@ -105,24 +104,25 @@ mod "Auto Reply" {
 }
 ```
 
-Compile it → a Tampermonkey plugin that pastes on top of the loader. See
+compile it and you get a Tampermonkey plugin that sits on top of the loader. see
 `website/docs/language-reference.md`.
 
 ---
 
-## The in-game Mods menu
+## the in-game Mods menu
 
-The loader injects a **Mods** tab into the game's pause menu, matching the native
-tabs. Every registered mod gets a runtime on/off toggle and, if it declares
-settings, an expandable panel. State persists across reloads.
+the loader drops a **Mods** tab into the game's pause menu, styled to match the
+native tabs. every registered mod gets an on/off toggle you can flip while playing,
+and if it has settings, an expandable panel for them. the state sticks around across
+reloads.
 
 ---
 
-## The website
+## the website
 
-`website/` is a Docusaurus site with thorough docs and an interactive
-**playground** — build mods with Scratch-style blocks or by writing moomoo.js,
-with a live in-game-menu preview and one-click compile to a userscript.
+`website/` is a Docusaurus site with the full docs and an interactive
+**playground** where you write moomoo.js, see a live preview of the in-game menu,
+and compile to a userscript in one click.
 
 ```bash
 cd website
@@ -130,7 +130,7 @@ npm install
 npm start        # docs + playground at http://localhost:3000
 ```
 
-The playground also runs standalone — just open
+the playground also runs standalone, just open
 `website/static/playground/index.html`.
 
 ---
@@ -141,21 +141,21 @@ The playground also runs standalone — just open
 npm test
 ```
 
-- **`protocol.roundtrip`** — the loader's codec vs. the real server protocol and
-  vs. `msgpack-lite`.
-- **`loader.integration`** — the whole loader against a real server session in a
-  simulated browser (hook, decode, re-encode, telemetry scrub, injection).
+- **`protocol.roundtrip`** — the loader's codec vs. the real server protocol and vs.
+  `msgpack-lite`.
+- **`loader.integration`** — the whole loader against a real server session in a fake
+  browser (hook, decode, re-encode, telemetry scrub, injection).
 - **`bundle.vm`** — the assembled userscript, run in a sandbox.
 - **`compiler`** — lexing, parsing, codegen, and runtime mod management.
 
-The codec tests check against the `moomoo-clone` server when it sits next to this
-repo (or at `$MOOMOO_SERVER_DIR`); otherwise they skip.
+the codec tests run against the `moomoo-clone` server when it's sitting next to this
+repo (or at `$MOOMOO_SERVER_DIR`). otherwise they just skip.
 
 ---
 
-## Updating when the server changes
+## updating when the server changes
 
-Watch the live packet stream, then fix the binding:
+watch the live packet stream, then fix the binding:
 
 ```js
 MooMooLoader.onRaw((dir, name, args) => console.log(dir, name, args));
@@ -166,10 +166,10 @@ MooMooLoader.onRaw((dir, name, args) => console.log(dir, name, args));
 incoming["O"] = { event: "health", parse: (a) => ({ sid: a[0], value: a[1] }) };
 ```
 
-Rebuild, re-host at the same URL, done. See `website/docs/updating-the-loader.md`.
+rebuild, re-host at the same url, done. see `website/docs/updating-the-loader.md`.
 
 ---
 
 ## License
 
-MIT. For educational use on your own private server.
+MIT. educational use on your own private server.

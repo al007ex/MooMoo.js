@@ -4,16 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>moomoo.js Playground</title>
-<meta name="description" content="Build MooMoo.io private-server mods with blocks or the moomoo.js language, then compile to a Tampermonkey plugin.">
+<meta name="description" content="Write MooMoo.io private-server mods in the moomoo.js language, then compile to a Tampermonkey plugin.">
 <link rel="stylesheet" href="playground.css">
 </head>
 <body>
 <header class="pg-top">
   <div class="pg-brand"><span class="pg-cow">🐮</span> moomoo<span class="pg-dot">.js</span> <span class="pg-sub">playground</span></div>
-  <div class="pg-modes" role="tablist">
-    <button id="mode-blocks" class="pg-mode active" role="tab">Blocks</button>
-    <button id="mode-code" class="pg-mode" role="tab">Code</button>
-  </div>
   <a class="pg-docs" href="/docs/intro" title="Documentation">Docs ↗</a>
 </header>
 
@@ -27,13 +23,7 @@
 <main class="pg-main">
   <!-- EDITOR -->
   <section class="pg-editor">
-    <!-- blocks -->
-    <div id="blocksView" class="pg-blocks">
-      <aside id="palette" class="pg-palette"></aside>
-      <div id="canvas" class="pg-canvas" aria-label="Your mod"></div>
-    </div>
-    <!-- code -->
-    <div id="codeView" class="pg-code" hidden>
+    <div id="codeView" class="pg-code">
       <textarea id="codeArea" spellcheck="false" autocomplete="off"></textarea>
     </div>
   </section>
@@ -43,7 +33,6 @@
     <div class="pg-out-tabs" role="tablist">
       <button class="pg-tab active" data-out="userscript">Userscript</button>
       <button class="pg-tab" data-out="plugin">Plugin JS</button>
-      <button class="pg-tab" data-out="source" id="sourceTabBtn">moomoo.js</button>
     </div>
     <div id="status" class="pg-status">—</div>
     <pre id="output" class="pg-outbox"><code></code></pre>
