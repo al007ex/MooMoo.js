@@ -41,12 +41,22 @@
     // A world object, modelled exactly like the bundle's GameObject so features
     // can read the same fields. `data` is the item definition (gameData.item(id))
     // for placed buildings, or null for a natural resource (tree/bush/stone).
+    // The engine's "is this sid me or my clan" test (the bundle's te) and its tick
+    // counter, injected by the combat engine; until then, plain self/team checks.
+    const hooksRef = { te: null, tick: () => 0 };
+
     class GameObject {
         constructor(sid) { this.sid = sid; }
 
-        init(x, y, dir, scale, type, data, ownerSid) {
-            data = data || {};
+        // The bundle's Gl.init (3022-3025), argument for argument:
+        //   init(x, y, dir, scale, type, data, owner, bot, _, fake, restricter, preplace)
+        // owner is {sid} (or null / undefined), like the bundle's.
+        init(x, y, dir, scale, type, data, owner, bot, _unused, fake, restricter, preplace) {
+            const o = data || {};
+            this.sentTo = {};
+            this.gridLocations = [];
             this.active = true;
+            this.doUpdate = o.doUpdate;
             this.x = x;
             this.y = y;
             this.dir = dir;
@@ -54,83 +64,74 @@
             this.yWiggle = 0;
             this.scale = scale;
             this.type = type;
-            this.id = data.id;
-            this.ownerSid = (ownerSid == null || ownerSid < 0) ? null : ownerSid;
-            // The bundle stores owner as an object {sid}; keep that shape so code
-            // reading `obj.owner.sid` keeps working, but resolve the live player
-            // lazily through the manager when a feature needs team/name.
-            this.owner = this.ownerSid == null ? null : { sid: this.ownerSid };
-            this.name = data.name != null ? data.name
-                : type === 0 ? "Tree"
-                : (type === 1 && y >= 12000) ? "Cactus"
-                : type === 1 ? "Bush"
-                : type === 2 ? "Stone"
-                : type === 3 ? "Gold Stone"
-                : null;
+            this.id = o.id;
+            this.owner = owner;
+            this.ownerSid = owner && owner.sid != null ? owner.sid : null;
+            this.name = o.name ? o.name : this.type === 0 ? "Tree" : this.type === 1 && this.y >= 12e3 ? "Cactus" : this.type === 1 ? "Bush" : this.type === 2 ? "Stone" : this.type === 3 ? "Gold Stone" : null;
             this.isItem = this.id != null;
-            this.group = data.group;
-            this.health = this.maxHealth = data.health;
-            this.doUpdate = data.doUpdate;
-            this.colDiv = data.colDiv || 1;
-            this.blocker = data.blocker;
-            this.ignoreCollision = data.ignoreCollision;
-            this.dontGather = data.dontGather;
-            this.hideFromEnemy = data.hideFromEnemy;
-            this.friction = data.friction;
-            this.projDmg = data.projDmg;
-            this.dmg = data.dmg;
-            this.pDmg = data.pDmg;
-            this.pps = data.pps;
-            this.zIndex = data.zIndex || 0;
-            this.turnSpeed = data.turnSpeed;
-            this.req = data.req;
-            this.trap = data.trap;
-            this.healCol = data.healCol;
-            this.teleport = data.teleport;
-            this.boostSpeed = data.boostSpeed;
-            this.projectile = data.projectile;
-            this.shootRange = data.shootRange;
-            this.shootRate = data.shootRate;
-            this.shootCount = this.shootRate;
-            this.spawnPoint = data.spawnPoint;
-            // Layer resolution (gameObject.js): group.layer, else by type.
+            this.group = o.group;
+            this.health = this.maxHealth = o.health;
+            this.health2 = 0;
+            this.buildingID = o.buildingID;
+            this.setType = o.setType;
             this.layer = 2;
-            if (this.group != null) this.layer = this.group.layer;
-            else if (type === 0) this.layer = 3;
-            else if (type === 2) this.layer = 0;
-            else if (type === 4) this.layer = -1;
-            // Derived collision scales, exactly like the bundle's GameObject.
-            this.realScale = (this.type <= 1 && this.type !== null) ? this.scale * 0.6 : this.scale;
-            // Runtime combat fields.
-            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;  // turret reload countdown
-            this.shot = 0;          // last turret fire timestamp
-            this.lastHit = 0;       // last wiggle (hit) timestamp
-            this.distance = 0;      // scratch: center-distance to a query point
+            this.group != null ? this.layer = this.group.layer : this.type == 0 ? this.layer = 3 : this.type == 2 ? this.layer = 0 : this.type == 4 && (this.layer = -1);
+            this.colDiv = o.colDiv || 1;
+            this.blocker = o.blocker;
+            this.ignoreCollision = o.ignoreCollision;
+            this.dontGather = o.dontGather;
+            this.hideFromEnemy = o.hideFromEnemy;
+            this.friction = o.friction;
+            this.projDmg = o.projDmg;
+            this.dmg = o.dmg;
+            this.pDmg = o.pDmg;
+            this.pps = o.pps;
+            this.zIndex = o.zIndex || 0;
+            this.turnSpeed = o.turnSpeed;
+            this.req = o.req;
+            this.trap = o.trap;
+            this.healCol = o.healCol;
+            this.teleport = o.teleport;
+            this.boostSpeed = o.boostSpeed;
+            this.projectile = o.projectile;
+            this.opacity = o.name == "pit trap" ? 1 : 1;
+            this.opacity2 = 1;
+            this.fadingOut = false;
             this.dmgpot = 0;
             this.assumeBreak = false;
+            this.ignoreWiggleDirs = [];
+            this.wiggleDirs = [];
+            this.shootRange = o.shootRange;
+            this.shootRate = o.shootRate;
+            this.shootCount = this.shootRate;
+            this.spawnPoint = o.spawnPoint;
+            this.tick = hooksRef.tick();
+            this.preplace = preplace;
+            this.fake = fake;
+            this.bot = bot;
+            this.elevation = typeof this.type === "number" && this.owner === null || this.name == "turret" || this?.group?.name === "mill" ? 2 : 1;
+            this.restricter = restricter;
+            this.realScale = this.type <= 1 && this.type !== null ? this.scale * 0.6 : this.scale;
+            const te = hooksRef.te || (() => false);
+            this.pathScale = this.type === 1 && this.y <= 12e3 ? this.scale * 0.6 + 15 : this.type === 0 ? this.scale * 0.7 + 10 : this.dmg && !te(this?.owner?.sid) || this.teleport || this.boostSpeed ? this.scale + 47 : this.type === 1 && this.y >= 12e3 ? this.scale * 0.55 + 47 : this.name == "pit trap" && !te(this?.owner?.sid) ? this.scale + 38 : this.ignoreCollision ? 0 : this.scale + 10;
+            // loader runtime fields
+            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;
+            this.shot = 0;
+            this.lastHit = 0;
+            this.distance = 0;
             return this;
         }
 
-        changeHealth(amount) { this.health += amount; return this.health <= 0; }
+        changeHealth(e) { this.health += e; return this.health <= 0; }
 
-        // Collision scale the way the server computes it for placement checks.
-        getScale(sM, ig) {
-            sM = sM || 1;
-            return this.scale * (this.isItem || this.type === 2 || this.type === 3 || this.type === 4 ? 1 : 0.6 * sM) * (ig ? 1 : this.colDiv);
+        getScale(e, t) {
+            e = e || 1;
+            return this.scale * (this.isItem || this.type == 2 || this.type == 3 || this.type == 4 ? 1 : 0.6 * e) * (t ? 1 : this.colDiv);
         }
-    }
 
-    // pathScale needs to know whether the owner is an enemy, so it is computed by
-    // the manager (which knows the self/team) rather than on the object itself.
-    function computePathScale(o, isEnemyOwner) {
-        if (o.type === 1 && o.y <= 12000) return o.scale * 0.6 + 15;      // bush
-        if (o.type === 0) return o.scale * 0.7 + 10;                       // tree
-        if (o.dmg && isEnemyOwner) return o.scale + 47;                    // enemy spike
-        if (o.teleport || o.boostSpeed) return o.scale + 47;
-        if (o.type === 1 && o.y >= 12000) return o.scale * 0.55 + 47;      // cactus
-        if (o.name === "pit trap" && isEnemyOwner) return o.scale + 38;    // enemy trap
-        if (o.ignoreCollision) return 0;
-        return o.scale + 10;
+        visibleToPlayer(e) {
+            return !this.hideFromEnemy || this.owner && (this.owner == e || this.owner.team && e.team == this.owner.team);
+        }
     }
 
     function createObjectManager(env) {
@@ -147,9 +148,12 @@
             return -1;
         }
 
+        const removeTaps = new Set();   // fn(obj, cause) just before an object is forgotten
+        function tapRemove(o, cause) { for (const fn of Array.from(removeTaps)) { try { fn(o, cause); } catch (e) { /* ignore */ } } }
         function removeSid(sid) {
             const o = byId.get(sid);
             if (!o) return;
+            tapRemove(o, "killed");
             byId.delete(sid);
             const i = indexOfSid(sid);
             if (i >= 0) list.splice(i, 1);
@@ -179,10 +183,14 @@
         // ---- add one object (from "H"), mirroring the bundle's objectManager.add ----
         function addObject(sid, x, y, dir, scale, type, id, ownerSid) {
             const def = (id != null && id >= 0) ? data.item(id) : null;
-            let o = byId.get(sid);
-            if (!o) { o = new GameObject(sid); byId.set(sid, o); list.push(o); }
-            o.init(x, y, dir, scale, type, def, ownerSid);
-            o.pathScale = computePathScale(o, isEnemyObject(o));
+            // The bundle's objectManager.add always creates a NEW object (no reuse
+            // by sid) and pushes it to kh.
+            const o = new GameObject(sid);
+            const old = byId.get(sid);
+            if (old) { const k = list.indexOf(old); if (k >= 0) list.splice(k, 1); }
+            byId.set(sid, o); list.push(o);
+            // The bundle's J2 (s2c "H"): add(sid, x, y, dir, scale, type, item, true, owner >= 0 ? {sid} : null)
+            o.init(x, y, dir, scale, type, def, ownerSid >= 0 && ownerSid != null ? { sid: ownerSid } : null);
             return o;
         }
 
@@ -202,7 +210,7 @@
             const owner = p && p.args && p.args[0];
             if (owner == null) return;
             for (let i = list.length - 1; i >= 0; i--) {
-                if (list[i].ownerSid === owner) { byId.delete(list[i].sid); list.splice(i, 1); }
+                if (list[i].ownerSid === owner) { tapRemove(list[i], "ownerLeft"); byId.delete(list[i].sid); list.splice(i, 1); }
             }
         }
         function onWiggle(p) {
@@ -252,7 +260,10 @@
         MooMoo.on("wiggle", onWiggle);
         MooMoo.on("turretShoot", onTurretShoot);
         MooMoo.on("itemCount", onItemCount);
-        MooMoo.on("playersUpdate", update);
+        // Turret countdowns + spin advance once per tick. The combat engine drives
+        // this at the bundle's point in the tick (k4); without it, the "a" packet does.
+        let driven = false;
+        MooMoo.on("playersUpdate", () => { if (!driven) update(); });
         MooMoo.on("setup", clearAll);
         MooMoo.on("died", clearAll);
 
@@ -311,6 +322,10 @@
             itemCount: (gid) => itemCounts[gid] || 0,
             clear: clearAll,
             update,
+            setDriven: (b) => { driven = !!b; },
+            setFriendlyTest: (fn) => { hooksRef.te = fn; },
+            onRemove: (fn) => { removeTaps.add(fn); return () => removeTaps.delete(fn); },
+            setTickSource: (fn) => { hooksRef.tick = fn; },
             TURRET_RELOAD
         };
     }

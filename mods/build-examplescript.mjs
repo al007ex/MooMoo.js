@@ -1,6 +1,10 @@
 /*
- * Wraps mods/examplescript.js into an installable Tampermonkey userscript that
- * @requires the loader. Run:  node mods/build-examplescript.mjs [loaderUrl]
+ * Builds the examplescript mod.
+ *   1. concatenates mods/examplescript/*.js (in file-name order) into
+ *      mods/examplescript.js — the mod the live tests load directly;
+ *   2. wraps that into mods/examplescript.user.js, an installable Tampermonkey
+ *      userscript that @requires the loader.
+ * Run:  node mods/build-examplescript.mjs [loaderUrl]
  * The loader URL defaults to the pastebin raw link; pass your own to override.
  */
 import fs from "node:fs";
@@ -9,13 +13,21 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const loaderUrl = process.argv[2] || "https://pastebin.com/raw/jWDq3mmF";
-const plugin = fs.readFileSync(path.join(here, "examplescript.js"), "utf8");
+
+const partsDir = path.join(here, "examplescript");
+const parts = fs.readdirSync(partsDir).filter((f) => f.endsWith(".js")).sort();
+const plugin = parts.map((f) => {
+    const code = fs.readFileSync(path.join(partsDir, f), "utf8");
+    return "/* ===== examplescript/" + f + " ===== */\n" + code.replace(/\s+$/, "") + "\n";
+}).join("\n");
+fs.writeFileSync(path.join(here, "examplescript.js"), plugin);
+console.log("wrote mods/examplescript.js  (" + parts.length + " parts, " + plugin.split("\n").length + " lines)");
 
 const out = `// ==UserScript==
 // @name         moomoo.js — Example Script
 // @namespace    moomoo.js
-// @version      0.1.0
-// @description  Ported combat/heal features for your private server. Config menu on the \` key.
+// @version      1.0.0
+// @description  The bundle's combat / heal / visuals features for your private server. Config menu on Escape.
 // @author       you
 // @match        *://*/*
 // @run-at       document-start

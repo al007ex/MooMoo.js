@@ -31,7 +31,8 @@
             Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
             ConfigMenu: require("./configmenu.js"),
-            Outgoing: require("./outgoing.js")
+            Outgoing: require("./outgoing.js"),
+            Store: require("./store.js")
         }
         : null;
     const value = factory(deps);
@@ -60,7 +61,8 @@
             Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
             ConfigMenu: g.MooMooConfigMenu,
-            Outgoing: g.MooMooOutgoing
+            Outgoing: g.MooMooOutgoing,
+            Store: g.MooMooStore
         };
     }
 
@@ -179,6 +181,12 @@
             try { objects = D.ObjectManager.createObjectManager({ MooMoo, data: D.GameData }); }
             catch (e) { errorSink(e); }
         }
+        // Owned / equipped hats + accessories (the bundle's Nn/On/$t/Zt + equip()).
+        let store = null;
+        if (D.Store && D.GameData) {
+            try { store = D.Store.createStore({ MooMoo, data: D.GameData }); }
+            catch (e) { errorSink(e); }
+        }
         // The combat engine reconstructs per-player prediction/reload/bull state on
         // every server tick (the bundle's updatePlayers). Features read it as ctx.combat.
         let combat = null;
@@ -189,7 +197,7 @@
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat, net: out });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat, net: out, store });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -310,6 +318,7 @@
             active = st;
             if (MooMoo._reset) MooMoo._reset();
             if (out) out.reset();
+            if (store) store.reset();
             getProtocolModule().then((mod) => {
                 try {
                     st.session = new D.Protocol.ClientSession(payload, mod);
@@ -387,6 +396,7 @@
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;
         MooMooLoader.net = out;
+        MooMooLoader.store = store;
         MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).

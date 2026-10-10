@@ -96,10 +96,12 @@
                         pl.weaponIndex = at.weaponIndex; pl.buildIndex = at.buildIndex;
                         pl.variant = at.variant; pl.team = at.team; pl.isLeader = at.isLeader;
                         pl.skin = at.skin; pl.tail = at.tail;
+                        pl.icon = at.icon; pl.zIndex = at.zIndex;
                         if (at.sid === self.sid) {
                             self.weaponIndex = at.weaponIndex; self.buildIndex = at.buildIndex;
                             self.hat = at.skin; self.accessory = at.tail; self.team = at.team;
                             self.weaponVariant = at.variant;
+                            self.isLeader = at.isLeader; self.icon = at.icon; self.zIndex = at.zIndex;
                         }
                     }
                     for (const sid of payload.hidden) {
