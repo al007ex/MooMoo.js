@@ -1,0 +1,21 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "NODE_ENV=development node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "bad-words": "^4.0.0",
+    "express": "^5.1.0",
+    "msgpack-lite": "^0.1.26",
+    "nanotimer": "^0.3.15",
+    "ws": "^8.18.2"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "moomoo-nurotech",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MooMoo.io private server running the official client",
+  "license": "GNU",
+  "scripts": {
+    "build": "node tools/build-official-client.mjs",
+    "build:no-anti-debug": "node tools/build-official-client.mjs --no-anti-debug",
+    "build:legacy": "npm run build --workspace client",
+    "start": "npm run start --workspace server",
+    "dev": "npm run dev --workspace server",
+    "console": "node tools/console.mjs",
+    "start:new-build": "ROTATE_BUILD=1 npm run start --workspace server"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "dependencies": {
+    "cors": "^2.8.5",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.29.1"
+  }
+}

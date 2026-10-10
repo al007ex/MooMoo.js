@@ -1,0 +1,31 @@
+{
+  "6ac51a9570cfdf4826bc0381": {
+    "reports": [],
+    "flags": [
+      {
+        "at": 1791302302844,
+        "signal": "DEBUGGER_PAUSED"
+      },
+      {
+        "at": 1791306620044,
+        "signal": "DEBUGGER_PAUSED"
+      }
+    ],
+    "verdict": null
+  },
+  "6ac7c30de6d4bcf679536c95": {
+    "reports": [
+      {
+        "at": 1791476718671,
+        "by": {
+          "name": "UiTester",
+          "kind": "account"
+        },
+        "sessionReports": 1,
+        "reason": "Bot"
+      }
+    ],
+    "flags": [],
+    "verdict": null
+  }
+}
