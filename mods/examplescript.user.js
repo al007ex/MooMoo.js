@@ -1,16 +1,17 @@
 // ==UserScript==
 // @name         moomoo.js — Example Script
 // @namespace    moomoo.js
-// @version      1.0.0
+// @version      1.1.0
 // @description  The bundle's combat / heal / visuals features for your private server. Config menu on Escape.
 // @author       you
 // @match        *://*/*
 // @run-at       document-start
-// @require      https://pastebin.com/raw/jWDq3mmF
+// @require      https://pastebin.com/raw/jWDq3mmF?v=1.1.0
 // @grant        none
 // ==/UserScript==
 //
 // This @requires the loader above (re-upload the freshly built loader there).
+// Tampermonkey caches @require files; the ?v= part makes it fetch the new loader.
 // EDIT @match to your server's origin if you want to scope it.
 
 /* ===== examplescript/00-head.js ===== */
@@ -109,6 +110,30 @@
             //   Dn last move dir    $t / Zt hat / tail on       Nn / On owned hats / tails
             //   He/We packets this 9-tick window / minute (the bundle's own limiter)
             //   m  key + mouse state (m.lc / m.rc / m.mc, m[key])   Ct "e" auto-hit   In "l" auto-push gate
+            // ---- loader check: this mod needs loader 1.1.0+ (store, tick hooks, outgoing takeover) ----
+            {
+                const w0 = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
+                const lv = (w0.MooMooLoader && w0.MooMooLoader.version) || "0";
+                const ok = ctx.store && ctx.combat && typeof ctx.combat.onTickStart === "function" && typeof ctx.onOutgoing === "function";
+                if (!ok) {
+                    const msg = "Example Script needs moomoo.js loader 1.1.0 or newer, but loader " + lv + " is running. " +
+                        "Re-upload loader/dist/moomoo-loader.user.js to your pastebin, then reinstall examplescript.user.js " +
+                        "(Tampermonkey keeps the old loader cached until the script's version changes).";
+                    console.error("[examplescript] " + msg);
+                    try {
+                        const d0 = w0.document;
+                        const show = () => {
+                            if (!d0.body) return setTimeout(show, 200);
+                            const n0 = d0.createElement("div");
+                            n0.textContent = msg;
+                            n0.style.cssText = "position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:999999;max-width:720px;padding:10px 14px;border-radius:8px;background:#5c0620;color:#fff;font:14px sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.5)";
+                            d0.body.appendChild(n0);
+                        };
+                        show();
+                    } catch (e) { /* no DOM */ }
+                    return;
+                }
+            }
             const combat = ctx.combat, objects = ctx.objects, store = ctx.store, net = ctx.net, data = ctx.data;
             const win = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
             // a real DOM, or null (the mod also runs headless in the node test harness)

@@ -24,7 +24,7 @@ import { createBot, tick, waitFor } from "./live-client.mjs";
 if (!available) { console.log("SKIP examplescript.live: server not found"); process.exit(0); }
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "..", "..");
-const LOADER = fs.readFileSync(path.join(ROOT, "loader", "dist", "moomoo-loader.user.js"), "utf8");
+const LOADER = fs.readFileSync(process.env.LOADER_PATH || path.join(ROOT, "loader", "dist", "moomoo-loader.user.js"), "utf8");
 const MOD = fs.readFileSync(path.join(ROOT, "mods", "examplescript.js"), "utf8");
 const SHOT = process.env.SHOT || "/tmp/mmj-es.png";
 

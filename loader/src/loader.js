@@ -42,7 +42,7 @@
 })(typeof self !== "undefined" ? self : this, function (nodeDeps) {
     "use strict";
 
-    const VERSION = "1.0.0";
+    const VERSION = "1.1.0";
 
     // Resolve dependencies either from Node require (tests) or page globals (bundle).
     function resolveDeps(win) {

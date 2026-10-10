@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const LOADER_MIN = "1.1.0";   // the loader this mod needs (bump with loader/src/loader.js VERSION)
 const loaderUrl = process.argv[2] || "https://pastebin.com/raw/jWDq3mmF";
 
 const partsDir = path.join(here, "examplescript");
@@ -26,16 +27,17 @@ console.log("wrote mods/examplescript.js  (" + parts.length + " parts, " + plugi
 const out = `// ==UserScript==
 // @name         moomoo.js — Example Script
 // @namespace    moomoo.js
-// @version      1.0.0
+// @version      ${LOADER_MIN}
 // @description  The bundle's combat / heal / visuals features for your private server. Config menu on Escape.
 // @author       you
 // @match        *://*/*
 // @run-at       document-start
-// @require      ${loaderUrl}
+// @require      ${loaderUrl}?v=${LOADER_MIN}
 // @grant        none
 // ==/UserScript==
 //
 // This @requires the loader above (re-upload the freshly built loader there).
+// Tampermonkey caches @require files; the ?v= part makes it fetch the new loader.
 // EDIT @match to your server's origin if you want to scope it.
 
 ${plugin}
