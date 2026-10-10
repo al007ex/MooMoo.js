@@ -88,6 +88,14 @@
             function sync() {
                 v = combat.v; Y = combat.Y; vn = combat.vn; Sn = combat.Sn; Xt = combat.Xt; Q = combat.Q;
                 en = combat.en; _n = combat.sandbox;
+                ng = combat.ng; et = combat.et; py = combat.py; tn = combat.tn;
+            }
+            // cleanup-tracked listeners (the mod can be turned off and on again)
+            function own(unsub) { if (typeof unsub === "function") ctx.onCleanup(unsub); return unsub; }
+            function listen(target, type, fn, opts) {
+                if (!target || !target.addEventListener) return;
+                target.addEventListener(type, fn, opts);
+                ctx.onCleanup(() => target.removeEventListener(type, fn, opts));
             }
             const Hg = combat.Hg, jg = combat.jg, Wg = combat.Wg, te = combat.te, se = combat.se, B = combat.B,
                 S4 = combat.S4, Dy = combat.Dy, P3 = combat.P3, L3 = combat.L3, X5 = combat.X5, Ne = combat.Ne,
@@ -122,18 +130,8 @@
             const ts = { players: [], bot: null, builds: [] }, es = { players: [], builds: [], rPlayers: [], isDoing: false };
             const G = { do: null, val: 0, play: false };
             let Je = [], Ze = [], $e = [], Ve2 = [];
-            let ng = [];
+            let ng = combat.ng, et = combat.et, py = combat.py;   // engine-owned, mirrored by sync()
             const Nn = store.ownedHats, On = store.ownedTails;
             const getHat = () => store.hat, getTail = () => store.tail;   // $t / Zt
             let Hn_ = false;   // Ki ("send ws" relay) never connects in the bundle (T5 bug) -> Hn stays false
 
-            // window.pingTime is set by the official client itself every 2.5s (the
-            // bundle set it every 400ms). xt is the bundle's 3-sample average.
-            function pingNow() { return typeof win.pingTime === "number" ? win.pingTime : (net ? net.ping : 0); }
-            ctx.on("pong", function (pk) {
-                const e = pk && pk.ms != null ? pk.ms : pingNow();   // our listener runs before the client updates window.pingTime
-                bn = e;
-                yt.push(e);
-                if (yt.length >= 4) yt.shift();
-                xt = yt.reduce((a, b2) => a + b2, 0) / yt.length;
-            });

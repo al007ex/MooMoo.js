@@ -111,6 +111,9 @@
             equip, equipHat: equipHatRaw, equipTail: equipTailRaw, buyHat, buyTail,
             onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
             reset,
+            // the bundle's "m" debug key set $t / Zt back to null: equip() then
+            // re-sends whatever it is asked for next
+            forgetEquipped: () => { hat = null; tail = null; },
             FREE_HATS, FREE_TAILS, BUY, EQUIP
         };
     }

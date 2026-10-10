@@ -38,6 +38,7 @@
                     case "S": return [];
                     case "H": return isInt(t[0]) ? [t[0]] : null;
                     case "e": return [];
+                    case "0": return [];
                     default: return null;     // the old protocol's other packets have no use here
                 }
             }

@@ -113,7 +113,8 @@
         let Ve = [];                         // A4() resolvers
         let pn = [];                         // deferred packet handlers (run next tick)
         const hooks = {
-            preTick: new Set(), postReconstruct: new Set(), frame: new Set(), framePlayer: new Set(),
+            preTick: new Set(), tickStart: new Set(), postReconstruct: new Set(), afterSleep: new Set(),
+            deferredFlushed: new Set(), afterPlayers: new Set(), frame: new Set(), frameLate: new Set(), framePlayer: new Set(),
             projectile: new Set(), playerAdded: new Set(), playerLeft: new Set(), buildingDamage: new Set(),
             died: new Set(), setup: new Set()
         };
@@ -709,7 +710,7 @@
                 const rr = [];
                 const a = Ln[c];
                 const owner = Hg(a.owner.sid);
-                if (!owner) { Ln.splice(c, 1); c--; continue; }
+                if (!owner) { Ln.splice(c, 1); continue; }        // (the bundle skips the next one too)
                 const e = J.filter((e2) => e2.visible && !(typeof owner.team == "string" && e2.team == owner.team) && e2.sid != owner.sid);
                 const l = Xt.filter((e2) => !e2.ignoreCollision && e2.elevation > a.avoid).concat(nAnimals, e);
                 for (let i = 0; i < l.length; i++) {
@@ -858,6 +859,7 @@
             runHooks(hooks.preTick, payload);
             tn = Date.now();
             v++;
+            runHooks(hooks.tickStart, payload);
             state.ss.length = state.ns.length = state.is.length = vn.length = Sn.length = 0;
             vn = []; Sn = [];
             for (let e = J.length; e--;) {
@@ -889,6 +891,7 @@
                 q.isLeader = !!q.isLeader;
                 q.skinIndex = isSelf ? (z.hat || 0) : (q.skin || 0);
                 if (q.skinIndex != 45) { q.shameTimer = 30; q.clowned = false; }
+                q.skinIndex == 45 && q.shameTimer == 30 && x5(q);
                 q.tailIndex = isSelf ? (z.accessory || 0) : (q.tail || 0);
                 q.iconIndex = q.icon != null ? q.icon : q.iconIndex;
                 q.visible = true;
@@ -928,11 +931,13 @@
                 Xt = list.filter((e) => (e.distance = X5(e.x - z.x2, e.y - z.y2)) <= 2e3);
                 Q = Xt.filter((e) => e.distance <= 800);
             }
+            runHooks(hooks.afterSleep, payload);
             // ---- A4 + deferred handlers ----
             const ve = Ve; Ve = [];
             ve.forEach((e) => e());
             const pq = pn; pn = [];
             pq.forEach((e) => e.id(...e.data));
+            runHooks(hooks.deferredFlushed, payload);
             // ---- per-player frame upkeep (bundle ~16037-16073) ----
             for (let e = J.length; e--;) {
                 const i = J[e];
@@ -956,6 +961,7 @@
                 if (i.health === 100) i.deathDmgs = [];
                 i.bleed = i.lastBull ? ((v - i.lastBull + (i.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
             }
+            runHooks(hooks.afterPlayers, payload);
             // ---- target ----
             for (let e = vn.length; e--;) vn[e].distance = D((vn[e].x2 - z.x2) ** 2 + (vn[e].y2 - z.y2) ** 2);
             vn = vn.sort((a, b) => a.distance - b.distance);
@@ -963,17 +969,27 @@
             xi.player = J.find((e) => e.sid === xi.ID && e.visible) || null;
             if (xi.player) xi.player.positions = a4(xi.player, 6);
             else if (Y) { xi.player = Y; xi.player.positions = a4(xi.player, 6); }
-            by();
-            if (objects) objects.update(z.delta || ce);
+            if (objects) objects.update(z.delta);          // k4(): turret reload timers
             runHooks(hooks.frame, payload);
+            by();
+            runHooks(hooks.frameLate, payload);
+        }
+
+        // ---- x5: a clowned player's shame timer, counted down once per tick ----
+        async function x5(e, t = Hg(e.sid)) {
+            if (e.shameTimer <= 0 || e.skinIndex != 45 || t == null || t == undefined) return;
+            t.shameCount = 0;
+            t.clowned = true;
+            t.shameTimer -= e.delta / 1e3;
+            await A4();
+            x5(t);
         }
 
         // ---- lifecycle ----
         function onSetup(p) {
             en = true;
-            const q = z;
-            if (J.indexOf(q) < 0) J.push(q);
-            q.sid = p.sid;
+            // (you join J in addPlayer, like the bundle; setupGame only flags the game on)
+            z.sid = p.sid;
         }
         function onDied() {
             en = false;
@@ -1035,8 +1051,13 @@
             K, ce, u, EN, h, O3,
             // hooks (feature layers run here, in the bundle's order)
             onPreTick: hookAdder("preTick"),
+            onTickStart: hookAdder("tickStart"),
             onPostReconstruct: hookAdder("postReconstruct"),
+            onAfterSleep: hookAdder("afterSleep"),
+            onDeferredFlushed: hookAdder("deferredFlushed"),
+            onAfterPlayers: hookAdder("afterPlayers"),
             onFrame: hookAdder("frame"),
+            onFrameLate: hookAdder("frameLate"),
             onFramePlayer: hookAdder("framePlayer"),
             onProjectile: hookAdder("projectile"),
             onPlayerAdded: hookAdder("playerAdded"),

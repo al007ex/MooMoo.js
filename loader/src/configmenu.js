@@ -218,19 +218,25 @@
 
         overlay.addEventListener("click", hide);
         fab.addEventListener("click", toggle);
-        // hotkey + escape
-        if (input) {
-            input.onKey(toggleKey, () => toggle(), { preventDefault: true });
-        } else {
-            win.addEventListener("keydown", (e) => { if (e.isTrusted === false) return; const k = e.key === " " ? "space" : e.key; if (k === toggleKey) { e.preventDefault(); toggle(); } }, true);
-        }
-        win.addEventListener("keydown", (e) => { if (open && e.key === "Escape") hide(); }, true);
+        // hotkey + escape. The toggle key is read on every press so a mod can
+        // change it (the bundle's menu opened and closed on Escape). When the
+        // toggle key isn't Escape, Escape still closes an open menu.
+        win.addEventListener("keydown", (e) => {
+            if (e.isTrusted === false) return;
+            const k = e.key === " " ? "space" : e.key;
+            if (k === toggleKey) { e.preventDefault(); toggle(); }
+            else if (open && e.key === "Escape") hide();
+        }, true);
 
         // Re-render on registry changes (new mod, external toggle), but not for our
         // own edits (so a slider drag isn't interrupted).
         MooMoo.onModsChanged(() => { if (open && !suppressRerender) render(); });
 
-        return { show, hide, toggle, render, setToggleKey: (k) => { toggleKey = k; }, isOpen: () => open };
+        return {
+            show, hide, toggle, render, isOpen: () => open,
+            get toggleKey() { return toggleKey; },
+            setToggleKey: (k) => { toggleKey = k; fab.title = "moomoo.js config (" + toggleKey + ")"; }
+        };
     }
 
     return { installConfigMenu };

@@ -295,7 +295,7 @@
     // ---- projectiles ----
     const projectiles = [
         { indx: 0, layer: 0, src: "arrow_1", dmg: 25, speed: 1.6, scale: 103, range: 1000 },
-        { indx: 1, layer: 1, dmg: 25, scale: 20 },
+        { indx: 1, layer: 1, dmg: 25, speed: 1.5, scale: 20 },   // turret: speed 1.5 is the bundle's edit (range stays undefined, as there)
         { indx: 0, layer: 0, src: "arrow_1", dmg: 35, speed: 2.5, scale: 103, range: 1200 },
         { indx: 0, layer: 0, src: "arrow_1", dmg: 30, speed: 2, scale: 103, range: 1200 },
         { indx: 1, layer: 1, dmg: 16, scale: 20 },
@@ -303,24 +303,28 @@
     ];
 
     // ---- weapons (id = index; type 0 = primary/melee, type 1 = secondary) ----
+    // Server stats, plus the fields the bundle's combat math added to the table:
+    // uF (upgrade-compatibility ids, read by its damage predictor), dmg/projSpd on
+    // the ranged weapons, shield dmg 0 / speed 1 (keeps its reload finite), and
+    // spdMult 1 on the tool hammer and bat.
     // `speed` is the swing/reload time in ms. `spdMult` is the movement multiplier.
     const weapons = [
-        { id: 0, type: 0, uF: [], name: "tool hammer", desc: "tool for gathering all resources", src: "hammer_1", length: 140, width: 140, xOff: -3, yOff: 18, dmg: 25, range: 65, gather: 1, speed: 300 },
+        { id: 0, type: 0, spdMult: 1, uF: [], name: "tool hammer", desc: "tool for gathering all resources", src: "hammer_1", length: 140, width: 140, xOff: -3, yOff: 18, dmg: 25, range: 65, gather: 1, speed: 300 },
         { id: 1, type: 0, uF: [0], age: 2, name: "hand axe", desc: "gathers resources at a higher rate", src: "axe_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 30, spdMult: 1, range: 70, gather: 2, speed: 400 },
         { id: 2, type: 0, uF: [1, 0, 15, 12, 13, null], age: 8, pre: 1, name: "great axe", desc: "deal more damage and gather more resources", src: "great_axe_1", length: 140, width: 140, xOff: -8, yOff: 25, dmg: 35, spdMult: 1, range: 75, gather: 4, speed: 400 },
         { id: 3, type: 0, uF: [0, 4], age: 2, name: "short sword", desc: "increased attack power but slower move speed", src: "sword_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 46, dmg: 35, spdMult: 0.85, range: 110, gather: 1, speed: 300 },
         { id: 4, type: 0, uF: [3, 0, 15, 12, 13, null, 9], age: 8, pre: 3, name: "katana", desc: "greater range and damage", src: "samurai_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 59, dmg: 40, spdMult: 0.8, range: 118, gather: 1, speed: 300 },
         { id: 5, type: 0, uF: [0], age: 2, name: "polearm", desc: "long range melee weapon", src: "spear_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 53, dmg: 45, knock: 0.2, spdMult: 0.82, range: 142, gather: 1, speed: 700 },
-        { id: 6, type: 0, uF: [0], age: 2, name: "bat", desc: "fast long range melee weapon", src: "bat_1", iPad: 1.3, length: 110, width: 180, xOff: -8, yOff: 53, dmg: 20, knock: 0.7, range: 110, gather: 1, speed: 300 },
+        { id: 6, type: 0, spdMult: 1, uF: [0], age: 2, name: "bat", desc: "fast long range melee weapon", src: "bat_1", iPad: 1.3, length: 110, width: 180, xOff: -8, yOff: 53, dmg: 20, knock: 0.7, range: 110, gather: 1, speed: 300 },
         { id: 7, type: 0, uF: [0], age: 2, name: "daggers", desc: "really fast short range weapon", src: "dagger_1", iPad: 0.8, length: 110, width: 110, xOff: 18, yOff: 0, dmg: 20, knock: 0.1, range: 65, gather: 1, hitSlow: 0.1, spdMult: 1.13, speed: 100 },
         { id: 8, type: 0, uF: [0], age: 2, name: "stick", desc: "great for gathering but very weak", src: "stick_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 1, spdMult: 1, range: 70, gather: 7, speed: 400 },
-        { id: 9, type: 1, uF: [null], age: 6, name: "hunting bow", desc: "bow used for ranged combat and hunting", src: "bow_1", req: ["wood", 4], length: 120, width: 120, xOff: -6, yOff: 0, projectile: 0, spdMult: 0.75, speed: 600 },
+        { id: 9, type: 1, dmg: 25, projSpd: 1.6, uF: [null], age: 6, name: "hunting bow", desc: "bow used for ranged combat and hunting", src: "bow_1", req: ["wood", 4], length: 120, width: 120, xOff: -6, yOff: 0, projectile: 0, spdMult: 0.75, speed: 600 },
         { id: 10, type: 1, uF: [null], age: 6, name: "great hammer", desc: "hammer used for destroying structures", src: "great_hammer_1", length: 140, width: 140, xOff: -9, yOff: 25, dmg: 10, spdMult: 0.88, range: 75, sDmg: 7.5, gather: 1, speed: 400 },
-        { id: 11, type: 1, uF: [null], age: 6, name: "wooden shield", desc: "blocks projectiles and reduces melee damage", src: "shield_1", length: 120, width: 120, shield: 0.2, xOff: 6, yOff: 0, spdMult: 0.7 },
-        { id: 12, type: 1, uF: [9, null, 4], age: 8, pre: 9, name: "crossbow", desc: "deals more damage and has greater range", src: "crossbow_1", req: ["wood", 5], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 2, spdMult: 0.7, speed: 700 },
-        { id: 13, type: 1, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "repeater crossbow", desc: "high firerate crossbow with reduced damage", src: "crossbow_2", req: ["wood", 10], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 3, spdMult: 0.7, speed: 230 },
+        { id: 11, type: 1, dmg: 0, speed: 1, uF: [null], age: 6, name: "wooden shield", desc: "blocks projectiles and reduces melee damage", src: "shield_1", length: 120, width: 120, shield: 0.2, xOff: 6, yOff: 0, spdMult: 0.7 },
+        { id: 12, type: 1, dmg: 35, projSpd: 2.5, uF: [9, null, 4], age: 8, pre: 9, name: "crossbow", desc: "deals more damage and has greater range", src: "crossbow_1", req: ["wood", 5], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 2, spdMult: 0.7, speed: 700 },
+        { id: 13, type: 1, dmg: 30, projSpd: 2, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "repeater crossbow", desc: "high firerate crossbow with reduced damage", src: "crossbow_2", req: ["wood", 10], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 3, spdMult: 0.7, speed: 230 },
         { id: 14, type: 1, uF: [null], age: 6, name: "mc grabby", desc: "steals resources from enemies", src: "grab_1", length: 130, width: 210, xOff: -8, yOff: 53, dmg: 0, steal: 250, knock: 0.2, spdMult: 1.05, range: 125, gather: 0, speed: 700 },
-        { id: 15, type: 1, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "musket", desc: "slow firerate but high damage and range", src: "musket_1", req: ["stone", 10], aboveHand: true, rec: 0.35, armS: 0.6, hndS: 0.3, hndD: 1.6, length: 205, width: 205, xOff: 25, yOff: 0, projectile: 5, hideProjectile: true, spdMult: 0.6, speed: 1500 }
+        { id: 15, type: 1, dmg: 50, projSpd: 3.6, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "musket", desc: "slow firerate but high damage and range", src: "musket_1", req: ["stone", 10], aboveHand: true, rec: 0.35, armS: 0.6, hndS: 0.3, hndD: 1.6, length: 205, width: 205, xOff: 25, yOff: 0, projectile: 5, hideProjectile: true, spdMult: 0.6, speed: 1500 }
     ];
 
     // ---- items (buildables + food). id = index. `heal` added for food. ----
@@ -2001,12 +2005,22 @@
     // A world object, modelled exactly like the bundle's GameObject so features
     // can read the same fields. `data` is the item definition (gameData.item(id))
     // for placed buildings, or null for a natural resource (tree/bush/stone).
+    // The engine's "is this sid me or my clan" test (the bundle's te) and its tick
+    // counter, injected by the combat engine; until then, plain self/team checks.
+    const hooksRef = { te: null, tick: () => 0 };
+
     class GameObject {
         constructor(sid) { this.sid = sid; }
 
-        init(x, y, dir, scale, type, data, ownerSid) {
-            data = data || {};
+        // The bundle's Gl.init (3022-3025), argument for argument:
+        //   init(x, y, dir, scale, type, data, owner, bot, _, fake, restricter, preplace)
+        // owner is {sid} (or null / undefined), like the bundle's.
+        init(x, y, dir, scale, type, data, owner, bot, _unused, fake, restricter, preplace) {
+            const o = data || {};
+            this.sentTo = {};
+            this.gridLocations = [];
             this.active = true;
+            this.doUpdate = o.doUpdate;
             this.x = x;
             this.y = y;
             this.dir = dir;
@@ -2014,83 +2028,74 @@
             this.yWiggle = 0;
             this.scale = scale;
             this.type = type;
-            this.id = data.id;
-            this.ownerSid = (ownerSid == null || ownerSid < 0) ? null : ownerSid;
-            // The bundle stores owner as an object {sid}; keep that shape so code
-            // reading `obj.owner.sid` keeps working, but resolve the live player
-            // lazily through the manager when a feature needs team/name.
-            this.owner = this.ownerSid == null ? null : { sid: this.ownerSid };
-            this.name = data.name != null ? data.name
-                : type === 0 ? "Tree"
-                : (type === 1 && y >= 12000) ? "Cactus"
-                : type === 1 ? "Bush"
-                : type === 2 ? "Stone"
-                : type === 3 ? "Gold Stone"
-                : null;
+            this.id = o.id;
+            this.owner = owner;
+            this.ownerSid = owner && owner.sid != null ? owner.sid : null;
+            this.name = o.name ? o.name : this.type === 0 ? "Tree" : this.type === 1 && this.y >= 12e3 ? "Cactus" : this.type === 1 ? "Bush" : this.type === 2 ? "Stone" : this.type === 3 ? "Gold Stone" : null;
             this.isItem = this.id != null;
-            this.group = data.group;
-            this.health = this.maxHealth = data.health;
-            this.doUpdate = data.doUpdate;
-            this.colDiv = data.colDiv || 1;
-            this.blocker = data.blocker;
-            this.ignoreCollision = data.ignoreCollision;
-            this.dontGather = data.dontGather;
-            this.hideFromEnemy = data.hideFromEnemy;
-            this.friction = data.friction;
-            this.projDmg = data.projDmg;
-            this.dmg = data.dmg;
-            this.pDmg = data.pDmg;
-            this.pps = data.pps;
-            this.zIndex = data.zIndex || 0;
-            this.turnSpeed = data.turnSpeed;
-            this.req = data.req;
-            this.trap = data.trap;
-            this.healCol = data.healCol;
-            this.teleport = data.teleport;
-            this.boostSpeed = data.boostSpeed;
-            this.projectile = data.projectile;
-            this.shootRange = data.shootRange;
-            this.shootRate = data.shootRate;
-            this.shootCount = this.shootRate;
-            this.spawnPoint = data.spawnPoint;
-            // Layer resolution (gameObject.js): group.layer, else by type.
+            this.group = o.group;
+            this.health = this.maxHealth = o.health;
+            this.health2 = 0;
+            this.buildingID = o.buildingID;
+            this.setType = o.setType;
             this.layer = 2;
-            if (this.group != null) this.layer = this.group.layer;
-            else if (type === 0) this.layer = 3;
-            else if (type === 2) this.layer = 0;
-            else if (type === 4) this.layer = -1;
-            // Derived collision scales, exactly like the bundle's GameObject.
-            this.realScale = (this.type <= 1 && this.type !== null) ? this.scale * 0.6 : this.scale;
-            // Runtime combat fields.
-            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;  // turret reload countdown
-            this.shot = 0;          // last turret fire timestamp
-            this.lastHit = 0;       // last wiggle (hit) timestamp
-            this.distance = 0;      // scratch: center-distance to a query point
+            this.group != null ? this.layer = this.group.layer : this.type == 0 ? this.layer = 3 : this.type == 2 ? this.layer = 0 : this.type == 4 && (this.layer = -1);
+            this.colDiv = o.colDiv || 1;
+            this.blocker = o.blocker;
+            this.ignoreCollision = o.ignoreCollision;
+            this.dontGather = o.dontGather;
+            this.hideFromEnemy = o.hideFromEnemy;
+            this.friction = o.friction;
+            this.projDmg = o.projDmg;
+            this.dmg = o.dmg;
+            this.pDmg = o.pDmg;
+            this.pps = o.pps;
+            this.zIndex = o.zIndex || 0;
+            this.turnSpeed = o.turnSpeed;
+            this.req = o.req;
+            this.trap = o.trap;
+            this.healCol = o.healCol;
+            this.teleport = o.teleport;
+            this.boostSpeed = o.boostSpeed;
+            this.projectile = o.projectile;
+            this.opacity = o.name == "pit trap" ? 1 : 1;
+            this.opacity2 = 1;
+            this.fadingOut = false;
             this.dmgpot = 0;
             this.assumeBreak = false;
+            this.ignoreWiggleDirs = [];
+            this.wiggleDirs = [];
+            this.shootRange = o.shootRange;
+            this.shootRate = o.shootRate;
+            this.shootCount = this.shootRate;
+            this.spawnPoint = o.spawnPoint;
+            this.tick = hooksRef.tick();
+            this.preplace = preplace;
+            this.fake = fake;
+            this.bot = bot;
+            this.elevation = typeof this.type === "number" && this.owner === null || this.name == "turret" || this?.group?.name === "mill" ? 2 : 1;
+            this.restricter = restricter;
+            this.realScale = this.type <= 1 && this.type !== null ? this.scale * 0.6 : this.scale;
+            const te = hooksRef.te || (() => false);
+            this.pathScale = this.type === 1 && this.y <= 12e3 ? this.scale * 0.6 + 15 : this.type === 0 ? this.scale * 0.7 + 10 : this.dmg && !te(this?.owner?.sid) || this.teleport || this.boostSpeed ? this.scale + 47 : this.type === 1 && this.y >= 12e3 ? this.scale * 0.55 + 47 : this.name == "pit trap" && !te(this?.owner?.sid) ? this.scale + 38 : this.ignoreCollision ? 0 : this.scale + 10;
+            // loader runtime fields
+            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;
+            this.shot = 0;
+            this.lastHit = 0;
+            this.distance = 0;
             return this;
         }
 
-        changeHealth(amount) { this.health += amount; return this.health <= 0; }
+        changeHealth(e) { this.health += e; return this.health <= 0; }
 
-        // Collision scale the way the server computes it for placement checks.
-        getScale(sM, ig) {
-            sM = sM || 1;
-            return this.scale * (this.isItem || this.type === 2 || this.type === 3 || this.type === 4 ? 1 : 0.6 * sM) * (ig ? 1 : this.colDiv);
+        getScale(e, t) {
+            e = e || 1;
+            return this.scale * (this.isItem || this.type == 2 || this.type == 3 || this.type == 4 ? 1 : 0.6 * e) * (t ? 1 : this.colDiv);
         }
-    }
 
-    // pathScale needs to know whether the owner is an enemy, so it is computed by
-    // the manager (which knows the self/team) rather than on the object itself.
-    function computePathScale(o, isEnemyOwner) {
-        if (o.type === 1 && o.y <= 12000) return o.scale * 0.6 + 15;      // bush
-        if (o.type === 0) return o.scale * 0.7 + 10;                       // tree
-        if (o.dmg && isEnemyOwner) return o.scale + 47;                    // enemy spike
-        if (o.teleport || o.boostSpeed) return o.scale + 47;
-        if (o.type === 1 && o.y >= 12000) return o.scale * 0.55 + 47;      // cactus
-        if (o.name === "pit trap" && isEnemyOwner) return o.scale + 38;    // enemy trap
-        if (o.ignoreCollision) return 0;
-        return o.scale + 10;
+        visibleToPlayer(e) {
+            return !this.hideFromEnemy || this.owner && (this.owner == e || this.owner.team && e.team == this.owner.team);
+        }
     }
 
     function createObjectManager(env) {
@@ -2107,9 +2112,12 @@
             return -1;
         }
 
+        const removeTaps = new Set();   // fn(obj, cause) just before an object is forgotten
+        function tapRemove(o, cause) { for (const fn of Array.from(removeTaps)) { try { fn(o, cause); } catch (e) { /* ignore */ } } }
         function removeSid(sid) {
             const o = byId.get(sid);
             if (!o) return;
+            tapRemove(o, "killed");
             byId.delete(sid);
             const i = indexOfSid(sid);
             if (i >= 0) list.splice(i, 1);
@@ -2139,10 +2147,14 @@
         // ---- add one object (from "H"), mirroring the bundle's objectManager.add ----
         function addObject(sid, x, y, dir, scale, type, id, ownerSid) {
             const def = (id != null && id >= 0) ? data.item(id) : null;
-            let o = byId.get(sid);
-            if (!o) { o = new GameObject(sid); byId.set(sid, o); list.push(o); }
-            o.init(x, y, dir, scale, type, def, ownerSid);
-            o.pathScale = computePathScale(o, isEnemyObject(o));
+            // The bundle's objectManager.add always creates a NEW object (no reuse
+            // by sid) and pushes it to kh.
+            const o = new GameObject(sid);
+            const old = byId.get(sid);
+            if (old) { const k = list.indexOf(old); if (k >= 0) list.splice(k, 1); }
+            byId.set(sid, o); list.push(o);
+            // The bundle's J2 (s2c "H"): add(sid, x, y, dir, scale, type, item, true, owner >= 0 ? {sid} : null)
+            o.init(x, y, dir, scale, type, def, ownerSid >= 0 && ownerSid != null ? { sid: ownerSid } : null);
             return o;
         }
 
@@ -2162,7 +2174,7 @@
             const owner = p && p.args && p.args[0];
             if (owner == null) return;
             for (let i = list.length - 1; i >= 0; i--) {
-                if (list[i].ownerSid === owner) { byId.delete(list[i].sid); list.splice(i, 1); }
+                if (list[i].ownerSid === owner) { tapRemove(list[i], "ownerLeft"); byId.delete(list[i].sid); list.splice(i, 1); }
             }
         }
         function onWiggle(p) {
@@ -2275,6 +2287,9 @@
             clear: clearAll,
             update,
             setDriven: (b) => { driven = !!b; },
+            setFriendlyTest: (fn) => { hooksRef.te = fn; },
+            onRemove: (fn) => { removeTaps.add(fn); return () => removeTaps.delete(fn); },
+            setTickSource: (fn) => { hooksRef.tick = fn; },
             TURRET_RELOAD
         };
     }
@@ -2397,6 +2412,9 @@
             equip, equipHat: equipHatRaw, equipTail: equipTailRaw, buyHat, buyTail,
             onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
             reset,
+            // the bundle's "m" debug key set $t / Zt back to null: equip() then
+            // re-sends whatever it is asked for next
+            forgetEquipped: () => { hat = null; tail = null; },
             FREE_HATS, FREE_TAILS, BUY, EQUIP
         };
     }
@@ -2493,6 +2511,8 @@
         const selfInput = env.selfInput || { moveDir: null, aimDir: 0 };
         const win = env.win || (typeof window !== "undefined" ? window : null);
         if (objects && objects.setDriven) objects.setDriven(true);
+        if (objects && objects.setFriendlyTest) objects.setFriendlyTest((sid) => te(sid));
+        if (objects && objects.setTickSource) objects.setTickSource(() => v);
 
         const x = { list: data.items, weapons: data.weapons, projectiles: data.projectiles, groups: data.groups };
         const C0 = data.hats, B0 = data.accessories;
@@ -2519,7 +2539,8 @@
         let Ve = [];                         // A4() resolvers
         let pn = [];                         // deferred packet handlers (run next tick)
         const hooks = {
-            preTick: new Set(), postReconstruct: new Set(), frame: new Set(), framePlayer: new Set(),
+            preTick: new Set(), tickStart: new Set(), postReconstruct: new Set(), afterSleep: new Set(),
+            deferredFlushed: new Set(), afterPlayers: new Set(), frame: new Set(), frameLate: new Set(), framePlayer: new Set(),
             projectile: new Set(), playerAdded: new Set(), playerLeft: new Set(), buildingDamage: new Set(),
             died: new Set(), setup: new Set()
         };
@@ -3115,7 +3136,7 @@
                 const rr = [];
                 const a = Ln[c];
                 const owner = Hg(a.owner.sid);
-                if (!owner) { Ln.splice(c, 1); c--; continue; }
+                if (!owner) { Ln.splice(c, 1); continue; }        // (the bundle skips the next one too)
                 const e = J.filter((e2) => e2.visible && !(typeof owner.team == "string" && e2.team == owner.team) && e2.sid != owner.sid);
                 const l = Xt.filter((e2) => !e2.ignoreCollision && e2.elevation > a.avoid).concat(nAnimals, e);
                 for (let i = 0; i < l.length; i++) {
@@ -3181,6 +3202,14 @@
                     if (!z.weaponXP[z.weaponIndex]) z.weaponXP[z.weaponIndex] = 0;
                     z.weaponXP[z.weaponIndex] += s;
                 }
+            }
+        }
+        // ---- objects ("H" -> J2): learn a visible owner's loadout from what they built ----
+        function onObjectsLoad(p) {
+            const e = (p && p.args && p.args[0]) || [];
+            for (let n = 0; n + 7 < e.length; n += 8) {
+                const t = Hg(e[n + 7]);
+                if (e[n + 7] !== null && t != null && L3(z, t)) b4(t.loadout, e[n + 6]);
             }
         }
         function onItemCount(p) {
@@ -3256,6 +3285,7 @@
             runHooks(hooks.preTick, payload);
             tn = Date.now();
             v++;
+            runHooks(hooks.tickStart, payload);
             state.ss.length = state.ns.length = state.is.length = vn.length = Sn.length = 0;
             vn = []; Sn = [];
             for (let e = J.length; e--;) {
@@ -3287,6 +3317,7 @@
                 q.isLeader = !!q.isLeader;
                 q.skinIndex = isSelf ? (z.hat || 0) : (q.skin || 0);
                 if (q.skinIndex != 45) { q.shameTimer = 30; q.clowned = false; }
+                q.skinIndex == 45 && q.shameTimer == 30 && x5(q);
                 q.tailIndex = isSelf ? (z.accessory || 0) : (q.tail || 0);
                 q.iconIndex = q.icon != null ? q.icon : q.iconIndex;
                 q.visible = true;
@@ -3326,11 +3357,13 @@
                 Xt = list.filter((e) => (e.distance = X5(e.x - z.x2, e.y - z.y2)) <= 2e3);
                 Q = Xt.filter((e) => e.distance <= 800);
             }
+            runHooks(hooks.afterSleep, payload);
             // ---- A4 + deferred handlers ----
             const ve = Ve; Ve = [];
             ve.forEach((e) => e());
             const pq = pn; pn = [];
             pq.forEach((e) => e.id(...e.data));
+            runHooks(hooks.deferredFlushed, payload);
             // ---- per-player frame upkeep (bundle ~16037-16073) ----
             for (let e = J.length; e--;) {
                 const i = J[e];
@@ -3354,6 +3387,7 @@
                 if (i.health === 100) i.deathDmgs = [];
                 i.bleed = i.lastBull ? ((v - i.lastBull + (i.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
             }
+            runHooks(hooks.afterPlayers, payload);
             // ---- target ----
             for (let e = vn.length; e--;) vn[e].distance = D((vn[e].x2 - z.x2) ** 2 + (vn[e].y2 - z.y2) ** 2);
             vn = vn.sort((a, b) => a.distance - b.distance);
@@ -3361,17 +3395,27 @@
             xi.player = J.find((e) => e.sid === xi.ID && e.visible) || null;
             if (xi.player) xi.player.positions = a4(xi.player, 6);
             else if (Y) { xi.player = Y; xi.player.positions = a4(xi.player, 6); }
-            by();
-            if (objects) objects.update(z.delta || ce);
+            if (objects) objects.update(z.delta);          // k4(): turret reload timers
             runHooks(hooks.frame, payload);
+            by();
+            runHooks(hooks.frameLate, payload);
+        }
+
+        // ---- x5: a clowned player's shame timer, counted down once per tick ----
+        async function x5(e, t = Hg(e.sid)) {
+            if (e.shameTimer <= 0 || e.skinIndex != 45 || t == null || t == undefined) return;
+            t.shameCount = 0;
+            t.clowned = true;
+            t.shameTimer -= e.delta / 1e3;
+            await A4();
+            x5(t);
         }
 
         // ---- lifecycle ----
         function onSetup(p) {
             en = true;
-            const q = z;
-            if (J.indexOf(q) < 0) J.push(q);
-            q.sid = p.sid;
+            // (you join J in addPlayer, like the bundle; setupGame only flags the game on)
+            z.sid = p.sid;
         }
         function onDied() {
             en = false;
@@ -3391,6 +3435,7 @@
         MooMoo.on("projectileAdd", onProjectileAdd);
         MooMoo.on("playerValue", (p) => { onPlayerValue(p); });
         MooMoo.on("itemCount", onItemCount);
+        MooMoo.on("objectsLoad", onObjectsLoad);
         MooMoo.on("inventory", onInventory);
         MooMoo.on("tribeMembers", onTribeMembers);
         MooMoo.on("tribeSet", onTribeSet);
@@ -3420,6 +3465,7 @@
             get loadout() { return loadout; },
             rn, an, ln, Xe, state,
             get sandbox() { return sandbox; }, set sandbox(b) { sandbox = !!b; },
+            selfInput,
             // timing
             A4, nextTick: A4, defer: (fn, ...args) => pn.push({ id: fn, data: args }),
             // geometry + predicates
@@ -3431,8 +3477,13 @@
             K, ce, u, EN, h, O3,
             // hooks (feature layers run here, in the bundle's order)
             onPreTick: hookAdder("preTick"),
+            onTickStart: hookAdder("tickStart"),
             onPostReconstruct: hookAdder("postReconstruct"),
+            onAfterSleep: hookAdder("afterSleep"),
+            onDeferredFlushed: hookAdder("deferredFlushed"),
+            onAfterPlayers: hookAdder("afterPlayers"),
             onFrame: hookAdder("frame"),
+            onFrameLate: hookAdder("frameLate"),
             onFramePlayer: hookAdder("framePlayer"),
             onProjectile: hookAdder("projectile"),
             onPlayerAdded: hookAdder("playerAdded"),
@@ -4185,19 +4236,25 @@
 
         overlay.addEventListener("click", hide);
         fab.addEventListener("click", toggle);
-        // hotkey + escape
-        if (input) {
-            input.onKey(toggleKey, () => toggle(), { preventDefault: true });
-        } else {
-            win.addEventListener("keydown", (e) => { if (e.isTrusted === false) return; const k = e.key === " " ? "space" : e.key; if (k === toggleKey) { e.preventDefault(); toggle(); } }, true);
-        }
-        win.addEventListener("keydown", (e) => { if (open && e.key === "Escape") hide(); }, true);
+        // hotkey + escape. The toggle key is read on every press so a mod can
+        // change it (the bundle's menu opened and closed on Escape). When the
+        // toggle key isn't Escape, Escape still closes an open menu.
+        win.addEventListener("keydown", (e) => {
+            if (e.isTrusted === false) return;
+            const k = e.key === " " ? "space" : e.key;
+            if (k === toggleKey) { e.preventDefault(); toggle(); }
+            else if (open && e.key === "Escape") hide();
+        }, true);
 
         // Re-render on registry changes (new mod, external toggle), but not for our
         // own edits (so a slider drag isn't interrupted).
         MooMoo.onModsChanged(() => { if (open && !suppressRerender) render(); });
 
-        return { show, hide, toggle, render, setToggleKey: (k) => { toggleKey = k; }, isOpen: () => open };
+        return {
+            show, hide, toggle, render, isOpen: () => open,
+            get toggleKey() { return toggleKey; },
+            setToggleKey: (k) => { toggleKey = k; fab.title = "moomoo.js config (" + toggleKey + ")"; }
+        };
     }
 
     return { installConfigMenu };
