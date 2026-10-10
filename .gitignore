@@ -5,3 +5,10 @@ website/.docusaurus/
 .DS_Store
 *.log
 *.tmp
+
+# Private server runtime artifacts (never commit: the official client is FRVR's,
+# data holds accounts/bans, dist is build output)
+moomoo-server/client-official/
+moomoo-server/client/
+moomoo-server/dist/
+moomoo-server/server/data/

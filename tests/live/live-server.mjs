@@ -123,8 +123,14 @@ export function loadPuppeteer() {
     const req = createRequire(path.join(SERVER_DIR, "package.json"));
     return req("puppeteer");
 }
+// Chrome flags for the live tests. Root (CI / containers) can't use Chrome's sandbox.
+export function chromeArgs() {
+    const args = ["--no-first-run", "--mute-audio"];
+    if (typeof process.getuid === "function" && process.getuid() === 0) args.push("--no-sandbox");
+    return args;
+}
 export function chromePath() {
-    const candidates = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium"];
+    const candidates = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium", "/opt/pw-browsers/chromium-1194/chrome-linux/chrome"];
     for (const c of candidates) if (c && fs.existsSync(c)) return c;
     return undefined;
 }
