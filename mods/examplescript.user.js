@@ -121,9 +121,15 @@
             let q;   // the bundle's global scratch player/object
 
             // ---- config (K), items (x), utils (X), hats (C0) / tails (B0) ----
+            // the bundle's config values (2005-2104) the engine's K doesn't carry
             const K = Object.assign({}, combat.K, {
-                healthBarWidth: 50, healthBarPad: 4.5, nameY: 34, crownPad: 15, crownIconScale: 60, skullPad: 15,
-                skullIconScale: 60, iconPad: 0.9, outlineColor: "#525252", outlineWidth: 5.5, riverPadding: 20
+                healthBarWidth: 50, healthBarPad: 4.5, iconPadding: 15, iconPad: .9, deathFadeout: 3e3,
+                crownIconScale: 60, crownPad: 35, chatCountdown: 3e3, chatCooldown: 500, nameY: 34,
+                riverPadding: 114, waterCurrent: .0011, waveSpeed: 1e-4, waveMax: 1.3,
+                treeScales: [150, 160, 165, 175], bushScales: [80, 85, 95], rockScales: [80, 85, 90],
+                mapPingScale: 40, mapPingTime: 2200, volcanoScale: 320, innerVolcanoScale: 100,
+                volcanoAnimationDuration: 3200, volcanoAggressionRadius: 1440,
+                volcanoLocationX: 14400 - 320 - 120, volcanoLocationY: 14400 - 320 - 120
             });
             const x = { list: data.items, weapons: data.weapons, projectiles: data.projectiles, groups: data.groups };
             x.a = x.list.concat(x.weapons);
@@ -134,6 +140,7 @@
                 getAngleDist: (e, t) => { const n = S(t - e) % ae; return n > W ? ae - n : n; },
                 fixTo: (e, t) => parseFloat(e.toFixed(t)),
                 randInt: (e, t) => Math.floor(Math.random() * (t - e + 1)) + e,
+                randFloat: (e, t) => Math.random() * (t - e + 1) + e,
                 lerp: (e, t, n) => e + (t - e) * n,
                 lineInRect: combat.lineInRect,
                 getDist: (e, t, n, i) => {
@@ -200,7 +207,8 @@
             function Qg(t) { for (let e = kh.length; e--;) if (kh[e].sid === t) return kh[e]; return null; }
             const Z = (e) => e * (W / 180);
             const oy = (e) => e * 180 / W;
-            const En = [1, 1.1, 1.18, 1.18];
+            // weapon variant multipliers; this server has a 5th variant (emerald, val 1.18)
+            const En = [1, 1.1, 1.18, 1.18, 1.18];
 
             // ---- the bundle's own globals (var block 599-797), exact initial values ----
             let He = 0, We = 0, Qe = 0, Ye = [], ze = 0, Wt = { sec: false, min: false };
@@ -214,6 +222,7 @@
             let vt, Ei = [], Ci = [], Bi = 0, Mi = 111, Oi = false, Fi = null, Wi = [], zi = [], Gi = 0, yt = [], xt = null;
             let ie = [], Sg = [], k5 = [0, 0], os = [], rs = [], qm = false, Y3 = [], tn = 0, np;
             let Nt = false, ns = [], is = [], ss = [];
+            let Ft = null;      // the "clear" command's radius marker (chat commands are not ported)
             // loadout slots (the bundle's yy(), resolved by ctx.combat.loadout)
             let ee = null, A = null, ry = null, ay = null, ly = null, cy = null, dy = null, uy = null, fy = null, hy = null;
             function yy() {
@@ -463,7 +472,7 @@
             let am = false;        // touch controls (never on desktop)
             let wh, xm, Dm = null;
             const om = { x: null, y: null, x2: null, y2: null };
-            let im = 1;            // the bundle's zoom ratio (1 = default view)
+            let im = 1;            // world units per screen px of the mouse (kept by sm())
             let I3 = { time: 0, type: null }, S3 = 0;
             // z.skins / z.tails: hats & accessories you own, as the bundle's Player kept them
             z.skins = {}; z.tails = {};
@@ -527,19 +536,16 @@
             function bm() {
                 return z ? (!z.lockDir && !am && (xm = P(Dh - _h / 2, Bh - Fh / 2)), X.fixTo(xm || 0, 2)) : 0;
             }
-            // rm: the mouse in world coordinates (om.x2 / om.y2), for the visuals
-            function rm(e) {
+            // rm (13290): the mouse in world coordinates (om.x2 / om.y2)
+            function rm(e, t) {
                 if (e) { om.x = e.clientX; om.y = e.clientY; }
-                const sc = viewScale();
-                const n = (om.x - Fh / 2) / sc, i = (om.y - _h / 2) / sc;
-                om.x2 = z.x2 + n; om.y2 = z.y2 + i;
-                return { x: om.x2, y: om.y2 };
-            }
-            // screen px per world unit of the official client's view (zr(), 8259)
-            function viewScale() {
-                const Gs = K.maxScreenWidth, Na = K.maxScreenHeight, vm2 = Na * 1.15;
-                const ct2 = win.innerWidth || 1, dt2 = win.innerHeight || 1;
-                return Math.max(ct2 / Gs, dt2 / vm2, Math.sqrt(ct2 * dt2 / (Gs * Na)));
+                const n = (om.x - Fh / 2) * im * .91975;
+                const i = (om.y - _h / 2) * im * .91975;
+                const s = z.x2 + n;
+                const o = z.y2 + i;
+                om.x2 = s;
+                om.y2 = o;
+                return { x: s, y: o };
             }
 
             // ---- keydown (Tm, 13412) ----
@@ -625,9 +631,19 @@
             }
             // "p": ease the camera zoom back to default (em, 13251)
             async function em() {
-                if (im > 1 + 1e-3) { await wx(2); im /= 1.05; applyZoom(); em(); }
-                else if (im < 1 - 1e-3) { await wx(2); im *= 1.05; applyZoom(); em(); }
-                else { im = 1; applyZoom(); }
+                if (Oh > K.maxScreenWidth + 1) {
+                    await wx(2);
+                    Oh /= 1.05;
+                    Lh /= 1.05;
+                    sm();
+                    em();
+                } else if (Oh < K.maxScreenWidth - 1) {
+                    await wx(2);
+                    Oh *= 1.05;
+                    Lh *= 1.05;
+                    sm();
+                    em();
+                } else return;
             }
 
             // ---- mouse (13331) ----
@@ -647,8 +663,14 @@
             // zoom: hold q and use the mouse wheel (11682)
             function onWheel(e) {
                 if (!m.q) return;
-                if (e.deltaY > 0) im *= 1.05; else im /= 1.05;
-                applyZoom();
+                if (e.deltaY > 0) {
+                    Oh *= 1.05;
+                    Lh *= 1.05;
+                } else {
+                    Oh /= 1.05;
+                    Lh /= 1.05;
+                }
+                sm();
             }
 
             const trusted = (fn) => function (e) { if (e && e.isTrusted === false) return; return fn.apply(this, arguments); };
@@ -3155,129 +3177,40 @@
 
 /* ===== examplescript/80-overlay.js ===== */
             // =====================================================================
-            // OVERLAY — where the bundle's own drawing goes.
+            // OVERLAY — the canvas the bundle's renderer draws on (82-render.js).
             // =====================================================================
-            // The bundle rendered the whole game on a 2D canvas; this server's client
-            // renders with WebGL. The bundle's visuals are drawn on a transparent 2D
-            // canvas laid exactly over the game, in the same world units: the overlay
-            // mirrors the official client's camera (Vm, official 8693) and its entity
-            // interpolation, so a ring drawn at a player's position sits on that
-            // player's sprite.
-            //   view(): screen px per world unit (official zr(), 8259)
-            //   cam.l / cam.u: world coords of the top-left of the view (rt - ie/2, lt - ue/2)
-            //   rpos(sid): where the official client draws that player / animal now
-            const ovl = { canvas: null, ctx: null, raf: null, dead: false, last: 0 };
-            const cam = { rt: K.mapScale / 2, lt: K.mapScale / 2, l: 0, u: 0, ie: K.maxScreenWidth, ue: K.maxScreenHeight, e: 1 };
-            const mirP = new Map(), mirA = new Map();
-            function mirrorUpdate(map, sid, x2, y2, d2) {
-                let p = map.get(sid);
-                if (!p) { p = { sid, visible: false, x: x2, y: y2, dir: d2, x1: x2, y1: y2, x2: x2, y2: y2, d1: d2, d2: d2, dt: 0 }; map.set(sid, p); }
-                p.forcePos = !p.visible;
-                p.x1 = p.x; p.y1 = p.y;
-                p.settle = p.x2 == x2 && p.y2 == y2;
-                p.x2 = x2; p.y2 = y2;
-                p.d2 = d2;
-                p.d1 = p.forcePos || p.dir === void 0 ? p.d2 : p.dir;
-                p.dt = 0;
-                p.visible = true;
-            }
-            ctx.on("playersUpdate", function (pk) {
-                for (const pos of pk.positions || []) mirrorUpdate(mirP, pos.sid, pos.x, pos.y, pos.dir);
-                for (const sid of pk.hidden || []) { const p = mirP.get(sid); if (p) p.visible = false; }
-            });
-            ctx.on("playerAdd", function (pk) {
-                const d = pk && pk.data; if (!d) return;
-                const p = mirP.get(d[1]); if (p) p.visible = false;
-            });
-            ctx.on("playerRemove", function (pk) { mirP.delete(pk && pk.sid); });
-            ctx.on("animalsUpdate", function (pk) {
-                const a = (pk && pk.args) || [];
-                const n = a[0] || [], hidden = a[1] || [];
-                for (let o = 0; o + 7 < n.length; o += 8) {
-                    const prev = mirA.get(n[o]);
-                    if (prev && prev.index != n[o + 1]) mirA.delete(n[o]);
-                    if (!mirA.get(n[o])) {
-                        mirA.set(n[o], { sid: n[o], index: n[o + 1], visible: true, forcePos: true, x: n[o + 2], y: n[o + 3], x1: n[o + 2], y1: n[o + 3], x2: n[o + 2], y2: n[o + 3], dir: n[o + 4] / 100, d1: n[o + 4] / 100, d2: n[o + 4] / 100, dt: 0 });
-                    } else mirrorUpdate(mirA, n[o], n[o + 2], n[o + 3], n[o + 4] / 100);
-                }
-                for (const sid of hidden) { const p = mirA.get(sid); if (p) p.visible = false; }
-            });
-            function rpos(e) {
-                if (!e) return null;
-                const p = (e.isAI ? mirA : mirP).get(e.sid);
-                return p && p.visible ? p : null;
-            }
-            // screen x/y of a world point, and of an entity as the client draws it
-            const SX = (x) => x - cam.l, SY = (y) => y - cam.u;
-            const RX = (e) => { const p = rpos(e); return (p ? p.x : (e.x2 != null ? e.x2 : e.x)) - cam.l; };
-            const RY = (e) => { const p = rpos(e); return (p ? p.y : (e.y2 != null ? e.y2 : e.y)) - cam.u; };
-
-            // one frame of the official client's interpolation + camera, mirrored
-            function stepMirror(De) {
-                const zp = mirP.get(z.sid);
-                const S0p = z.alive && zp ? zp : null;
-                if (S0p) {
-                    const d = Math.hypot(cam.rt - S0p.x, cam.lt - S0p.y);
-                    const r = Math.atan2(S0p.y - cam.lt, S0p.x - cam.rt);
-                    const hh = Math.min(d * .01 * De, d);
-                    d > .05 ? (cam.rt += hh * Math.cos(r), cam.lt += hh * Math.sin(r)) : (cam.rt = S0p.x, cam.lt = S0p.y);
-                } else { cam.rt = K.mapScale / 2; cam.lt = K.mapScale / 2; }
-                const s = 1e3 / K.serverUpdateRate;
-                for (const map of [mirP, mirA]) {
-                    for (const pp of map.values()) {
-                        if (!pp.visible) continue;
-                        if (pp.forcePos) { pp.x = pp.x2; pp.y = pp.y2; pp.dir = pp.d2; continue; }
-                        pp.dt += De;
-                        const r = Math.min(pp.settle ? 1 : 1.7, pp.dt / 170);
-                        pp.x = pp.x1 + (pp.x2 - pp.x1) * r;
-                        pp.y = pp.y1 + (pp.y2 - pp.y1) * r;
-                        pp.dir = combat.lerpAngle(pp.d2, pp.d1, Math.min(1, pp.dt / s));
-                    }
-                }
-                if (cameraLocked() && S0p) { cam.rt = S0p.x; cam.lt = S0p.y; }
-                cam.l = cam.rt - cam.ie / 2;
-                cam.u = cam.lt - cam.ue / 2;
-            }
-            function cameraLocked() { try { return win.localStorage && win.localStorage.getItem("camera_lock") == "true"; } catch (e) { return false; } }
-
-            // ---- the canvas ----
+            // A 2D canvas over the official client's canvases (it renders with WebGL).
+            // It is shown once you are in a game and draws the bundle's whole frame;
+            // pointer events pass through to the game.
+            const ovl = { canvas: null, ctx: null, raf: null, dead: false, transform: [1, 0, 0, 1, 0, 0] };
             function buildOverlay() {
                 if (ovl.canvas || !doc || !doc.body) return !!ovl.canvas;
                 const game = doc.getElementById("gameCanvas");
                 if (!game) return false;
+                const after = doc.getElementById("textCanvas") || game;
                 const c2 = doc.createElement("canvas");
                 c2.style.position = "absolute";
                 c2.style.left = "0px";
                 c2.style.top = "0px";
                 c2.style.pointerEvents = "none";
-                game.parentNode.insertBefore(c2, game.nextSibling);
+                c2.style.display = "none";
+                after.parentNode.insertBefore(c2, after.nextSibling);
                 ovl.canvas = c2;
                 ovl.ctx = c2.getContext("2d");
+                // the bundle's CanvasRenderingContext2D.prototype.roundRect (11590),
+                // on this context only
+                ovl.ctx.roundRect = function (e, t, n, i, s2) {
+                    return n < 2 * s2 && (s2 = n / 2), i < 2 * s2 && (s2 = i / 2), s2 < 0 && (s2 = 0), this.beginPath(), this.moveTo(e + s2, t), this.arcTo(e + n, t, e + n, t + i, s2), this.arcTo(e + n, t + i, e, t + i, s2), this.arcTo(e, t + i, e, t, s2), this.arcTo(e, t, e + n, t, s2), this.closePath(), this;
+                };
                 const font = doc.createElement("link");
                 font.rel = "stylesheet";
                 font.href = "https://fonts.googleapis.com/css2?family=Lilita+One&display=swap";
                 doc.head.appendChild(font);
                 ctx.onCleanup(() => { try { c2.remove(); font.remove(); } catch (e) { /* ignore */ } ovl.canvas = null; });
-                resizeOverlay();
-                listen(win, "resize", resizeOverlay);
+                sm();
+                listen(win, "resize", sm);
                 return true;
             }
-            function resizeOverlay() {
-                if (!ovl.canvas) return;
-                const ct2 = win.innerWidth, dt2 = win.innerHeight;
-                const Gs = K.maxScreenWidth, Na = K.maxScreenHeight, vm2 = Na * 1.15;
-                const e = Math.max(ct2 / Gs, dt2 / vm2, Math.sqrt(ct2 * dt2 / (Gs * Na)));
-                cam.e = e; cam.ie = ct2 / e; cam.ue = dt2 / e;
-                const dpr = Math.min(2, win.devicePixelRatio || 1);
-                ovl.dpr = dpr;
-                ovl.canvas.width = Math.round(ct2 * dpr);
-                ovl.canvas.height = Math.round(dt2 * dpr);
-                ovl.canvas.style.width = ct2 + "px";
-                ovl.canvas.style.height = dt2 + "px";
-            }
-            // q + wheel zoom (11682) / "p" reset (em): the bundle scaled its own view.
-            // The official client's view size is fixed, so the overlay keeps it.
-            function applyZoom() { }
 
             // ---- the bundle's floating text (TextObj Ml / manager Nl, 2426) ----
             function Ml() {
@@ -3345,31 +3278,1236 @@
             }
             const U1 = new Nl();
 
-            // ---- the frame ----
-            const drawHooks = [];          // visuals register (ctx2d, delta) => void here, in draw order
+            // ---- the frame (the bundle's ny(): gh / mh, then l2) ----
             function frame() {
                 if (ovl.dead) return;
                 ovl.raf = win.requestAnimationFrame(frame);
-                const now = Date.now();
-                const De = ovl.last ? now - ovl.last : 16;
-                ovl.last = now;
+                gh = Date.now(), mh = gh - xh, xh = gh;
                 if (!ovl.canvas && !buildOverlay()) return;
-                stepMirror(De);
-                const g2 = ovl.ctx;
-                g2.setTransform(1, 0, 0, 1, 0, 0);
-                g2.clearRect(0, 0, ovl.canvas.width, ovl.canvas.height);
-                if (!en) return;
-                const sc = cam.e * ovl.dpr;
-                g2.setTransform(sc, 0, 0, sc, 0, 0);
-                g2.globalAlpha = 1;
-                for (const fn of drawHooks) {
-                    try { fn(g2, De); } catch (err) { /* a visual must never stop the frame */ }
-                    g2.globalAlpha = 1;
+                const inGame = J.indexOf(z) >= 0;
+                ovl.canvas.style.display = inGame ? "block" : "none";
+                if (!inGame) return;
+                mainContext = ovl.ctx;
+                mainContext.setTransform(ovl.transform[0], ovl.transform[1], ovl.transform[2], ovl.transform[3], ovl.transform[4], ovl.transform[5]);
+                try {
+                    l2();
+                } catch (err) {
+                    // never leave a half-drawn frame over the game
+                    mainContext.setTransform(1, 0, 0, 1, 0, 0);
+                    mainContext.clearRect(0, 0, ovl.canvas.width, ovl.canvas.height);
+                    if (!ovl.errLogged) { ovl.errLogged = true; console.error("[examplescript] render", err); }
                 }
-                U1.update(De, g2, cam.l, cam.u);
             }
             ctx.onCleanup(() => { ovl.dead = true; if (ovl.raf) win.cancelAnimationFrame(ovl.raf); });
             if (typeof win.requestAnimationFrame === "function") ovl.raf = win.requestAnimationFrame(frame);
+
+/* ===== examplescript/81-render-lib.js ===== */
+            // =====================================================================
+            // RENDER LIBRARY — the bundle's drawing functions, copied verbatim
+            // (only `document.createElement` -> `doc.createElement`). They draw on
+            // `mainContext`, the overlay's 2D context (82-render.js).
+            // =====================================================================
+            // ---- bundle 44-67: adjustColorBrightness / adjustColorBrightnessIncrease ----
+            function adjustColorBrightness(hexColor, brightnessFactor) {
+                const hexToDecimal = hex => parseInt(hex, 16);
+                const multiplyAndFloor = (value, factor) => value * factor | 0;
+                const decimalToHex = decimal => decimal.toString(16).padStart(2, "0");
+
+                const adjustedRed = multiplyAndFloor(hexToDecimal(hexColor.substr(1, 2)), 1 - brightnessFactor);
+                const adjustedGreen = multiplyAndFloor(hexToDecimal(hexColor.substr(3, 2)), 1 - brightnessFactor);
+                const adjustedBlue = multiplyAndFloor(hexToDecimal(hexColor.substr(5, 2)), 1 - brightnessFactor);
+
+                return `#${decimalToHex(adjustedRed)}${decimalToHex(adjustedGreen)}${decimalToHex(adjustedBlue)}`;
+            }
+
+            function adjustColorBrightnessIncrease(hexColor, brightnessIncrease) {
+                const hexToDecimal = hex => parseInt(hex, 16);
+                const clampValue = (value, increment) => Math.min(255, value + increment | 0);
+                const decimalToHex = decimal => decimal.toString(16).padStart(2, "0");
+
+                const increaseAmount = 255 * brightnessIncrease;
+                const adjustedRed = clampValue(hexToDecimal(hexColor.substr(1, 2)), increaseAmount);
+                const adjustedGreen = clampValue(hexToDecimal(hexColor.substr(3, 2)), increaseAmount);
+                const adjustedBlue = clampValue(hexToDecimal(hexColor.substr(5, 2)), increaseAmount);
+
+                return `#${decimalToHex(adjustedRed)}${decimalToHex(adjustedGreen)}${decimalToHex(adjustedBlue)}`;
+            }
+
+            // ---- bundle 577-589: Le: a sprite copy with a drop shadow (the "shadows" visual) ----
+            function Le(e, t, n, i, s) {
+                if (!i) i = n;
+                var o = doc.createElement("canvas");
+                var r = o.getContext("2d");
+                o.width = n;
+                o.height = i;
+                r.shadowColor = "rgba(0, 0, 0, 1)";
+                r.shadowBlur = e === "animal" ? 18 : e === "weapon" ? 12 : e == "accessory" ? 9 : 20;
+                r.drawImage(t, 0, 0, n, i);
+                var a = new Image;
+                a.src = o.toDataURL();
+                return a
+            }
+
+            // ---- bundle 13984-13994: crown / skull icons ----
+            const e2 = {},
+                  t2 = ["crown", "skull"];
+
+            function n2() {
+                for (let e = 0; e < t2.length; ++e) {
+                    const t = new Image;
+                    t.onload = function() {
+                        this.isLoaded = !0
+                    }, t.src = ".././img/icons/" + t2[e] + ".png", e2[t2[e]] = t
+                }
+            }
+
+            // ---- bundle 14470-14603: c2 projectiles, u2 projectile sprite, f2, h2 volcano, p2 river, w2 hit-highlight pulse, b2 objects ----
+            function c2(t, n, i) {
+                for (let e = 0; e < Ah.length; ++e) q = Ah[e], q.active && q.layer == t && (q.update(mh), q.active && cg(q.x - n, q.y - i, q.scale) && (mainContext.save(), mainContext.translate(q.x - n, q.y - i), mainContext.rotate(q.dir), u2(0, 0, q, mainContext), mainContext.restore()))
+            }
+            const d2 = {};
+
+            function u2(e, t, n, i, s) {
+                if (n.src) {
+                    var o = x.projectiles[n.indx].src,
+                        r = d2[o];
+                    if (!r) {
+                        r = new Image;
+                        r.onload = function() {
+                            this.isLoaded = true;
+                            fe.weapons[o] = Le(1, this, n.scale)
+                        };
+                        r.src = ".././img/weapons/" + o + ".png";
+                        d2[o] = r
+                    } else if (r && fe.weapons[o] == undefined) {
+                        r = new Image;
+                        r.onload = function() {
+                            this.isLoaded = true;
+                            fe.weapons[o] = Le(1, this, n.scale)
+                        };
+                        r.src = ".././img/weapons/" + o + ".png";
+                        d2[o] = r
+                    }
+                    if (r.isLoaded) {
+                        var a = Es.checked ? fe.weapons[o] : r;
+                        if (a) {
+                            i.drawImage(a, e - n.scale / 2, t - n.scale / 2, n.scale, n.scale)
+                        }
+                    }
+                } else if (n.indx === 1) {
+                    i.fillStyle = "#939393";
+                    k(e, t, n.scale, i)
+                }
+            }
+
+            function f2(e, t, n, i) {
+                return {
+                    x: e + i * U(n),
+                    y: t + i * V(n)
+                }
+            }
+
+            function h2() {
+                const e = Ph - Oh / 2,
+                      t = Rh - Lh / 2;
+                K1.animationTime += mh, K1.animationTime %= K.volcanoAnimationDuration;
+                const n = K.volcanoAnimationDuration / 2,
+                      i = 1.7 + .3 * (S(n - K1.animationTime) / n),
+                      s = K.innerVolcanoScale * i;
+                mainContext.drawImage(K1.land, K1.x - K.volcanoScale - e, K1.y - K.volcanoScale - t, K.volcanoScale * 2, K.volcanoScale * 2), mainContext.drawImage(K1.lava, K1.x - s - e, K1.y - s - t, s * 2, s * 2)
+            }
+
+            function p2(e, t, n, i) {
+                const s = K.riverWidth + i,
+                      o = K.mapScale / 2 - t - s / 2;
+                o < Lh && o + s > 0 && n.fillRect(0, o, Oh, s)
+            }
+            const m2 = .05;
+            const g2 = .025;
+            const y2 = .1;
+            const x2 = 1;
+
+            function w2(e) {
+                if (!e.fadingOut) {
+                    e.opacity2 += m2;
+                    if (e.opacity2 >= x2) {
+                        e.opacity2 = x2;
+                        e.fadingOut = true
+                    }
+                } else {
+                    e.opacity2 -= g2;
+                    if (e.opacity2 <= y2) {
+                        e.opacity2 = y2;
+                        e.fadingOut = false
+                    }
+                }
+                return e.opacity2
+            }
+
+            function b2(t, n, i, s) {
+                let o, r, a, l;
+                s = en ? Xt.concat(Ze, ts.builds, es.rBuilds) : kh;
+                l = s.length;
+                for (let e = 0; e < l; ++e) {
+                    q = s[e];
+                    if (!q || !q.active) continue;
+                    r = q.x + q.xWiggle - n;
+                    a = q.y + q.yWiggle - i;
+                    if (t === 0) q.update(mh);
+                    Wi;
+                    if (q.layer === t && cg(r, a, q.scale + (q.blocker || 0))) {
+                        if (Wi.some(e => e.sid === q.sid)) {
+                            w2(q);
+                            mainContext.globalAlpha = q.hideFromEnemy ? .6 : q.preplace ? .7 : q.fake ? .3 : q.opacity2
+                        } else {
+                            mainContext.globalAlpha = q.hideFromEnemy ? .6 : q.preplace ? .7 : q.fake ? .3 : q.opacity
+                        }
+                        if (q.isItem) {
+                            if (q.fake && !Ns.checked) {
+                                mainContext.save();
+                                mainContext.translate(r, a);
+                                mainContext.rotate(q.dir);
+                                mainContext.beginPath();
+                                mainContext.arc(0, 0, q.scale, 0, ae);
+                                mainContext.fillStyle = q.restricter ? "#6bed5f" : q.preplace ? "#d4577c" : "#7da7b1";
+                                mainContext.fill();
+                                mainContext.stroke();
+                                mainContext.restore()
+                            } else {
+                                o = H2(q, false, false, q);
+                                mainContext.save();
+                                mainContext.translate(r, a);
+                                mainContext.rotate(q.dir);
+                                mainContext.drawImage(o, -(o.width / 2), -(o.height / 2));
+                                if (q.blocker) {
+                                    mainContext.strokeStyle = "#db6e6e";
+                                    mainContext.globalAlpha = .3;
+                                    mainContext.lineWidth = 6;
+                                    k(0, 0, q.blocker, mainContext, false, true)
+                                }
+                                mainContext.restore()
+                            }
+                        } else if (q.type === 4) {
+                            h2()
+                        } else {
+                            o = F2(q);
+                            mainContext.drawImage(o, r - o.width / 2, a - o.height / 2)
+                        }
+                    }
+                }
+            }
+
+            // ---- bundle 14655-14910: A2 players, k circle, I2 player body, C2 hats, B2, D2 push line, M2 tails, O2 weapons, F2 resources, _2 / V2 volcano sprites ----
+            function A2(i, s, o, r) {
+                for (let e = 0, n = J.concat(Ci, ts.players, es.rPlayers); e < n.length; ++e) {
+                    let t = n[e];
+                    if (t) {
+                        if (t?.zIndex == o) {
+                            t.animate(mh);
+                            if (t.fake) {
+                                mainContext.globalAlpha = t.vals && (t.vals = oe(0, t.vals -= t.decay))
+                            } else if (r) {
+                                mainContext.globalAlpha = .55
+                            } else if (Ei.includes(t.sid)) {
+                                mainContext.globalAlpha = .295
+                            } else {
+                                mainContext.globalAlpha = !Ls.checked ? 1 : .67
+                            }
+                            if (t.visible || t.fake || t.spectate) {
+                                t.skinRot += .002 * mh;
+                                let e = (t == z ? wm() : t.dir) + t.dirPlus;
+                                mainContext.save();
+                                mainContext.translate(t.x - i, t.y - s);
+                                mainContext.rotate(e);
+                                I2(t, mainContext);
+                                mainContext.restore()
+                            }
+                        }
+                    }
+                }
+            }
+
+            function k(e, t, n, i, s, o) {
+                i = i || mainContext;
+                i.beginPath();
+                i.arc(e, t, n, 0, ae);
+                o || i.fill();
+                s || i.stroke()
+            }
+
+            function I2(e, t) {
+                t = t || mainContext, t.lineWidth = R0, t.lineJoin = "miter";
+                const n = W / 4 * (x.weapons[e.weaponIndex].armS || 1),
+                      i = e.buildIndex < 0 && x.weapons[e.weaponIndex].hndS || 1,
+                      s = e.buildIndex < 0 && x.weapons[e.weaponIndex].hndD || 1;
+                if (e.tailIndex > 0 && M2(e.tailIndex, t, e), e.buildIndex < 0 && !x.weapons[e.weaponIndex].aboveHand && (O2(x.weapons[e.weaponIndex], K.weaponVariants[e.weaponVariant]?.src, e.scale, 0, t), x.weapons[e.weaponIndex].projectile != null && !x.weapons[e.weaponIndex].hideProjectile && u2(e.scale, 0, x.projectiles[x.weapons[e.weaponIndex].projectile], mainContext)), t.fillStyle = e.customColor, k(e.scale * U(n), e.scale * V(n), 14), k(e.scale * s * U(-n * i), e.scale * s * V(-n * i), 14), e.buildIndex < 0 && x.weapons[e.weaponIndex].aboveHand && (O2(x.weapons[e.weaponIndex], K.weaponVariants[e.weaponVariant]?.src, e.scale, 0, t), x.weapons[e.weaponIndex].projectile != null && !x.weapons[e.weaponIndex].hideProjectile && u2(e.scale, 0, x.projectiles[x.weapons[e.weaponIndex].projectile], mainContext)), e.buildIndex >= 0) {
+                    const o = j2(x.list[e.buildIndex]);
+                    t.drawImage(o, e.scale - x.list[e.buildIndex].holdOffset, -o.width / 2)
+                }
+                k(0, 0, e.scale, t), e.skinIndex > 0 && (t.rotate(W / 2), C2(e.skinIndex, t, null, e));
+                D2(e, t)
+            }
+            const S2 = {},
+                  E2 = {};
+            let T2;
+
+            function C2(e, t, n, i) {
+                if (!(T2 = S2[e])) {
+                    var s = new Image;
+                    s.onload = function() {
+                        this.isLoaded = true;
+                        this.onload = null;
+                        fe.hats[e] = Le(1, this, o.scale)
+                    };
+                    s.src = ".././img/hats/hat_" + e + ".png";
+                    S2[e] = s;
+                    T2 = s
+                }
+                var o = n || E2[e];
+                if (!o) {
+                    for (var r = 0; r < C0.length; ++r) {
+                        if (C0[r].id == e) {
+                            o = C0[r];
+                            break
+                        }
+                    }
+                    E2[e] = o
+                }
+                if (T2.isLoaded) {
+                    var a = gy("shadows")?.checked ? fe.hats[e] : T2;
+                    if (a) {
+                        t.drawImage(a, -o.scale / 2, -o.scale / 2, o.scale, o.scale)
+                    }
+                    if (!n && o.topSprite) {
+                        t.save();
+                        t.rotate(i.skinRot);
+                        C2(e + "_top", t, o, i);
+                        t.restore()
+                    }
+                }
+            }
+
+            function B2(e, t, n, i, s, o, r) {
+                let a = e[t];
+                if (!a) {
+                    const c = new Image;
+                    c.onload = function() {
+                        this.isLoaded = true;
+                        this.onload = null;
+                        e[t] = Le(r, this, o)
+                    };
+                    c.src = i + t + s;
+                    a = c
+                }
+                const l = gy("shadows")?.checked ? e[t] : a;
+                if (l) {
+                    n.drawImage(l, -s.scale / 2, -s.scale / 2, s.scale, s.scale)
+                }
+                if (!i && s.topSprite) {
+                    n.save();
+                    n.rotate(o.skinRot);
+                    B2(e, t + "_top", n, i, s, o, r);
+                    n.restore()
+                }
+            }
+
+            function D2(e, t) {
+                if (Y && e.sid == Y?.sid && jt) {
+                    t.strokeStyle = "blue";
+                    t.fillStyle = "blue";
+                    if (Ne(ne.x, ne.y) > 10) {
+                        t.beginPath();
+                        t.moveTo(0, 0);
+                        t.lineTo(ne.x, ne.y);
+                        t.stroke()
+                    }
+                }
+            }
+            const P2 = {},
+                  R2 = {};
+
+            function M2(t, e, n) {
+                let i = R2[t];
+                if (!(T2 = P2[t])) {
+                    var s = new Image;
+                    s.onload = function() {
+                        this.isLoaded = true;
+                        fe.accessories[t] = Le("accessory", this, i.scale, i.scale, n.fake)
+                    };
+                    s.src = ".././img/accessories/access_" + t + ".png";
+                    P2[t] = s;
+                    T2 = s
+                }
+                if (!i) {
+                    for (let e = 0; e < B0.length; ++e)
+                        if (B0[e].id == t) {
+                            i = B0[e];
+                            break
+                        } R2[t] = i
+                }
+                if (T2.isLoaded) {
+                    var o = gy("shadows")?.checked ? fe.accessories[t] : T2;
+                    if (o) {
+                        e.save();
+                        e.translate(-20 - (i.xOff || 0), 0);
+                        if (i.spin) {
+                            e.rotate(n.skinRot)
+                        }
+                        e.drawImage(o, -i.scale / 2, -i.scale / 2, i.scale, i.scale);
+                        e.restore()
+                    }
+                }
+            }
+            var N2 = {};
+
+            function O2(e, t, n, i, s) {
+                var o = e.src + (t || ""),
+                    r = N2[o];
+                if (!r) {
+                    r = new Image;
+                    r.onload = function() {
+                        this.isLoaded = true;
+                        fe.weapons[o] = Le("weapon", this, e.length, e.width)
+                    };
+                    r.src = ".././img/weapons/" + o + ".png";
+                    N2[o] = r
+                } else if (r && fe.weapons[o] == undefined) {
+                    r = new Image;
+                    r.onload = function() {
+                        this.isLoaded = true;
+                        fe.weapons[o] = Le("weapon", this, e.length, e.width)
+                    };
+                    r.src = ".././img/weapons/" + o + ".png";
+                    N2[o] = r
+                }
+                if (r.isLoaded) {
+                    var a = gy("shadows")?.checked ? fe.weapons[o] : r;
+                    if (a) {
+                        s.drawImage(a, n + e.xOff - e.length / 2, i + e.yOff - e.width / 2, e.length, e.width)
+                    }
+                }
+            }
+            const L2 = {};
+
+            function F2(e) {
+                const n = e.y >= K.mapScale - K.snowBiomeTop ? 2 : e.y <= K.snowBiomeTop ? 1 : 0,
+                      i = e.type + "_" + e.scale + "_" + n;
+                let s = Es.checked && !n ? 0 : 54;
+                let o = L2[i + s];
+                if (!o) {
+                    let t = Es.checked;
+                    const a = doc.createElement("canvas");
+                    a.width = a.height = e.scale * 2.1 + R0;
+                    const l = a.getContext("2d");
+                    if (l.translate(a.width / 2, a.height / 2), l.rotate(X.randFloat(0, W)), l.strokeStyle = D0, l.lineWidth = R0, e.type == 0) {
+                        let e;
+                        for (var r = 0; r < 2; ++r) {
+                            l.shadowBlur = r === 0 && t ? 21 : 0;
+                            l.shadowColor = r === 0 && t ? "rgba(0, 0, 0, 1)" : 0;
+                            e = q.scale * (r ? .5 : 1), Q2(l, q.sid % 2 === 0 ? 5 : 7, e, e * .7), l.fillStyle = n ? r ? "#fff" : "#e3f1f4" : r ? "#b4db62" : "#9ebf57", l.fill(), r || l.stroke()
+                        }
+                    } else if (e.type == 1) {
+                        if (n == 2) l.fillStyle = "#606060", Q2(l, 6, e.scale * .3, e.scale * .71), l.fill(), l.stroke(), l.fillStyle = "#89a54c", k(0, 0, e.scale * .55, l), l.fillStyle = "#a5c65b", k(0, 0, e.scale * .3, l, !0);
+                        else {
+                            l.shadowBlur = t ? 22 : 0;
+                            l.shadowColor = t ? "rgba(0, 0, 0, 1)" : null;
+                            G2(l, 6, q.scale, q.scale * .7), l.fillStyle = n ? "#e3f1f4" : "#89a54c", l.fill(), l.shadowBlur = 0;
+                            l.shadowColor = null;
+                            l.stroke(), l.fillStyle = n ? "#6a64af" : "#c15555";
+                            let e;
+                            const c = 4,
+                                  d = rh / c;
+                            for (var r = 0; r < c; ++r) e = X.randInt(q.scale / 3.5, q.scale / 2.3), k(e * U(d * r), e * V(d * r), X.randInt(10, 12), l)
+                        }
+                    } else {
+                        e.type == 2 || e.type == 3;
+                        l.shadowBlur = t ? 12 : 0;
+                        l.shadowColor = t ? "rgba(0, 0, 0, 1)" : null;
+                        l.fillStyle = e.type == 2 ? n == 2 ? "#938d77" : "#939393" : "#e0c655", Q2(l, 3, e.scale, e.scale), l.fill(), l.stroke(), l.fillStyle = e.type == 2 ? n == 2 ? "#b2ab90" : "#bcbcbc" : "#ebdca3", l.shadowBlur = 0;
+                        l.shadowColor = null;
+                        Q2(l, 3, e.scale * .55, e.scale * .65), l.fill();
+                        l.shadowBlur = 0;
+                        l.shadowColor = null
+                    }
+                    o = a, L2[i + s] = o
+                }
+                return o
+            }
+
+            function _2(t, n, i) {
+                const s = t.lineWidth || 0;
+                i /= 2, t.beginPath();
+                let o = ae / n;
+                for (let e = 0; e < n; e++) t.lineTo(i + (i - s / 2) * U(o * e), i + (i - s / 2) * V(o * e));
+                t.closePath()
+            }
+
+            function V2() {
+                const e = K.volcanoScale * 2,
+                      t = doc.createElement("canvas");
+                t.width = e, t.height = e;
+                const n = t.getContext("2d");
+                n.strokeStyle = "#3e3e3e", n.lineWidth = R0 * 2, n.fillStyle = "#7f7f7f", _2(n, 10, e), n.fill(), n.stroke(), K1.land = t;
+                const i = doc.createElement("canvas"),
+                      s = K.innerVolcanoScale * 2;
+                i.width = s, i.height = s;
+                const o = i.getContext("2d");
+                o.strokeStyle = D0, o.lineWidth = R0 * 1.6, o.fillStyle = "#f54e16", o.strokeStyle = "#f56f16", _2(o, 10, s), o.fill(), o.stroke(), K1.lava = i
+            }
+
+            // ---- bundle 14912-15091: U2 / j2 / H2 item sprites, W2 leaf ----
+            const U2 = [];
+
+            function j2(i, e, s, o) {
+                let t = Es.checked && !s && !e ? 0 : 54;
+                let r = U2[i.id + t];
+                if (!r || e || i.lastAnim != ws.checked) {
+                    const f = doc.createElement("canvas");
+                    f.width = f.height = i.scale * 2.5 + R0 + (x.list[i.id].spritePadding || 0);
+                    const h = f.getContext("2d");
+                    let n = Es.checked && !s ? true : 0;
+                    h.shadowBlur = n ? 15 : 0;
+                    h.shadowColor = `rgba(0, 0, 0, 0.35)`;
+                    if (h.translate(f.width / 2, f.height / 2), h.rotate(e ? 0 : W / 2), h.strokeStyle = D0, h.lineWidth = R0 * (e ? f.width / 81 : 1), i.name == "apple") {
+                        h.fillStyle = "#c15555", k(0, 0, i.scale, h), h.fillStyle = "#89a54c";
+                        const p = -(W / 2);
+                        W2(i.scale * U(p), i.scale * V(p), 25, p + W / 2, h)
+                    } else if (i.name == "cookie") {
+                        h.fillStyle = "#cca861", k(0, 0, i.scale, h), h.fillStyle = "#937c4b";
+                        for (var a = 4, l = rh / a, c, d = 0; d < a; ++d) c = X.randInt(i.scale / 2.5, i.scale / 1.7), k(c * U(l * d), c * V(l * d), X.randInt(4, 5), h, !0)
+                    } else if (i.name == "cheese") {
+                        h.fillStyle = "#f4f3ac", k(0, 0, i.scale, h), h.fillStyle = "#c3c28b";
+                        for (var a = 4, l = rh / a, c, d = 0; d < a; ++d) c = X.randInt(i.scale / 2.5, i.scale / 1.7), k(c * U(l * d), c * V(l * d), X.randInt(4, 5), h, !0)
+                    } else if (i.name == "wood wall" || i.name == "stone wall" || i.name == "castle wall") {
+                        h.fillStyle = i.name == "castle wall" ? "#83898e" : i.name == "wood wall" ? "#a5974c" : "#939393";
+                        const p = i.name == "castle wall" ? 4 : 3;
+                        Q2(h, p, i.scale * 1.1, i.scale * 1.1), h.fill(), h.stroke(), h.fillStyle = i.name == "castle wall" ? "#9da4aa" : i.name == "wood wall" ? "#c9b758" : "#bcbcbc", Q2(h, p, i.scale * .65, i.scale * .65), h.fill()
+                    } else if (i.name == "spikes" || i.name == "greater spikes" || i.name == "poison spikes" || i.name == "spinning spikes") {
+                        let e = i.name == "spikes" ? 8 : 8.5;
+                        let t = i.name == "spikes" ? .6 : .65;
+                        h.shadowBlur = n ? e : 0;
+                        h.shadowColor = `rgba(0, 0, 0, ${t})`;
+                        h.fillStyle = i.name == "poison spikes" ? "#7b935d" : "#79A9CA";
+                        var u = i.scale * .6;
+                        if (s || (Os.checked ? true : !o?.fake)) {
+                            Q2(h, i.name == "spikes" ? 5 : 6, i.scale, u);
+                            h.fill();
+                            h.stroke();
+                            h.fillStyle = "#a5974c";
+                            h.shadowBlur = 0, h.shadowColor = null;
+                            k(0, 0, u, h);
+                            h.fillStyle = "#c9b758";
+                            k(0, 0, u / 2, h, !0)
+                        } else if (o?.fake) {
+                            h.strokeStyle = !o?.fake ? "#525252" : o?.restricter ? "#6bed5f" : o?.preplace ? "#d4577c" : "#000000", Q2(h, i.name == "spikes" ? 5 : 6, i.scale, u);
+                            h.stroke();
+                            h.shadowBlur = 0, h.shadowColor = null;
+                            if (!o?.fake) {
+                                h.beginPath();
+                                h.arc(0, 0, u, 0, ae);
+                                h.stroke()
+                            }
+                        }
+                    } else if (i.name == "windmill" || i.name == "faster windmill" || i.name == "power mill") h.fillStyle = "#a5974c", k(0, 0, i.scale, h), h.fillStyle = "#c9b758", z2(0, 0, i.scale * 1.5, 29, 4, h), h.shadowBlur = 0, h.shadowColor = null, h.fillStyle = "#a5974c", k(0, 0, i.scale * .5, h);
+                    else if (i.name == "mine") h.fillStyle = "#939393", Q2(h, 3, i.scale, i.scale), h.fill(), h.stroke(), h.fillStyle = "#bcbcbc", Q2(h, 3, i.scale * .55, i.scale * .65), h.fill();
+                    else if (i.name == "sapling")
+                        for (var d = 0; d < 2; ++d) {
+                            var u = i.scale * (d ? .5 : 1);
+                            Q2(h, 7, u, u * .7), h.fillStyle = d ? "#b4db62" : "#9ebf57", h.fill(), d || h.stroke()
+                        } else if (i.name == "pit trap") {
+                            h.shadowBlur = n ? 8.5 : 0;
+                            h.shadowColor = `rgba(0, 0, 0, ${.65})`;
+                            if (s || (Os.checked ? true : !o?.fake)) {
+                                h.fillStyle = "#a5974c", Q2(h, 3, i.scale * 1.1, i.scale * 1.1), h.fill(), h.stroke(), h.fillStyle = D0, Q2(h, 3, i.scale * .65, i.scale * .65), h.fill()
+                            } else if (o?.fake || o?.preplace) {
+                                h.strokeStyle = !o?.fake ? "#525252" : o?.restricter ? "#6bed5f" : o?.preplace ? "#d4577c" : "#5e79db", Q2(h, 3, i.scale * 1.1, i.scale * 1.1), h.stroke();
+                                if (!o?.fake) {
+                                    Q2(h, 3, i.scale * .65, i.scale * .65), h.stroke()
+                                }
+                            }
+                        } else if (i.name == "boost pad") h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#dbd97d", K2(i.scale * 1, h);
+                    else if (i.name == "turret") {
+                        h.fillStyle = "#a5974c", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.fillStyle = "#939393";
+                        const p = 50;
+                        Y2(0, -p / 2, i.scale * .9, p, h), k(0, 0, i.scale * .6, h), h.fill(), h.stroke()
+                    } else if (i.name == "platform") {
+                        h.fillStyle = "#cebd5f";
+                        const p = 4,
+                              m = i.scale * 2,
+                              g = m / p;
+                        let e = -(i.scale / 2);
+                        for (var d = 0; d < p; ++d) Y2(e - g / 2, 0, g, i.scale * 2, h), h.fill(), h.stroke(), e += m / p
+                    } else i.name == "healing pad" ? (h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#db6e6e", z2(0, 0, i.scale * .65, 20, 4, h, !0)) : i.name == "spawn pad" ? (h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#71aad6", k(0, 0, i.scale * .6, h)) : i.name == "blocker" ? (h.fillStyle = "#7e7f82", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.rotate(W / 4), h.fillStyle = "#db6e6e", z2(0, 0, i.scale * .65, 20, 4, h, !0)) : i.name == "teleporter" && (h.fillStyle = "#7e7f82", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.rotate(W / 4), h.fillStyle = "#d76edb", k(0, 0, i.scale * .5, h, !0));
+                    r = f, e || (U2[i.id + t] = r)
+                }
+                i.lastAnim = ws.checked;
+                return r
+            }
+
+            function H2(i, e, s, o) {
+                let t = Es.checked && !s && !e ? 0 : 54;
+                let r = U2[i.id + t];
+                if (!r || e || i.lastAnim != ws.checked) {
+                    const f = doc.createElement("canvas");
+                    f.width = f.height = i.scale * 2.5 + R0 + (x.list[i.id].spritePadding || 0);
+                    const h = f.getContext("2d");
+                    let n = Es.checked && !s ? true : 0;
+                    h.shadowBlur = n ? 15 : 0;
+                    h.shadowColor = `rgba(0, 0, 0, 0.35)`;
+                    if (h.translate(f.width / 2, f.height / 2), h.rotate(e ? 0 : W / 2), h.strokeStyle = D0, h.lineWidth = R0 * (e ? f.width / 81 : 1), i.name == "apple") {
+                        h.fillStyle = "#c15555", k(0, 0, i.scale, h), h.fillStyle = "#89a54c";
+                        const p = -(W / 2);
+                        W2(i.scale * U(p), i.scale * V(p), 25, p + W / 2, h)
+                    } else if (i.name == "cookie") {
+                        h.fillStyle = "#cca861", k(0, 0, i.scale, h), h.fillStyle = "#937c4b";
+                        for (var a = 4, l = rh / a, c, d = 0; d < a; ++d) c = X.randInt(i.scale / 2.5, i.scale / 1.7), k(c * U(l * d), c * V(l * d), X.randInt(4, 5), h, !0)
+                    } else if (i.name == "cheese") {
+                        h.fillStyle = "#f4f3ac", k(0, 0, i.scale, h), h.fillStyle = "#c3c28b";
+                        for (var a = 4, l = rh / a, c, d = 0; d < a; ++d) c = X.randInt(i.scale / 2.5, i.scale / 1.7), k(c * U(l * d), c * V(l * d), X.randInt(4, 5), h, !0)
+                    } else if (i.name == "wood wall" || i.name == "stone wall" || i.name == "castle wall") {
+                        h.fillStyle = i.name == "castle wall" ? "#83898e" : i.name == "wood wall" ? "#a5974c" : "#939393";
+                        const p = i.name == "castle wall" ? 4 : 3;
+                        Q2(h, p, i.scale * 1.1, i.scale * 1.1), h.fill(), h.stroke(), h.fillStyle = i.name == "castle wall" ? "#9da4aa" : i.name == "wood wall" ? "#c9b758" : "#bcbcbc", Q2(h, p, i.scale * .65, i.scale * .65), h.fill()
+                    } else if (i.name == "spikes" || i.name == "greater spikes" || i.name == "poison spikes" || i.name == "spinning spikes") {
+                        let e = i.name == "spikes" ? 8 : 8.5;
+                        let t = i.name == "spikes" ? .6 : .65;
+                        h.shadowBlur = n ? e : 0;
+                        h.shadowColor = `rgba(0, 0, 0, ${t})`;
+                        h.fillStyle = i.name == "poison spikes" ? "#7b935d" : "#79A9CA";
+                        var u = i.scale * .6;
+                        if (s || (Os.checked ? true : !o?.fake)) {
+                            Q2(h, i.name == "spikes" ? 5 : 6, i.scale, u);
+                            h.fill();
+                            h.stroke();
+                            h.fillStyle = "#a5974c";
+                            h.shadowBlur = 0, h.shadowColor = null;
+                            k(0, 0, u, h);
+                            h.fillStyle = "#c9b758";
+                            k(0, 0, u / 2, h, !0)
+                        } else if (o?.fake) {
+                            h.strokeStyle = !o?.fake ? "#525252" : o?.restricter ? "#6bed5f" : o?.preplace ? "#d4577c" : "#000000", Q2(h, i.name == "spikes" ? 5 : 6, i.scale, u);
+                            h.stroke();
+                            h.shadowBlur = 0, h.shadowColor = null;
+                            if (!o?.fake) {
+                                h.beginPath();
+                                h.arc(0, 0, u, 0, ae);
+                                h.stroke()
+                            }
+                        }
+                    } else if (i.name == "windmill" || i.name == "faster windmill" || i.name == "power mill") h.fillStyle = "#a5974c", k(0, 0, i.scale, h), h.fillStyle = "#c9b758", z2(0, 0, i.scale * 1.5, 29, 4, h), h.shadowBlur = 0, h.shadowColor = null, h.fillStyle = "#a5974c", k(0, 0, i.scale * .5, h);
+                    else if (i.name == "mine") h.fillStyle = "#939393", Q2(h, 3, i.scale, i.scale), h.fill(), h.stroke(), h.fillStyle = "#bcbcbc", Q2(h, 3, i.scale * .55, i.scale * .65), h.fill();
+                    else if (i.name == "sapling")
+                        for (var d = 0; d < 2; ++d) {
+                            var u = i.scale * (d ? .5 : 1);
+                            Q2(h, 7, u, u * .7), h.fillStyle = d ? "#b4db62" : "#9ebf57", h.fill(), d || h.stroke()
+                        } else if (i.name == "pit trap") {
+                            h.shadowBlur = n ? 8.5 : 0;
+                            h.shadowColor = `rgba(0, 0, 0, ${.65})`;
+                            if (s || (Os.checked ? true : !o?.fake)) {
+                                h.fillStyle = "#a5974c", Q2(h, 3, i.scale * 1.1, i.scale * 1.1), h.fill(), h.stroke(), h.fillStyle = D0, Q2(h, 3, i.scale * .65, i.scale * .65), h.fill()
+                            } else if (o?.fake || o?.preplace) {
+                                h.strokeStyle = !o?.fake ? "#525252" : o?.restricter ? "#6bed5f" : o?.preplace ? "#d4577c" : "#5e79db", Q2(h, 3, i.scale * 1.1, i.scale * 1.1), h.stroke();
+                                if (!o?.fake) {
+                                    Q2(h, 3, i.scale * .65, i.scale * .65), h.stroke()
+                                }
+                            }
+                        } else if (i.name == "boost pad") h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#dbd97d", K2(i.scale * 1, h);
+                    else if (i.name == "turret") {
+                        h.fillStyle = "#a5974c", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.fillStyle = "#939393";
+                        const p = 50;
+                        Y2(0, -p / 2, i.scale * .9, p, h), k(0, 0, i.scale * .6, h), h.fill(), h.stroke()
+                    } else if (i.name == "platform") {
+                        h.fillStyle = "#cebd5f";
+                        const p = 4,
+                              m = i.scale * 2,
+                              g = m / p;
+                        let e = -(i.scale / 2);
+                        for (var d = 0; d < p; ++d) Y2(e - g / 2, 0, g, i.scale * 2, h), h.fill(), h.stroke(), e += m / p
+                    } else i.name == "healing pad" ? (h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#db6e6e", z2(0, 0, i.scale * .65, 20, 4, h, !0)) : i.name == "spawn pad" ? (h.fillStyle = "#7e7f82", Y2(0, 0, i.scale * 2, i.scale * 2, h), h.fill(), h.stroke(), h.fillStyle = "#71aad6", k(0, 0, i.scale * .6, h)) : i.name == "blocker" ? (h.fillStyle = "#7e7f82", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.rotate(W / 4), h.fillStyle = "#db6e6e", z2(0, 0, i.scale * .65, 20, 4, h, !0)) : i.name == "teleporter" && (h.fillStyle = "#7e7f82", k(0, 0, i.scale, h), h.fill(), h.stroke(), h.rotate(W / 4), h.fillStyle = "#d76edb", k(0, 0, i.scale * .5, h, !0));
+                    r = f, e || (U2[i.id + t] = r)
+                }
+                i.lastAnim = ws.checked;
+                return r
+            }
+
+            function W2(e, t, n, i, s) {
+                const o = e + n * U(i),
+                      r = t + n * V(i),
+                      a = n * .4;
+                s.moveTo(e, t), s.beginPath(), s.quadraticCurveTo((e + o) / 2 + a * U(i + W / 2), (t + r) / 2 + a * V(i + W / 2), o, r), s.quadraticCurveTo((e + o) / 2 - a * U(i + W / 2), (t + r) / 2 - a * V(i + W / 2), e, t), s.closePath(), s.fill(), s.stroke()
+            }
+
+            // ---- bundle 15097-15129: Q2 star, Y2 rect, z2 blades, G2 bush, K2 triangle ----
+            function Q2(t, n, i, s) {
+                let o = W / 2 * 3,
+                    r, a;
+                const l = W / n;
+                t.beginPath(), t.moveTo(0, -i - 25e-6);
+                for (let e = 0; e < n; e++) r = U(o) * i, a = V(o) * i, t.lineTo(r, a), o += l, r = U(o) * s, a = V(o) * s, t.lineTo(r, a), o += l;
+                t.lineTo(0, -i), t.closePath()
+            }
+
+            function Y2(e, t, n, i, s, o) {
+                s.fillRect(e - n / 2, t - i / 2, n, i), o || s.strokeRect(e - n / 2, t - i / 2, n, i)
+            }
+
+            function z2(e, t, n, i, s, o, r) {
+                o.save(), o.translate(e, t), s = c(s / 2);
+                for (let e = 0; e < s; e++) Y2(0, 0, n * 2, i, o, r), o.rotate(W / s);
+                o.restore()
+            }
+
+            function G2(t, n, i, s) {
+                let o = W / 2 * 3;
+                const r = W / n;
+                let a;
+                t.beginPath(), t.moveTo(0, -s);
+                for (let e = 0; e < n; e++) a = X.randInt(i + .9, i * 1.2), t.quadraticCurveTo(U(o + r) * a, V(o + r) * a, U(o + r * 2) * s, V(o + r * 2) * s), o += r * 2;
+                t.lineTo(0, -s), t.closePath()
+            }
+
+            function K2(e, t) {
+                t = t || mainContext;
+                const n = e * (D(3) / 2);
+                t.beginPath(), t.moveTo(0, -n / 2), t.lineTo(-e / 2, n / 2), t.lineTo(e / 2, n / 2), t.lineTo(0, -n / 2), t.fill(), t.closePath()
+            }
+
+            // ---- bundle 15520-15540: ag / lg animal sprite, cg on-screen test ----
+            const ag = {};
+
+            function lg(e, t) {
+                const n = e.index;
+                let i = ag[n];
+                if (!i) {
+                    const s = new Image;
+                    s.onload = function() {
+                        this.isLoaded = !0, this.onload = null
+                    }, s.src = ".././img/animals/" + e.src + ".png", i = s, ag[n] = i
+                }
+                if (i.isLoaded) {
+                    const s = e.scale * 1.2 * (e.spriteMlt || 1);
+                    t.drawImage(i, -s, -s, s * 2, s * 2)
+                }
+            }
+
+            function cg(e, t, n) {
+                return e + n >= 0 && e - n <= Oh && t + n >= 0 && t - n <= Lh
+            }
+
+/* ===== examplescript/82-render.js ===== */
+            // =====================================================================
+            // RENDER — the bundle's game renderer (l2, 14065) on the overlay.
+            // =====================================================================
+            // The bundle drew the whole game itself, and most of its visuals are part
+            // of that drawing (player colours, sprite shadows, see-through players,
+            // the pulse on buildings being hit, placement previews, hidden names,
+            // its grid and tint, zoom). So the overlay draws the bundle's full frame,
+            // opaque, over the official client's canvas. If a frame throws, the
+            // overlay clears and the official rendering shows through.
+            const D0 = "#525252", P0 = "#3d3f42", R0 = 5.5, rh = ae;
+            const fe = { hats: {}, accessories: {}, weapons: {}, animals: {} };
+            let mainContext = null;
+            let Oh = K.maxScreenWidth, Lh = K.maxScreenHeight;      // view size (q + wheel zoom)
+            let Ph = K.mapScale / 2, Rh = K.mapScale / 2;            // camera
+            let mh = 16, gh = Date.now(), xh = Date.now(), yh, a2;
+            let Th = 1, Ch = 0;
+            const Wm = false;      // the bundle's "still on the main menu" flag (false once in game)
+            let Et = 0;
+            const K1 = { animationTime: 0, land: null, lava: null, x: K.volcanoLocationX, y: K.volcanoLocationY };
+            V2();
+            n2();
+            objects.setMillRotate && objects.setMillRotate(() => us.checked);
+            ctx.onCleanup(() => { objects.setMillRotate && objects.setMillRotate(null); });
+
+            // ---- player / animal swing animation (Player 4059, AI 3003) ----
+            function playerAnimate(t, e) {
+                t.animTime > 0 && (t.animTime -= e, t.animTime <= 0 ? (t.animTime = 0, t.dirPlus = 0, t._aa = 0, t._al = 0) : t._al == 0 ? (t._aa += e / (t.animSpeed * K.hitReturnRatio), t.dirPlus = X.lerp(0, t.targetAngle, j(1, t._aa)), t._aa >= 1 && (t._aa = 1, t._al = 1)) : (t._aa -= e / (t.animSpeed * (1 - K.hitReturnRatio)), t.dirPlus = X.lerp(0, t.targetAngle, oe(0, t._aa))));
+            }
+            function playerStartAnim(t, e, n) {
+                t.animTime = t.animSpeed = x.weapons[n].speed, t.targetAngle = e ? -K.hitAngle : -W, t._aa = 0, t._al = 0;
+            }
+            function aiAnimate(t, e) {
+                t.animTime > 0 && (t.animTime -= e, t.animTime <= 0 ? (t.animTime = 0, t.dirPlus = 0, t._an = 0, t._ai = 0) : t._ai == 0 ? (t._an += e / (t.animSpeed * K.hitReturnRatio), t.dirPlus = X.lerp(0, t.targetAngle, j(1, t._an)), t._an >= 1 && (t._an = 1, t._ai = 1)) : (t._an -= e / (t.animSpeed * (1 - K.hitReturnRatio)), t.dirPlus = X.lerp(0, t.targetAngle, oe(0, t._an))));
+            }
+            function aiStartAnim(t) { t.animTime = t.animSpeed = 600, t.targetAngle = W * .8, t._an = 0, t._ai = 0; }
+            function withAnim(q2) {
+                if (q2 && !q2.animate) {
+                    q2.dirPlus = q2.dirPlus || 0; q2.animTime = 0; q2.animSpeed = 0; q2.targetAngle = 0;
+                    if (q2.isAI) { q2.animate = function (e) { aiAnimate(this, e); }; q2.startAnim = function () { aiStartAnim(this); }; }
+                    else { q2.animate = function (e) { playerAnimate(this, e); }; q2.startAnim = function (e, t) { playerStartAnim(this, e, t); }; }
+                }
+                return q2;
+            }
+            for (const p0 of J) withAnim(p0);
+            own(combat.onPlayerAdded(function (e) { withAnim(e); }));
+            ctx.on("gatherAnimation", function (pk) {
+                const a = pk && pk.args; if (!a) return;
+                const s = Hg(a[0]);
+                s && withAnim(s).startAnim(a[1], a[2]);
+            });
+            ctx.on("animalAttack", function (pk) {
+                const q2 = Wg(pk && pk.args && pk.args[0]);
+                q2 && withAnim(q2).startAnim();
+            });
+
+            // ---- client-side projectiles (wc 4541, Hl.addProjectile 2692, addProjectile 15167) ----
+            const Ah = [];
+            function wc() {
+                this.init = function (e, t, n, i, s, o, r, a, l) {
+                    this.active = !0, this.indx = e, this.x = t, this.y = n, this.dir = i, this.skipMov = !0, this.speed = s, this.dmg = o, this.scale = a, this.range = r, this.owner = l;
+                };
+                this.update = function (e) {
+                    if (this.active) {
+                        let n = this.speed * e;
+                        this.skipMov ? this.skipMov = !1 : (this.x += n * U(this.dir), this.y += n * V(this.dir), this.range -= n, this.range <= 0 && (this.x += this.range * U(this.dir), this.y += this.range * V(this.dir), n = 1, this.range = 0, this.active = !1));
+                    }
+                };
+            }
+            function addProjectileR(e, t, n, i, s, o, r, a, l) {
+                const c3 = x.projectiles[o];
+                let d6;
+                for (let k6 = 0; k6 < Ah.length; ++k6) if (!Ah[k6].active) { d6 = Ah[k6]; break; }
+                return d6 || (d6 = new wc(), d6.sid = Ah.length, Ah.push(d6)), d6.init(o, e, t, n, s, c3.dmg, i, c3.scale, r), d6.ignoreObj = a, d6.layer = l || c3.layer, d6.src = c3.src, d6;
+            }
+            // "X" [x, y, dir, range, speed, index, layer, sid]
+            ctx.on("projectileAdd", function (pk) {
+                const a = pk && pk.args; if (!a) return;
+                addProjectileR(a[0], a[1], a[2], a[3], a[4], a[5], null, null, a[6]).sid = a[7];
+            });
+            // "Y" [sid, range]
+            ctx.on("projectileRemove", function (pk) {
+                const a = pk && pk.args; if (!a) return;
+                for (let e = 0; e < Ah.length; ++e) Ah[e].sid == a[0] && (Ah[e].range = a[1]);
+            });
+
+            // ---- the "8" damage / heal numbers (showText 13701) ----
+            ctx.on("showText", function (pk) {
+                const e = pk.x, t = pk.y, n = pk.value, i = pk.type;
+                if (n < 0 || !hs.checked) {
+                    i === -1 ? U1.showText(e, t, 50, .18, 500, n, "#ee5551") : ps.checked ? zi.push({ x: e, y: t, value: n }) : U1.showText(e, t, 50, .18, 500, S(n), n >= 0 ? "#fff" : "#8ecc51");
+                }
+            });
+
+            // ---- chat bubbles (receiveChat sets these, 13248) ----
+            ctx.on("chat", function (pk) {
+                const t = Hg(pk && pk.sid);
+                t && (t.chatMessage = pk.message, t.chatCountdown = K.chatCountdown);
+            });
+
+            // ---- the view: canvas at 0.7x resolution, scaled to cover (sm, 13270) ----
+            let tm = win.innerWidth, nm = win.innerHeight;
+            function sm() {
+                Fh = win.innerWidth;
+                _h = win.innerHeight;
+                im *= Math.min(Oh / tm, Lh / nm);
+                tm = Oh;
+                nm = Lh;
+                const e = Math.max(Fh / Oh, _h / Lh) * .7;
+                if (!ovl.canvas) return;
+                ovl.canvas.width = Fh * .7;
+                ovl.canvas.height = _h * .7;
+                ovl.canvas.style.width = Fh + "px";
+                ovl.canvas.style.height = _h + "px";
+                ovl.transform = [e, 0, 0, e, (Fh * .7 - Oh * e) / 2, (_h * .7 - Lh * e) / 2];
+            }
+
+            // ---- one frame of the bundle (l2) ----
+            function l2() {
+                {
+                    if (z && (!yh || gh - yh >= 1e3 / K.clientSendRate)) {
+                        yh = gh;
+                        const r = wm();
+                        a2 !== r && (a2 = r);
+                    }
+                    let e = J.indexOf(z) >= 0 ? z : null;     // the bundle's z exists once you spawned
+                    if (e) {
+                        const r = X.getDistance(Ph, Rh, e.x, e.y),
+                            v6 = X.getDirection(e.x, e.y, Ph, Rh),
+                            a = j(r * .01 * mh, r);
+                        r > .05 ? (Ph += a * U(v6), Rh += a * V(v6)) : (Ph = e.x, Rh = e.y);
+                    } else Ph = K.mapScale / 2, Rh = K.mapScale / 2;
+                    // (the per-entity interpolation runs in ctx.combat every frame)
+                    const w = Ph - Oh / 2 + pi,
+                        b = Rh - Lh / 2 + mi;
+                    K.snowBiomeTop - b <= 0 && K.mapScale - K.snowBiomeTop - b >= Lh ? (mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, 0, Oh, Lh)) : K.mapScale - K.snowBiomeTop - b <= 0 ? (mainContext.fillStyle = "#dbc666", mainContext.fillRect(0, 0, Oh, Lh)) : K.snowBiomeTop - b >= Lh ? (mainContext.fillStyle = "#fff", mainContext.fillRect(0, 0, Oh, Lh)) : K.snowBiomeTop - b >= 0 ? (mainContext.fillStyle = "#fff", mainContext.fillRect(0, 0, Oh, K.snowBiomeTop - b), mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, K.snowBiomeTop - b, Oh, Lh - (K.snowBiomeTop - b))) : (mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, 0, Oh, K.mapScale - K.snowBiomeTop - b), mainContext.fillStyle = "#dbc666", mainContext.fillRect(0, K.mapScale - K.snowBiomeTop - b, Oh, Lh - (K.mapScale - K.snowBiomeTop - b))), Wm || (Th += Ch * K.waveSpeed * mh, Th >= K.waveMax ? (Th = K.waveMax, Ch = -1) : Th <= 1 && (Th = Ch = 1), mainContext.globalAlpha = 1, mainContext.fillStyle = "#dbc666", p2(w, b, mainContext, K.riverPadding), mainContext.fillStyle = "#91b2db", p2(w, b, mainContext, (Th - 1) * 250)), mainContext.lineWidth = 4, mainContext.strokeStyle = "#000", mainContext.globalAlpha = .06, mainContext.beginPath();
+                    if (!gs.checked && !vo.checked) {
+                        for (var d = (14400 - w) % 1440; d < Oh; d += 1440) d > 0 && (mainContext.moveTo(d, 0), mainContext.lineTo(d, Lh));
+                        for (var u6 = (14400 - b) % 1440; u6 < Lh; u6 += 1440) u6 > 0 && (mainContext.moveTo(0, u6), mainContext.lineTo(Oh, u6));
+                    } else {
+                        for (var f6 = -Ph; f6 < Oh; f6 += Lh / 18) f6 > 0 && (mainContext.moveTo(f6, 0), mainContext.lineTo(f6, Lh));
+                        for (let e6 = -Rh; e6 < Lh; e6 += Lh / 18) f6 > 0 && (mainContext.moveTo(0, e6), mainContext.lineTo(Oh, e6));
+                    }
+                    mainContext.stroke(), mainContext.globalAlpha = 1, mainContext.strokeStyle = D0, b2(-1, w, b), mainContext.globalAlpha = 1, mainContext.lineWidth = R0, c2(0, w, b), A2(w, b, 0), mainContext.globalAlpha = 1;
+                    for (var s = 0; s < bh.length; ++s) q = withAnim(bh[s]), q.active && q.visible && (q.animate(mh), mainContext.save(), mainContext.translate(q.x - w, q.y - b), mainContext.rotate(q.dir + q.dirPlus - W / 2), lg(q, mainContext), mainContext.restore());
+                    if (b2(0, w, b), c2(1, w, b), b2(1, w, b), A2(w, b, 1), b2(2, w, b), b2(3, w, b), mainContext.fillStyle = "#000", mainContext.globalAlpha = .09, w <= 0 && mainContext.fillRect(0, 0, -w, Lh), K.mapScale - w <= Oh) {
+                        var hh = oe(0, -b);
+                        mainContext.fillRect(K.mapScale - w, hh, Oh - (K.mapScale - w), Lh - hh);
+                    }
+                    if (b <= 0 && mainContext.fillRect(-w, 0, Oh + w, -b), K.mapScale - b <= Lh) {
+                        var pp = oe(0, -w);
+                        let e7 = 0;
+                        K.mapScale - w <= Oh && (e7 = Oh - (K.mapScale - w)), mainContext.fillRect(pp, K.mapScale - b, Oh - pp - e7, Lh - (K.mapScale - b));
+                    }
+                    if (z && si?.goal?.pathing) {
+                        mainContext.globalAlpha = 1;
+                        mainContext.save();
+                        mainContext.translate(-w, -b);
+                        ri?.drawPath(mainContext, "#ffffff", z, "#00FF00");
+                        si?.drawWaypoints(mainContext, z.skinRot);
+                        mainContext.restore();
+                    }
+                    mainContext.fillStyle = vo.checked ? `rgba(0, 0, 70, 0.35)` : `rgba(15, 0, 70, 0.49)`;
+                    mainContext.globalAlpha = 1, mainContext.fillRect(0, 0, Oh, Lh), mainContext.strokeStyle = P0;
+                    l2Players(w, b);
+                    U1.update(mh, mainContext, w, b);
+                    l2Chat(w, b);
+                    if (!Ss.checked) {
+                        Et += (1 - Et) / 160;
+                        const _t = mainContext.getTransform();
+                        mainContext.setTransform(1, 0, 0, 1, 0, 0);
+                        mainContext.fillStyle = `rgba(${[24, 0, 82, .3].map((e8) => e8 * Et).join(", ")})`;
+                        mainContext.fillRect(0, 0, ovl.canvas.width, ovl.canvas.height);
+                        mainContext.setTransform(_t);
+                    }
+                }
+            }
+
+            // ---- the per-player overlay of l2 (bundle 14128-14391), verbatim ----
+            function l2Players(w, b) {
+                        let t = J.concat(ts.players, es.rPlayers);
+                        for (var s = 0; s < t.length + bh.length; ++s)
+                            if (q = t[s] || bh[s - t.length], q?.visible && (q?.skinIndex != 10 || q?.skinIndex == 10 || q == z || q?.team && q?.team == z.team)) {
+                                const v = (q.team ? "[" + q.team + "] " : "") + (q.name || "");
+                                if (!eo.checked && !Ei.includes(q.sid) && ws.checked) {
+                                    if (v !== "") {
+                                        mainContext.font = (q.nameScale || 30) + "px Lilita One";
+                                        mainContext.fillStyle = bo.checked ? "#fff" : q.isAI ? "#f2eff9" : q === z ? "#a0cac2" : q.team && q.team === z.team ? "#a6c7e7" : "#ebaebc";
+                                        mainContext.textBaseline = "middle";
+                                        mainContext.textAlign = "center";
+                                        mainContext.lineWidth = q.nameScale ? 11 : 8;
+                                        mainContext.lineJoin = "round";
+                                        const A = q.x - w;
+                                        const I = q.y - b - q.scale - K.nameY;
+                                        mainContext.strokeText(v, A, I);
+                                        mainContext.fillText(v, A, I);
+                                        if (q.isLeader && e2.crown.isLoaded) {
+                                            const S = K.crownIconScale;
+                                            const E = A - S / 2 - mainContext.measureText(v).width / 2 - K.crownPad;
+                                            mainContext.drawImage(e2.crown, E, I - S / 2 - 5, S, S)
+                                        }
+                                        if (q.iconIndex === 1 && e2.skull.isLoaded) {
+                                            const T = K.crownIconScale;
+                                            const C = A + mainContext.measureText(v).width / 2 + K.crownPad - T / 2;
+                                            mainContext.drawImage(e2.skull, C, I - T / 2 - 5, T, T)
+                                        }
+                                    }
+                                }
+                                if (q.isPlayer && ws.checked) {
+                                    mainContext.globalAlpha = 1;
+                                    mainContext.textAlign = "center";
+                                    mainContext.fillStyle = q.customColor;
+                                    mainContext.font = "19px Lilita One";
+                                    mainContext.strokeStyle = "#212123";
+                                    mainContext.lineWidth = 6;
+                                    mainContext.strokeText(q.sid, q.x - w, q.y - b);
+                                    mainContext.fillText(q.sid, q.x - w, q.y - b)
+                                }
+                                if (q.isPlayer && ws.checked && !Ei.includes(q.sid)) {
+                                    if (!Ei.includes(q.sid) || G?.["do"] && ts?.bot?.sid == q.sid) {
+                                        if (q.sid != z.sid && !vo.checked) {
+                                            mainContext.globalAlpha = 1;
+                                            mainContext.textAlign = "center", mainContext.fillStyle = "#fff", mainContext.font = "20px Lilita One", mainContext.strokeStyle = "#212123", mainContext.lineWidth = 3, mainContext.strokeText(`[${q.gainSpeed?H(q.gainSpeed):0} / ${q.leakSpeed?H(q.leakSpeed):0}]`, q.x - w, q.y - b - 50);
+                                            mainContext.fillText(`[${q.gainSpeed?H(q.gainSpeed):0} / ${q.leakSpeed?H(q.leakSpeed):0}]`, q.x - w, q.y - b - 50)
+                                        }
+                                        if (xs.checked || !vo.checked) {
+                                            const B = bo.checked ? 29 : 12;
+                                            mainContext.textAlign = "center", mainContext.fillStyle = bo.checked ? "#fff" : q.isAI ? "#f2eff9" : q === z ? "#a0cac2" : q.team && q.team == z.team ? "#a6c7e7" : "#ebaebc", mainContext.font = "18px Lilita One", mainContext.strokeStyle = P0, mainContext.lineWidth = 5, mainContext.strokeText(!q.clowned ? q.shameCount : q.shameTimer > 0 ? H(1e3 * q.shameTimer) / 1e3 : 0, q.x - w, q.y - b + q.scale + K.nameY + B), mainContext.fillText(!q.clowned ? q.shameCount : q.shameTimer > 0 ? H(1e3 * q.shameTimer) / 1e3 : 0, q.x - w, q.y - b + q.scale + K.nameY + B)
+                                        }
+                                        if (!vo.checked || (ys.checked || bo.checked)) {
+                                            mainContext.globalAlpha = .06;
+                                            mainContext.beginPath();
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2, W / 2 + W / 1.5);
+                                            mainContext.stroke();
+                                            mainContext.strokeStyle = q.lastpr != 1 ? `hsl(${100-q.pr*405},100%,50%)` : "rgba(0, 0, 70, 0.35)";
+                                            mainContext.lineWidth = 4;
+                                            mainContext.beginPath();
+                                            mainContext.globalAlpha = q.lastpr == 1 ? .06 : 1;
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2, W / 2 + W / 1.5 * (q.lastpr + (q.multpr - q.lastpr) * j(1, q.dt / q.delta)), false);
+                                            mainContext.stroke();
+                                            mainContext.strokeStyle = "rgba(0, 0, 70, 0.35)";
+                                            mainContext.lineWidth = 6;
+                                            mainContext.globalAlpha = .06;
+                                            mainContext.beginPath();
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2 + W / 1.5 * 2, W / 2 + W / 1.5 * 2 + W / 1.5);
+                                            mainContext.stroke();
+                                            mainContext.globalAlpha = q.lastsr == 1 ? .06 : 1;
+                                            mainContext.strokeStyle = q.lastsr != 1 ? `hsl(${100-q.sr*405},100%,50%)` : "rgba(0, 0, 70, 0.35)";
+                                            mainContext.lineWidth = 4;
+                                            mainContext.beginPath();
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2 + W / 1.5 * 2, W / 2 + W / 1.5 * 2 + W / 1.5 * (q.lastsr + (q.multsr - q.lastsr) * j(1, q.dt / q.delta)), false);
+                                            mainContext.stroke();
+                                            mainContext.strokeStyle = "rgba(0, 0, 70, 0.35)";
+                                            mainContext.lineWidth = 6;
+                                            mainContext.globalAlpha = .06;
+                                            mainContext.beginPath();
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2 + W / 1.5, W / 2 + W / 1.2 + W / 2);
+                                            mainContext.stroke();
+                                            mainContext.globalAlpha = q.lasttr == 1 ? .06 : 1;
+                                            mainContext.strokeStyle = q.lasttr != 1 ? `hsl(${100-q.tr*405},100%,50%)` : "rgba(0, 0, 70, 0.35)";
+                                            mainContext.lineWidth = 4;
+                                            mainContext.beginPath();
+                                            mainContext.arc(q.x - w, q.y - b, q.scale, W / 2 + W / 1.5, W / 2 + W / 1.2 + W / 2 * (q.lasttr + (q.tr - q.lasttr) * j(1, q.dt / q.delta)), false);
+                                            mainContext.stroke()
+                                        }
+                                        mainContext.globalAlpha = 1;
+                                        if (bs.checked && z.sid == q.sid) {
+                                            let e = He;
+                                            let t = 0;
+                                            t += (e - t) * .75;
+                                            const D = 120;
+                                            const P = t / D;
+                                            let n, i, s;
+                                            if (P < .5) {
+                                                n = Math.floor(510 * P);
+                                                i = 255;
+                                                s = 0
+                                            } else {
+                                                n = 255;
+                                                i = Math.floor(510 * (1 - P));
+                                                s = 0
+                                            }
+                                            const R = `rgb(${n},${i},${s})`;
+                                            mainContext.fillStyle = P0;
+                                            mainContext.roundRect(q.x - w - K.healthBarWidth - K.healthBarPad + 34.7, q.y - b + q.scale - 170 + K.nameY, K.healthBarWidth * 2 / 3.25 + K.healthBarPad * 2, 17, 8);
+                                            mainContext.fill();
+                                            mainContext.fillStyle = R;
+                                            mainContext.roundRect(q.x - w - K.healthBarWidth + 34.7, q.y - b + q.scale - 170 + K.nameY + K.healthBarPad, K.healthBarWidth * 2 / 3.25 * (t / 120), 17 - K.healthBarPad * 2, 7);
+                                            mainContext.fill()
+                                        }
+                                    }
+                                    if (Y && q.sid == Y.sid && typeof Ny === "object" && jt) {
+                                        mainContext.globalAlpha = .3;
+                                        mainContext.fillStyle = "#5f6ee7";
+                                        mainContext.strokeStyle = "#5f6ee7";
+                                        mainContext.beginPath();
+                                        mainContext.arc(Ny.x - w, Ny.y - b, 35, 0, ae);
+                                        mainContext.arc(Y.x2 + ne.x - w, Y.y2 + ne.y - b, 35, 0, ae);
+                                        mainContext.fill()
+                                    }
+                                }
+                                mainContext.font = "20px Lilita One";
+                                const k = mainContext.measureText(q.name).width;
+                                if (Y && q.isPlayer && q.sid == Y.sid && !vo.checked) {
+                                    const e = se(z, Y) - 35;
+                                    if (e > 350) {
+                                        mainContext.globalAlpha = 0;
+                                        mainContext.fillStyle = "black";
+                                        mainContext.strokeStyle = "black";
+                                        mainContext.lineWidth = 5;
+                                        mainContext.beginPath();
+                                        mainContext.moveTo(z.x - w, z.y - b);
+                                        mainContext.lineTo(q.x - w, q.y - b);
+                                        mainContext.stroke();
+                                        mainContext.globalAlpha = 1;
+                                        mainContext.fillStyle = "white";
+                                        mainContext.lineWidth = 5;
+                                        const M = (q.x + z.x) / 2 - w;
+                                        const N = (q.y + z.y) / 2 - b;
+                                        const O = M - k / 2;
+                                        const L = N + 15;
+                                        mainContext.strokeText(q.name, O, L);
+                                        mainContext.fillText(q.name, O, L)
+                                    }
+                                }
+                                if (q.isAI) {
+                                    mainContext.globalAlpha = 1;
+                                    mainContext.textAlign = "center", mainContext.fillStyle = "#fff", mainContext.font = "20px Lilita One", mainContext.strokeStyle = "#212123", mainContext.lineWidth = 3, mainContext.strokeText(q.health, q.x - w, q.y - b), mainContext.fillText(q.health, q.x - w, q.y - b)
+                                }
+                                if (Vt?.length && q.sid == z.sid) {
+                                    mainContext.globalAlpha = .4;
+                                    mainContext.lineWidth = 5;
+                                    mainContext.strokeStyle = "black";
+                                    mainContext.beginPath();
+                                    mainContext.arc(Ft.x - w, Ft.y - b, Ft.scale, 0, ae);
+                                    mainContext.stroke();
+                                    mainContext.globalAlpha = 1
+                                }
+                                if (Y && q.sid == Y.sid && q.isPlayer && (un || fn && ee == 5)) {
+                                    mainContext.globalAlpha = 1;
+                                    if (q.scaler === undefined) {
+                                        q.scaler = 0;
+                                        q.scalerR = false;
+                                        q.rotater = 0;
+                                        q.rotaterR = false
+                                    }
+                                    q.scalerR ? q.scaler -= .05 : q.scaler += .05;
+                                    q.rotaterR ? q.rotater -= 1.8 : q.rotater += 1.8;
+                                    if (q.rotater >= 360) q.rotater = 0;
+                                    if (Math.round(q.scaler * 10) / 10 >= 1 || Math.round(q.scaler * 10) / 10 <= -1) q.scalerR = !q.scalerR;
+                                    mainContext.strokeStyle = "#ba5e69";
+                                    mainContext.lineWidth = 5;
+                                    let o = q.scale + 15 + q.scaler * 5;
+                                    let e = Math.PI / 6;
+                                    let i = 2 * Math.PI / 3 - e;
+                                    for (let n = 0; n < 3; n++) {
+                                        let e = 2 * Math.PI / 3 * n + Z(q.rotater);
+                                        let t = e + i;
+                                        mainContext.beginPath();
+                                        mainContext.arc(q.x - w, q.y - b, o, e, t);
+                                        mainContext.stroke()
+                                    }
+                                    mainContext.fillStyle = "#ba5e69";
+                                    let t = 3;
+                                    let n = 20 + q.scaler * 4;
+                                    let r = 30 + q.scaler * 6;
+                                    let a = [Z(q.rotater) + i / 2 + W / 3, Z(q.rotater) + 2 * W / 3 + i / 2 + W / 3, Z(q.rotater) + 4 * W / 3 + i / 2 + W / 3];
+                                    for (let s = 0; s < t; s++) {
+                                        let e = a[s];
+                                        let t = f2(q.x, q.y, e, o);
+                                        let n = f2(t.x, t.y, e + W / 6, r);
+                                        let i = f2(t.x, t.y, e - W / 6, r);
+                                        mainContext.beginPath();
+                                        mainContext.moveTo(t.x - w, t.y - b);
+                                        mainContext.lineTo(n.x - w, n.y - b);
+                                        mainContext.lineTo(i.x - w, i.y - b);
+                                        mainContext.closePath();
+                                        mainContext.fill()
+                                    }
+                                }
+                                if (q.sid === z.sid && !q.isAI) {
+                                    Ci.forEach(e => {
+                                        if (e.purpose === "formation" && e.showSID) {
+                                            mainContext.globalAlpha = 1;
+                                            mainContext.textAlign = "center";
+                                            mainContext.fillStyle = "white";
+                                            mainContext.font = "19px Lilita One";
+                                            mainContext.strokeStyle = "black";
+                                            mainContext.lineWidth = 6;
+                                            mainContext.strokeText(e.sid, e.x - w, e.y - b);
+                                            mainContext.fillText(e.sid, e.x - w, e.y - b)
+                                        }
+                                    });
+                                    mainContext.globalAlpha = 1;
+                                    mainContext.lineWidth = 5;
+                                    for (let e = 0; e < Q.length; e++) {
+                                        if (Q[e].group !== undefined && Q[e].type === null && Q[e].distance <= 300 && ks.checked && Q[e].health !== Q[e].maxHealth) {
+                                            const F = Q[e].health;
+                                            mainContext.fillStyle = bo.checked ? "black" : z.sid == Q[e].owner.sid ? adjustColorBrightness("#657ba3", .35) : te(Q[e].owner.sid) && Q[e].owner.sid !== z.sid ? adjustColorBrightness("#657ba3", .35) : adjustColorBrightness("#a4628a", .35);
+                                            mainContext.roundRect(Q[e].x - w - 33 - K.healthBarPad, Q[e].y - b + Q[e].scale + K.nameY - 120, 1.45 * 45 + 2 * K.healthBarPad, 17, 10);
+                                            mainContext.fill();
+                                            mainContext.fillStyle = bo.checked ? z.sid == Q[e].owner.sid ? "#2693c7" : te(Q[e].owner.sid) && Q[e].owner.sid != z.sid ? "#2693c7" : "#c9346b" : z.sid == Q[e].owner.sid ? "#93d1fa" : te(Q[e].owner.sid) && Q[e].owner.sid !== z.sid ? "#93d1fa" : "#d38595";
+                                            mainContext.roundRect(Q[e].x - w - 33, Q[e].y - b + Q[e].scale + K.nameY - 120 + K.healthBarPad, 1.45 * 45 * (Q[e].health / Q[e].maxHealth), 17 - 2 * K.healthBarPad, 10);
+                                            mainContext.fill()
+                                        }
+                                        if (Q[e].group !== undefined && Q[e].owner?.sid > 0 && Q[e].active !== 0 && As.checked) {
+                                            mainContext.fillStyle = bo.checked ? te(Q[e].owner.sid) ? "#2693c7" : "#c9346b" : te(Q[e].owner.sid) ? "#93d1fa" : "#d38595";
+                                            mainContext.textBaseline = "middle";
+                                            mainContext.textAlign = "center";
+                                            mainContext.font = "13px Lilita One";
+                                            mainContext.strokeStyle = bo.checked ? "black" : "#212123";
+                                            mainContext.strokeText(Q[e].owner.sid.toString(), Q[e].x - w, Q[e].y - b + Q[e].scale - 20);
+                                            mainContext.fillText(Q[e].owner.sid.toString(), Q[e].x - w, Q[e].y - b + Q[e].scale - 20)
+                                        }
+                                    }
+
+
+                                }
+
+
+
+                                // health bar
+                                mainContext.strokeStyle = P0;
+                                mainContext.globalAlpha = 1;
+                                if (q.health > 0) {
+                                    mainContext.fillStyle = P0;
+                                    mainContext.roundRect(q.x - w - K.healthBarWidth - K.healthBarPad, q.y - b + q.scale + K.nameY, K.healthBarWidth * 2 + K.healthBarPad * 2, 17, 8);
+                                    mainContext.fill();
+                                    const neonColor = (q === z || (q.team && q.team === z.team)) ? "#00fffc" : "#ff3d3d";
+                                    mainContext.shadowColor = neonColor;
+                                    mainContext.shadowBlur = 10;
+                                    mainContext.shadowOffsetX = 0;
+                                    mainContext.shadowOffsetY = 0;
+                                    let t = !bo.checked ? q.isAI ? q.health2 : q.lastHealth === undefined || q.animatedHealth === undefined ? q.health2 : q.lastHealth + (q.health - q.lastHealth) * j(1, oe(0, 1 - re(1 - j(1, (Date.now() - q.animatedHealth) / 250), 2))) : q.health;
+                                    mainContext.fillStyle = neonColor;
+                                    mainContext.roundRect(q.x - w - K.healthBarWidth, q.y - b + q.scale + K.nameY + K.healthBarPad, K.healthBarWidth * 2 * (t / q.maxHealth), 17 - K.healthBarPad * 2, 7);
+                                    mainContext.fill();
+                                    mainContext.fillStyle = neonColor;
+                                    mainContext.font = "bold 19px Arial";
+                                    mainContext.fillText('<<', q.x - w - K.healthBarWidth - K.healthBarPad - 20, q.y - b + q.scale + K.nameY + K.healthBarPad + 6);
+                                    mainContext.fillText('>>', q.x - w + K.healthBarWidth + K.healthBarPad + 20, q.y - b + q.scale + K.nameY + K.healthBarPad + 6);
+                                    mainContext.shadowColor = "transparent";
+                                }
+                }
+            }
+            // ---- chat bubbles + the bot status message (bundle 14392-14457), verbatim ----
+            function l2Chat(w, b) {
+                        let n = J.concat(ts.players, es.rPlayer);
+                        for (var s = 0; s < n.length; ++s) {
+                            if (q = n[s], q?.visible && !Ei.includes(q?.sid) && q.chatCountdown > 0) {
+                                q.chatCountdown -= mh, q.chatCountdown <= 0 && (q.chatCountdown = 0);
+                                mainContext.font = "30px Lilita One";
+                                const v = mainContext.measureText(q.chatMessage);
+                                mainContext.strokeStyle = "black";
+                                mainContext.lineWidth = 3;
+                                mainContext.textBaseline = "middle", mainContext.textAlign = "center";
+                                var p = q.x - w,
+                                    h = q.y - q.scale - b - 90;
+                                const c = 57,
+                                      e = v.width + 27;
+                                mainContext.filter = "blur(2px)";
+                                mainContext.fillStyle = "rgba(0, 0, 0, 0.3)";
+                                mainContext.roundRect(p - e / 2, h - c / 2, e, c, 9);
+                                mainContext.fill();
+                                mainContext.filter = "none";
+                                mainContext.beginPath();
+                                mainContext.moveTo(p - e / 2 + 6, h - c / 2);
+                                mainContext.lineTo(p + e / 2 - 6, h - c / 2);
+                                mainContext.quadraticCurveTo(p + e / 2, h - c / 2, p + e / 2, h - c / 2 + 6);
+                                mainContext.lineTo(p + e / 2, h + c / 2 - 6);
+                                mainContext.quadraticCurveTo(p + e / 2, h + c / 2, p + e / 2 - 6, h + c / 2);
+                                mainContext.lineTo(p - e / 2 + 6, h + c / 2);
+                                mainContext.quadraticCurveTo(p - e / 2, h + c / 2, p - e / 2, h + c / 2 - 6); // Bottom left corner
+                                mainContext.lineTo(p - e / 2, h - c / 2 + 6); // Left edge
+                                mainContext.quadraticCurveTo(p - e / 2, h - c / 2, p - e / 2 + 6, h - c / 2); // Top left corner
+                                mainContext.closePath(); // Close the path
+                                mainContext.stroke(); // Apply the stroke to draw the border
+
+                                // Draw the chat message with neon cyan markers
+                                // Draw the chat message with neon cyan markers
+                                mainContext.fillStyle = "#fff"; // White text
+                                mainContext.fillText(`${q.chatMessage}`, p, h); // Fill text without markers
+
+                                // Add shadow properties for light blue shadow effect
+                                mainContext.shadowColor = "black"; // Shadow color
+                                mainContext.shadowBlur = 20; // Increased blur effect for shadow
+                                mainContext.shadowOffsetX = 0; // Horizontal shadow offset
+                                mainContext.shadowOffsetY = 0; // Vertical shadow offset
+
+                                mainContext.strokeText(`${q.chatMessage}`, p, h); // Stroke for neon effect
+                                mainContext.fillText(`${q.chatMessage}`, p, h); // Fill text
+
+                                // Reset shadow properties to avoid affecting other drawings
+                                mainContext.shadowColor = "transparent"; // Reset shadow color
+                                mainContext.shadowBlur = 0; // Reset blur
+                                mainContext.shadowOffsetX = 0; // Reset horizontal offset
+                                mainContext.shadowOffsetY = 0; // Reset vertical offset
+                            }
+                            if (Zn.time > 0 && (q = n[s])?.sid == z?.sid && en) {
+                                Zn.time -= mh;
+                                mainContext.font = "30px Lilita One"; // Decreased from 48px to 40px
+                                mainContext.strokeStyle = "#2d3030";
+                                var g = mainContext.measureText(Zn.message);
+                                mainContext.textBaseline = "middle", mainContext.textAlign = "center", p = q.x - w, h = q.y - q.scale - b - 140;
+                                var y = g.width + 27; // Adjusted width for larger text
+                                mainContext.fillStyle = "rgba(0, 0, 0, .5)", mainContext.roundRect(p - y / 2, h - 23.5, y, 57, 6), mainContext.fill(), mainContext.fillStyle = "#fff", mainContext.fillText(`${Zn.message}`, p, h);
+
+                                // Draw neon cyan markers for Zn.message
+                                mainContext.fillStyle = "#00FFFF"; // Neon cyan color
+                                mainContext.fillText('<<  ', p - g.width / 2 - 10, h); // Draw the start marker
+                                mainContext.fillText('  >>', p + g.width / 2 + 10, h); // Draw the end marker
+                            }
+                        }
+            }
 
 /* ===== examplescript/90-debug.js ===== */
             // =====================================================================

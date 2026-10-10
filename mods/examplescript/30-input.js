@@ -17,7 +17,7 @@
             let am = false;        // touch controls (never on desktop)
             let wh, xm, Dm = null;
             const om = { x: null, y: null, x2: null, y2: null };
-            let im = 1;            // the bundle's zoom ratio (1 = default view)
+            let im = 1;            // world units per screen px of the mouse (kept by sm())
             let I3 = { time: 0, type: null }, S3 = 0;
             // z.skins / z.tails: hats & accessories you own, as the bundle's Player kept them
             z.skins = {}; z.tails = {};
@@ -81,19 +81,16 @@
             function bm() {
                 return z ? (!z.lockDir && !am && (xm = P(Dh - _h / 2, Bh - Fh / 2)), X.fixTo(xm || 0, 2)) : 0;
             }
-            // rm: the mouse in world coordinates (om.x2 / om.y2), for the visuals
-            function rm(e) {
+            // rm (13290): the mouse in world coordinates (om.x2 / om.y2)
+            function rm(e, t) {
                 if (e) { om.x = e.clientX; om.y = e.clientY; }
-                const sc = viewScale();
-                const n = (om.x - Fh / 2) / sc, i = (om.y - _h / 2) / sc;
-                om.x2 = z.x2 + n; om.y2 = z.y2 + i;
-                return { x: om.x2, y: om.y2 };
-            }
-            // screen px per world unit of the official client's view (zr(), 8259)
-            function viewScale() {
-                const Gs = K.maxScreenWidth, Na = K.maxScreenHeight, vm2 = Na * 1.15;
-                const ct2 = win.innerWidth || 1, dt2 = win.innerHeight || 1;
-                return Math.max(ct2 / Gs, dt2 / vm2, Math.sqrt(ct2 * dt2 / (Gs * Na)));
+                const n = (om.x - Fh / 2) * im * .91975;
+                const i = (om.y - _h / 2) * im * .91975;
+                const s = z.x2 + n;
+                const o = z.y2 + i;
+                om.x2 = s;
+                om.y2 = o;
+                return { x: s, y: o };
             }
 
             // ---- keydown (Tm, 13412) ----
@@ -179,9 +176,19 @@
             }
             // "p": ease the camera zoom back to default (em, 13251)
             async function em() {
-                if (im > 1 + 1e-3) { await wx(2); im /= 1.05; applyZoom(); em(); }
-                else if (im < 1 - 1e-3) { await wx(2); im *= 1.05; applyZoom(); em(); }
-                else { im = 1; applyZoom(); }
+                if (Oh > K.maxScreenWidth + 1) {
+                    await wx(2);
+                    Oh /= 1.05;
+                    Lh /= 1.05;
+                    sm();
+                    em();
+                } else if (Oh < K.maxScreenWidth - 1) {
+                    await wx(2);
+                    Oh *= 1.05;
+                    Lh *= 1.05;
+                    sm();
+                    em();
+                } else return;
             }
 
             // ---- mouse (13331) ----
@@ -201,8 +208,14 @@
             // zoom: hold q and use the mouse wheel (11682)
             function onWheel(e) {
                 if (!m.q) return;
-                if (e.deltaY > 0) im *= 1.05; else im /= 1.05;
-                applyZoom();
+                if (e.deltaY > 0) {
+                    Oh *= 1.05;
+                    Lh *= 1.05;
+                } else {
+                    Oh /= 1.05;
+                    Lh /= 1.05;
+                }
+                sm();
             }
 
             const trusted = (fn) => function (e) { if (e && e.isTrusted === false) return; return fn.apply(this, arguments); };

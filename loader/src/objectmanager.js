@@ -43,7 +43,7 @@
     // for placed buildings, or null for a natural resource (tree/bush/stone).
     // The engine's "is this sid me or my clan" test (the bundle's te) and its tick
     // counter, injected by the combat engine; until then, plain self/team checks.
-    const hooksRef = { te: null, tick: () => 0 };
+    const hooksRef = { te: null, tick: () => 0, millRotate: () => false };
 
     class GameObject {
         constructor(sid) { this.sid = sid; }
@@ -123,6 +123,12 @@
         }
 
         changeHealth(e) { this.health += e; return this.health <= 0; }
+
+        // Gl.update (bundle 3032): per render frame, the hit wiggle eases out and
+        // spinning things turn (windmills only with the mod's "mill rotate").
+        update(e) {
+            this.active && (this.xWiggle && (this.xWiggle *= Math.pow(0.99, e)), this.yWiggle && (this.yWiggle *= Math.pow(0.99, e)), (hooksRef.millRotate() && this?.group?.name == "mill" || this?.group?.name != "mill") && this.turnSpeed && (this.dir += this.turnSpeed * e));
+        }
 
         getScale(e, t) {
             e = e || 1;
@@ -250,7 +256,7 @@
                     o.time -= delta;
                     if (o.time <= 0) o.time = TURRET_RELOAD;
                 }
-                if (o.turnSpeed) o.dir += o.turnSpeed * delta;
+                if (!driven && o.turnSpeed) o.dir += o.turnSpeed * delta;   // driven: GameObject.update per frame
             }
         }
 
@@ -326,6 +332,7 @@
             setFriendlyTest: (fn) => { hooksRef.te = fn; },
             onRemove: (fn) => { removeTaps.add(fn); return () => removeTaps.delete(fn); },
             setTickSource: (fn) => { hooksRef.tick = fn; },
+            setMillRotate: (fn) => { hooksRef.millRotate = typeof fn === "function" ? fn : () => false; },
             TURRET_RELOAD
         };
     }

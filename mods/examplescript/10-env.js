@@ -25,9 +25,15 @@
             let q;   // the bundle's global scratch player/object
 
             // ---- config (K), items (x), utils (X), hats (C0) / tails (B0) ----
+            // the bundle's config values (2005-2104) the engine's K doesn't carry
             const K = Object.assign({}, combat.K, {
-                healthBarWidth: 50, healthBarPad: 4.5, nameY: 34, crownPad: 15, crownIconScale: 60, skullPad: 15,
-                skullIconScale: 60, iconPad: 0.9, outlineColor: "#525252", outlineWidth: 5.5, riverPadding: 20
+                healthBarWidth: 50, healthBarPad: 4.5, iconPadding: 15, iconPad: .9, deathFadeout: 3e3,
+                crownIconScale: 60, crownPad: 35, chatCountdown: 3e3, chatCooldown: 500, nameY: 34,
+                riverPadding: 114, waterCurrent: .0011, waveSpeed: 1e-4, waveMax: 1.3,
+                treeScales: [150, 160, 165, 175], bushScales: [80, 85, 95], rockScales: [80, 85, 90],
+                mapPingScale: 40, mapPingTime: 2200, volcanoScale: 320, innerVolcanoScale: 100,
+                volcanoAnimationDuration: 3200, volcanoAggressionRadius: 1440,
+                volcanoLocationX: 14400 - 320 - 120, volcanoLocationY: 14400 - 320 - 120
             });
             const x = { list: data.items, weapons: data.weapons, projectiles: data.projectiles, groups: data.groups };
             x.a = x.list.concat(x.weapons);
@@ -38,6 +44,7 @@
                 getAngleDist: (e, t) => { const n = S(t - e) % ae; return n > W ? ae - n : n; },
                 fixTo: (e, t) => parseFloat(e.toFixed(t)),
                 randInt: (e, t) => Math.floor(Math.random() * (t - e + 1)) + e,
+                randFloat: (e, t) => Math.random() * (t - e + 1) + e,
                 lerp: (e, t, n) => e + (t - e) * n,
                 lineInRect: combat.lineInRect,
                 getDist: (e, t, n, i) => {
@@ -104,7 +111,8 @@
             function Qg(t) { for (let e = kh.length; e--;) if (kh[e].sid === t) return kh[e]; return null; }
             const Z = (e) => e * (W / 180);
             const oy = (e) => e * 180 / W;
-            const En = [1, 1.1, 1.18, 1.18];
+            // weapon variant multipliers; this server has a 5th variant (emerald, val 1.18)
+            const En = [1, 1.1, 1.18, 1.18, 1.18];
 
             // ---- the bundle's own globals (var block 599-797), exact initial values ----
             let He = 0, We = 0, Qe = 0, Ye = [], ze = 0, Wt = { sec: false, min: false };
@@ -118,6 +126,7 @@
             let vt, Ei = [], Ci = [], Bi = 0, Mi = 111, Oi = false, Fi = null, Wi = [], zi = [], Gi = 0, yt = [], xt = null;
             let ie = [], Sg = [], k5 = [0, 0], os = [], rs = [], qm = false, Y3 = [], tn = 0, np;
             let Nt = false, ns = [], is = [], ss = [];
+            let Ft = null;      // the "clear" command's radius marker (chat commands are not ported)
             // loadout slots (the bundle's yy(), resolved by ctx.combat.loadout)
             let ee = null, A = null, ry = null, ay = null, ly = null, cy = null, dy = null, uy = null, fy = null, hy = null;
             function yy() {
