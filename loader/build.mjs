@@ -34,6 +34,7 @@ const MODULES = [
     { label: "helpers", file: path.join(srcDir, "helpers.js") },
     { label: "menu", file: path.join(srcDir, "menu.js") },
     { label: "configmenu", file: path.join(srcDir, "configmenu.js") },
+    { label: "outgoing", file: path.join(srcDir, "outgoing.js") },
     { label: "loader", file: path.join(srcDir, "loader.js") }
 ];
 

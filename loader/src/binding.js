@@ -109,10 +109,51 @@
         admin: { wire: "A", build: (d) => d.args || [] }
     };
 
+    // ---- OUTGOING, inverse: wire args -> action payload ----
+    // Lets the loader turn a frame the official client sent back into a named
+    // action, so mods can inspect, rewrite or drop it (see runtime onOutgoing).
+    const outgoingParse = {
+        M: { action: "spawn", parse: (a) => Object.assign({}, a[0] || {}) },
+        D: { action: "aim", parse: (a) => ({ dir: a[0] }) },
+        9: { action: "move", parse: (a) => ({ dir: a[0] == null ? null : a[0] }) },
+        e: { action: "stopMove", parse: () => ({}) },
+        F: { action: "mouse", parse: (a) => ({ down: !!a[0], dir: a.length > 1 ? a[1] : undefined }) },
+        z: { action: "selectItem", parse: (a) => ({ index: a[0], isWeapon: !!a[1] }) },
+        H: { action: "upgrade", parse: (a) => ({ index: a[0] }) },
+        K: { action: "toggle", parse: (a) => ({ which: a[0] }) },
+        L: { action: "createTribe", parse: (a) => ({ name: a[0] }) },
+        N: { action: "leaveTribe", parse: () => ({}) },
+        b: { action: "joinTribe", parse: (a) => ({ name: a[0] }) },
+        P: { action: "answerJoin", parse: (a) => ({ sid: a[0], accept: !!a[1] }) },
+        Q: { action: "kickMember", parse: (a) => ({ sid: a[0] }) },
+        c: { action: "store", parse: (a) => ({ action: a[0], id: a[1], isAccessory: !!a[2] }) },
+        6: { action: "chat", parse: (a) => ({ message: a[0] }) },
+        S: { action: "pingMap", parse: () => ({}) },
+        0: { action: "ping", parse: () => ({}) },
+        V: { action: "watchStats", parse: (a) => ({ sid: a[0] }) },
+        R: { action: "report", parse: (a) => ({ args: a.slice() }) },
+        A: { action: "admin", parse: (a) => ({ args: a.slice() }) }
+    };
+
+    // The server's per-packet token buckets ([refill per second, burst]) from
+    // server/src/anticheat/config.js. The loader mirrors them so that the sum of
+    // the client's own packets and mod-injected packets can never exceed a bucket
+    // (exceeding one = a strike; 40 strikes = kicked).
+    const rateLimits = {
+        global: [150, 300],
+        packets: {
+            M: [1, 3], D: [60, 120], 9: [40, 80], e: [10, 20], F: [40, 80], z: [20, 40], H: [10, 20],
+            K: [10, 20], L: [2, 4], N: [2, 4], b: [2, 4], P: [5, 10], Q: [5, 10], c: [10, 20],
+            6: [2, 4], S: [1, 2], 0: [2, 4], T: [1, 3], R: [2, 5], A: [20, 40], V: [4, 8]
+        }
+    };
+
     return {
         version: 1,
         incoming,
         outgoing,
+        outgoingParse,
+        rateLimits,
         // Used by the anti-cheat bypass: the outgoing packet that carries the
         // anti-tamper telemetry (flags bitfield + untrusted-event count).
         telemetry: {

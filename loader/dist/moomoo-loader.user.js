@@ -1134,10 +1134,51 @@
         admin: { wire: "A", build: (d) => d.args || [] }
     };
 
+    // ---- OUTGOING, inverse: wire args -> action payload ----
+    // Lets the loader turn a frame the official client sent back into a named
+    // action, so mods can inspect, rewrite or drop it (see runtime onOutgoing).
+    const outgoingParse = {
+        M: { action: "spawn", parse: (a) => Object.assign({}, a[0] || {}) },
+        D: { action: "aim", parse: (a) => ({ dir: a[0] }) },
+        9: { action: "move", parse: (a) => ({ dir: a[0] == null ? null : a[0] }) },
+        e: { action: "stopMove", parse: () => ({}) },
+        F: { action: "mouse", parse: (a) => ({ down: !!a[0], dir: a.length > 1 ? a[1] : undefined }) },
+        z: { action: "selectItem", parse: (a) => ({ index: a[0], isWeapon: !!a[1] }) },
+        H: { action: "upgrade", parse: (a) => ({ index: a[0] }) },
+        K: { action: "toggle", parse: (a) => ({ which: a[0] }) },
+        L: { action: "createTribe", parse: (a) => ({ name: a[0] }) },
+        N: { action: "leaveTribe", parse: () => ({}) },
+        b: { action: "joinTribe", parse: (a) => ({ name: a[0] }) },
+        P: { action: "answerJoin", parse: (a) => ({ sid: a[0], accept: !!a[1] }) },
+        Q: { action: "kickMember", parse: (a) => ({ sid: a[0] }) },
+        c: { action: "store", parse: (a) => ({ action: a[0], id: a[1], isAccessory: !!a[2] }) },
+        6: { action: "chat", parse: (a) => ({ message: a[0] }) },
+        S: { action: "pingMap", parse: () => ({}) },
+        0: { action: "ping", parse: () => ({}) },
+        V: { action: "watchStats", parse: (a) => ({ sid: a[0] }) },
+        R: { action: "report", parse: (a) => ({ args: a.slice() }) },
+        A: { action: "admin", parse: (a) => ({ args: a.slice() }) }
+    };
+
+    // The server's per-packet token buckets ([refill per second, burst]) from
+    // server/src/anticheat/config.js. The loader mirrors them so that the sum of
+    // the client's own packets and mod-injected packets can never exceed a bucket
+    // (exceeding one = a strike; 40 strikes = kicked).
+    const rateLimits = {
+        global: [150, 300],
+        packets: {
+            M: [1, 3], D: [60, 120], 9: [40, 80], e: [10, 20], F: [40, 80], z: [20, 40], H: [10, 20],
+            K: [10, 20], L: [2, 4], N: [2, 4], b: [2, 4], P: [5, 10], Q: [5, 10], c: [10, 20],
+            6: [2, 4], S: [1, 2], 0: [2, 4], T: [1, 3], R: [2, 5], A: [20, 40], V: [4, 8]
+        }
+    };
+
     return {
         version: 1,
         incoming,
         outgoing,
+        outgoingParse,
+        rateLimits,
         // Used by the anti-cheat bypass: the outgoing packet that carries the
         // anti-tamper telemetry (flags bitfield + untrusted-event count).
         telemetry: {
@@ -1279,7 +1320,7 @@
 
         // ---- event plumbing ----
         function on(event, handler) {
-            if (!vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
+            if (event !== "*" && !vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
             let set = listeners.get(event);
             if (!set) { set = new Set(); listeners.set(event, set); }
             set.add(handler);
@@ -1292,6 +1333,46 @@
         function once(event, handler) {
             const wrap = (payload) => { off(event, wrap); handler(payload); };
             return on(event, wrap);
+        }
+
+        // ---- outgoing hooks ----
+        // onOutgoing(action, fn): see (and optionally change) every frame the
+        // OFFICIAL CLIENT tries to send, by vocabulary action name ("aim", "move",
+        // "mouse", "selectItem", "toggle", "store", ... or "*" for all).
+        //   fn(payload, info, action) returns
+        //     undefined      -> send it unchanged
+        //     false / null   -> drop it (it never reaches the server)
+        //     an object      -> send this payload instead
+        // This is how a mod takes over a control the client normally owns (the
+        // bundle replaced the client's own aim/move/attack sending with its own).
+        const outFilters = new Map();   // action -> Set<fn>
+        const sentTaps = new Set();     // fn(action, payload, source)
+        function onOutgoing(action, fn) {
+            let set = outFilters.get(action);
+            if (!set) { set = new Set(); outFilters.set(action, set); }
+            set.add(fn);
+            return () => set.delete(fn);
+        }
+        function _filterOutgoing(action, payload, info) {
+            let cur = payload;
+            const sets = [outFilters.get(action), outFilters.get("*")];
+            for (const set of sets) {
+                if (!set) continue;
+                for (const fn of Array.from(set)) {
+                    let r;
+                    try { r = fn(cur, info || {}, action); }
+                    catch (e) { console.error(logPrefix + " outgoing filter for '" + action + "' threw", logStyle, e); continue; }
+                    if (r === false || r === null) return null;
+                    if (r && typeof r === "object") cur = r;
+                }
+            }
+            return cur;
+        }
+        // onSent(fn): every frame that actually went out (client or mod), after
+        // the rate governor. fn(action, payload, source) with source "client"|"mod".
+        function onSent(fn) { sentTaps.add(fn); return () => sentTaps.delete(fn); }
+        function _notifySent(action, payload, source) {
+            for (const fn of Array.from(sentTaps)) { try { fn(action, payload, source); } catch (e) { /* ignore */ } }
         }
 
         // Called by the loader for every decoded incoming packet.
@@ -1391,7 +1472,7 @@
         }
 
         function buildCtx(rec) {
-            const active = { unsubs: [], timers: [], cleanups: [] };
+            const active = { unsubs: [], timers: [], timeouts: [], cleanups: [] };
             const settings = {};
             for (const s of rec.schema) Object.defineProperty(settings, s.key, {
                 get: () => rec.values[s.key],
@@ -1408,6 +1489,14 @@
                 on: (ev, h) => { const un = on(ev, h); active.unsubs.push(un); return un; },
                 once: (ev, h) => { const un = once(ev, h); active.unsubs.push(un); return un; },
                 every: (ms, fn) => { const t = setInterval(fn, ms); active.timers.push(t); return t; },
+                // One-shot timer, cleared if the mod is disabled first.
+                after: (ms, fn) => {
+                    const t = setTimeout(() => { const i = active.timeouts.indexOf(t); if (i >= 0) active.timeouts.splice(i, 1); fn(); }, ms);
+                    active.timeouts.push(t);
+                    return t;
+                },
+                onOutgoing: (action, fn) => { const un = onOutgoing(action, fn); active.unsubs.push(un); return un; },
+                onSent: (fn) => { const un = onSent(fn); active.unsubs.push(un); return un; },
                 onCleanup: (fn) => { active.cleanups.push(fn); },
                 // Live-settings mods react to a toggle/slider change here instead of
                 // being torn down and re-run. fn(key, newValue, oldValue).
@@ -1432,6 +1521,7 @@
             if (!a) return;
             for (const un of a.unsubs) { try { un(); } catch (e) { /* ignore */ } }
             for (const t of a.timers) { try { clearInterval(t); } catch (e) { /* ignore */ } }
+            for (const t of a.timeouts) { try { clearTimeout(t); } catch (e) { /* ignore */ } }
             for (const c of a.cleanups) { try { c(); } catch (e) { /* ignore */ } }
             rec._active = null;
         }
@@ -1540,6 +1630,8 @@
             isReady: () => ready,
             // events
             on, off, once, onReady,
+            // outgoing (see onOutgoing / onSent above)
+            onOutgoing, onSent,
             // actions
             send,
             // mods (managed units with enable/disable + settings)
@@ -1548,7 +1640,7 @@
             // logging
             log,
             // internal hooks used by the loader (underscore-prefixed)
-            _dispatch, _setReady, _reset, _clearMods,
+            _dispatch, _setReady, _reset, _clearMods, _filterOutgoing, _notifySent,
             _setCtxExtensions: (ext) => { ctxExtensions = ext; }
         };
         return MooMoo;
@@ -2632,6 +2724,7 @@
         const input = env.input;
         const objects = env.objects || null;
         const combatEngine = env.combat || null;
+        const net = env.net || null;
         const S = () => MooMoo.self;
 
         // ---- combat state: weapon reload + variants (reconstructed from packets) ----
@@ -2807,6 +2900,8 @@
                 visiblePlayers, enemies, nearestEnemy, predictedDamage,
                 // world objects (buildings / resources / turrets / traps)
                 objects,
+                // outgoing: rate governor, packet counts, ping (see outgoing.js)
+                net,
                 // combat state: the full engine (per-player prediction/reload/bull)
                 // when present; a minimal reload shim otherwise (headless tests).
                 combat: combatEngine || {
@@ -3331,6 +3426,177 @@
 });
 
 
+/* ===== module: outgoing (loader/src/outgoing.js) ===== */
+/*
+ * moomoo.js loader — OUTGOING  (rate governor + packet accounting + ping)
+ * ======================================================================
+ * Every frame that leaves the socket — the official client's own frames AND
+ * frames mods inject — passes through here first.
+ *
+ *  1. GOVERNOR. The server keeps a token bucket per packet type plus a global
+ *     one (server/src/anticheat/config.js, mirrored in binding.rateLimits).
+ *     Going over a bucket costs a strike and 40 strikes is a kick. The official
+ *     client is tuned to stay under them on its own, but client + mod together
+ *     can exceed a bucket (e.g. both selecting items in one tick). The governor
+ *     mirrors the buckets with a safety margin and refuses a frame that would
+ *     overflow, so the server never sees a burst it would strike. It is the same
+ *     idea as the bundle's own packet limiter (packet.send refused to send past
+ *     120 packets per 9 ticks), just keyed to this server's real limits.
+ *
+ *  2. ACCOUNTING. Counts sent frames per second / per minute / per type, and
+ *     what the governor refused, for the "packet count" visual and diagnostics.
+ *
+ *  3. PING. The official client pings every 2.5s on its own; timing those
+ *     round trips gives the mod a ping without sending a single extra packet
+ *     (the bundle pinged every 400ms, which this server's "0" bucket [2/s]
+ *     would strike).
+ *
+ * Part of the LOADER (volatile).
+ */
+(function (root, factory) {
+    const value = factory();
+    if (typeof module === "object" && module.exports) module.exports = value;
+    if (typeof root !== "undefined") root.MooMooOutgoing = value;
+    if (typeof globalThis !== "undefined") globalThis.MooMooOutgoing = value;
+})(typeof self !== "undefined" ? self : this, function () {
+    "use strict";
+
+    // Margin against network jitter bunching packets together on the way to the
+    // server: refill a little slower and keep a couple of tokens in reserve.
+    const RATE_MARGIN = 0.9;
+    const BURST_RESERVE = 2;
+    // Never refused: telemetry (a missing heartbeat is itself a kick) and spawn.
+    const NEVER_DROP = new Set(["T", "M"]);
+
+    class Bucket {
+        constructor(spec, now) {
+            const [perSecond, burst] = spec;
+            this.rate = (perSecond * RATE_MARGIN) / 1000;
+            this.capacity = Math.max(1, burst - BURST_RESERVE);
+            this.tokens = this.capacity;
+            this.updated = now;
+        }
+        refill(now) {
+            this.tokens = Math.min(this.capacity, this.tokens + (now - this.updated) * this.rate);
+            this.updated = now;
+        }
+        canTake(now) { this.refill(now); return this.tokens >= 1; }
+        take() { this.tokens -= 1; }
+    }
+
+    function createOutgoing(opts) {
+        opts = opts || {};
+        const limits = opts.rateLimits || { global: [150, 300], packets: {} };
+        const clock = opts.now || (() => Date.now());
+
+        let enabled = opts.enabled !== false;
+        let global = new Bucket(limits.global, clock());
+        let buckets = Object.create(null);
+        const bucketFor = (wire, now) => {
+            const spec = limits.packets[wire];
+            if (!spec) return null;
+            return buckets[wire] || (buckets[wire] = new Bucket(spec, now));
+        };
+
+        // ---- governor ----
+        // allow(wire) checks AND consumes; a refused frame consumes nothing.
+        function allow(wire) {
+            const now = clock();
+            if (!enabled || NEVER_DROP.has(wire)) {
+                const b = bucketFor(wire, now);
+                global.refill(now); if (global.tokens >= 1) global.take();
+                if (b) { b.refill(now); if (b.tokens >= 1) b.take(); }
+                return true;
+            }
+            const b = bucketFor(wire, now);
+            if (!global.canTake(now) || (b && !b.canTake(now))) {
+                stats.refused++;
+                stats.refusedByType[wire] = (stats.refusedByType[wire] || 0) + 1;
+                for (const fn of refusedTaps) { try { fn(wire); } catch (e) { /* ignore */ } }
+                return false;
+            }
+            global.take();
+            if (b) b.take();
+            return true;
+        }
+        // Would a frame of this type be accepted right now? (does not consume)
+        function wouldAllow(wire) {
+            const now = clock();
+            if (!enabled || NEVER_DROP.has(wire)) return true;
+            const b = bucketFor(wire, now);
+            return global.canTake(now) && (!b || b.canTake(now));
+        }
+        function tokens(wire) {
+            const now = clock();
+            const b = bucketFor(wire, now);
+            if (!b) return Infinity;
+            b.refill(now);
+            return b.tokens;
+        }
+
+        // ---- accounting ----
+        const stats = { sent: 0, refused: 0, refusedByType: Object.create(null), byType: Object.create(null) };
+        const secondWindow = [];       // timestamps of frames sent in the last 1s
+        const minuteWindow = [];       // ... last 60s
+        const refusedTaps = new Set();
+        function record(wire) {
+            const now = clock();
+            stats.sent++;
+            stats.byType[wire] = (stats.byType[wire] || 0) + 1;
+            secondWindow.push(now);
+            minuteWindow.push(now);
+            prune(now);
+        }
+        function prune(now) {
+            while (secondWindow.length && now - secondWindow[0] > 1000) secondWindow.shift();
+            while (minuteWindow.length && now - minuteWindow[0] > 60000) minuteWindow.shift();
+        }
+        function perSecond() { prune(clock()); return secondWindow.length; }
+        function perMinute() { prune(clock()); return minuteWindow.length; }
+
+        // ---- ping (timed off the client's own "0" -> pong round trips) ----
+        const pingSamples = [];
+        let pingSentAt = 0;
+        let lastPing = 0;
+        function onPingSent() { pingSentAt = clock(); }
+        function onPong() {
+            if (!pingSentAt) return null;
+            lastPing = clock() - pingSentAt;
+            pingSentAt = 0;
+            pingSamples.push(lastPing);
+            if (pingSamples.length >= 4) pingSamples.shift();   // bundle keeps the last 3 (yt)
+            return lastPing;
+        }
+        function avgPing() {
+            if (!pingSamples.length) return 0;
+            return pingSamples.reduce((a, b) => a + b, 0) / pingSamples.length;
+        }
+
+        function reset() {
+            const now = clock();
+            global = new Bucket(limits.global, now);
+            buckets = Object.create(null);
+            pingSentAt = 0;
+        }
+
+        return {
+            allow, wouldAllow, tokens, record,
+            perSecond, perMinute, stats,
+            onRefused: (fn) => { refusedTaps.add(fn); return () => refusedTaps.delete(fn); },
+            onPingSent, onPong,
+            get ping() { return lastPing; },
+            avgPing,
+            setEnabled: (b) => { enabled = !!b; },
+            get enabled() { return enabled; },
+            reset,
+            RATE_MARGIN, BURST_RESERVE
+        };
+    }
+
+    return { createOutgoing, Bucket };
+});
+
+
 /* ===== module: loader (loader/src/loader.js) ===== */
 /*
  * moomoo.js loader — CORE
@@ -3364,7 +3630,8 @@
             ObjectManager: require("./objectmanager.js"),
             Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
-            ConfigMenu: require("./configmenu.js")
+            ConfigMenu: require("./configmenu.js"),
+            Outgoing: require("./outgoing.js")
         }
         : null;
     const value = factory(deps);
@@ -3392,7 +3659,8 @@
             ObjectManager: g.MooMooObjectManager,
             Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
-            ConfigMenu: g.MooMooConfigMenu
+            ConfigMenu: g.MooMooConfigMenu,
+            Outgoing: g.MooMooOutgoing
         };
     }
 
@@ -3472,6 +3740,9 @@
 
         let active = null; // the adopted game socket's state
 
+        // Rate governor + packet accounting + ping (see outgoing.js).
+        const out = D.Outgoing ? D.Outgoing.createOutgoing({ rateLimits: binding.rateLimits }) : null;
+
         // ---- runtime + sink ----
         // Self input mirror: the combat engine needs the player's own current move
         // direction (the bundle's `Dn`) and aim to predict self position. We capture
@@ -3518,7 +3789,7 @@
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat, net: out });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -3529,12 +3800,28 @@
         }
 
         // ---- outgoing (client -> server), loader-owned ----
+        // Every frame that actually leaves: count it (governor stats, ping timing)
+        // and tell mods (MooMoo.onSent).
+        function noteSent(wire, args, source) {
+            if (out) {
+                out.record(wire);
+                if (wire === "0") out.onPingSent();
+            }
+            const pb = binding.outgoingParse && binding.outgoingParse[wire];
+            if (pb && MooMoo._notifySent) {
+                let payload; try { payload = pb.parse(args || []); } catch (e) { payload = { args }; }
+                MooMoo._notifySent(pb.action, payload, source);
+            }
+        }
+
         function sendWire(st, wire, args) {
             if (!st || st.ignore) { console.warn("%c[moomoo.js]", "color:#e66", "no active game socket to send on"); return false; }
             if (st.ready) {
+                if (out && !out.allow(wire)) return false;             // would overflow a server bucket
                 const bytes = st.session.encodeC2S(wire, args);
                 tapRaw("out", wire, args);
                 st.nativeSend(bytes);
+                noteSent(wire, args, "mod");
                 return true;
             }
             if (st.failed) { console.warn("%c[moomoo.js]", "color:#e66", "cannot inject packets without the protocol key"); return false; }
@@ -3552,16 +3839,35 @@
             };
         }
 
+        // Returns the bytes to send, or undefined to drop the frame entirely. A
+        // dropped frame never consumes a sequence number, so the stream stays
+        // gap-free.
         function reencodeClientFrame(st, bytes) {
+            let dec;
+            try { dec = st.session.decodeC2S(bytes); }
+            catch (e) { errorSink(e); return bytes; } // fail open
             try {
-                const dec = st.session.decodeC2S(bytes);
                 let name = dec.name, args = dec.args;
                 if (name === telemetry.wire) args = telemetry.scrub(args); // ANTI-CHEAT BYPASS
+                // Let mods inspect / rewrite / drop what the official client sends.
+                const pb = binding.outgoingParse && binding.outgoingParse[name];
+                if (pb && MooMoo._filterOutgoing && name !== telemetry.wire) {
+                    const payload = pb.parse(args);
+                    const res = MooMoo._filterOutgoing(pb.action, payload, { source: "client", wire: name, args: args.slice() });
+                    if (res === null) return undefined;                    // a mod dropped it
+                    if (res !== payload) {
+                        const ob = binding.outgoing[pb.action];
+                        if (ob) args = ob.build(res);
+                    }
+                }
+                if (out && !out.allow(name)) return undefined;          // would overflow a server bucket
                 tapRaw("out", name, args);
-                return st.session.encodeC2S(name, args);               // our own gap-free seq
+                const enc = st.session.encodeC2S(name, args);          // our own gap-free seq
+                noteSent(name, args, "client");
+                return enc;
             } catch (e) {
                 errorSink(e);
-                return bytes; // fail open
+                return st.session.encodeC2S(dec.name, dec.name === telemetry.wire ? telemetry.scrub(dec.args) : dec.args);
             }
         }
 
@@ -3592,6 +3898,10 @@
             let payload;
             try { payload = bind.parse(dec.args); }
             catch (e) { errorSink(e); return; }
+            if (bind.event === "pong" && out) {
+                const ms = out.onPong();
+                if (ms != null) payload.ms = ms;
+            }
             MooMoo._dispatch(bind.event, payload);
         }
 
@@ -3599,6 +3909,7 @@
         function adopt(st, payload) {
             active = st;
             if (MooMoo._reset) MooMoo._reset();
+            if (out) out.reset();
             getProtocolModule().then((mod) => {
                 try {
                     st.session = new D.Protocol.ClientSession(payload, mod);
@@ -3615,7 +3926,13 @@
                 const outq = st.outQueue; st.outQueue = [];
                 for (const item of outq) {
                     if (item.kind === "client") { const b = reencodeClientFrame(st, item.data); if (b !== undefined) st.nativeSend(b); }
-                    else { try { st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args); } catch (e) { errorSink(e); } }
+                    else {
+                        try {
+                            if (out && !out.allow(item.wire)) continue;
+                            st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args);
+                            noteSent(item.wire, item.args, "mod");
+                        } catch (e) { errorSink(e); }
+                    }
                 }
                 MooMoo._setReady(true);
                 try { win.dispatchEvent(new win.Event("moomoo:ready")); } catch (e) { /* non-DOM env */ }
@@ -3669,6 +3986,7 @@
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;
+        MooMooLoader.net = out;
         MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).

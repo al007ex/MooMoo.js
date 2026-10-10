@@ -31,6 +31,7 @@ g.MooMooProtocol = require(path.join(srcDir, "protocol.js"));
 g.MooMooBinding = require(path.join(srcDir, "binding.js"));
 g.MooMooRuntime = require(path.join(srcDir, "runtime.js"));
 g.MooMooAnticheat = require(path.join(srcDir, "anticheat.js"));
+g.MooMooOutgoing = require(path.join(srcDir, "outgoing.js"));
 const LoaderCore = require(path.join(srcDir, "loader.js"));
 
 skipIfUnavailable("loader.integration");
@@ -227,6 +228,79 @@ await ok("MooMoo.send.chat injects a packet the server accepts", async () => {
     assert.deepStrictEqual(chat.args, ["injected!"]);
     assert.ok(spawn && !spawn.error, "spawn injected");
     assert.deepStrictEqual(spawn.args, [{ name: "Bot", moofoll: 1, skin: 3 }]);
+});
+
+
+console.log("\n== outgoing takeover: mods drop / rewrite the client's own frames ==");
+await ok("onOutgoing can drop and rewrite client frames without a sequence gap", async () => {
+    const env = makeFakeEnv(build);
+    const { MooMoo } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    const ws = new env.win.WebSocket("wss://localhost/");
+    env.emitHandshake();
+    await tick(); await tick();
+    const client = new g.MooMooProtocol.ClientSession(decodeHandshakePayload(env), mod);
+    const dl = env.win.WebSocket.prototype.send;
+
+    const sent = [];
+    MooMoo.onSent((action, payload, source) => sent.push([action, source]));
+    // drop every client click; rewrite every client aim to 2.5
+    const unDrop = MooMoo.onOutgoing("mouse", () => false);
+    const unAim = MooMoo.onOutgoing("aim", (p) => ({ dir: 2.5 }));
+
+    dl.call(ws, client.encodeC2S("F", [1, null]));   // dropped
+    dl.call(ws, client.encodeC2S("D", [0.1]));       // rewritten
+    MooMoo.send.chat("mod");                          // injected
+    dl.call(ws, client.encodeC2S("F", [0, null]));   // dropped
+    dl.call(ws, client.encodeC2S("6", ["hi"]));      // untouched
+    unDrop(); unAim();
+    dl.call(ws, client.encodeC2S("F", [1, null]));   // filter removed -> passes
+
+    const acc = env.acceptedByServer;
+    assert.ok(acc.every((d) => !d.error), "server rejected: " + JSON.stringify(acc.map((a) => a.error || a.name)));
+    assert.deepStrictEqual(acc.map((a) => a.name), ["D", "6", "6", "F"]);
+    assert.deepStrictEqual(acc.map((a) => a.seq), [1, 2, 3, 4], "dropped frames must not leave a gap");
+    assert.deepStrictEqual(acc[0].args, [2.5], "aim rewritten");
+    assert.deepStrictEqual(sent, [["aim", "client"], ["chat", "mod"], ["chat", "client"], ["mouse", "client"]]);
+});
+
+await ok("rate governor keeps client + mod frames under the server's buckets", async () => {
+    const env = makeFakeEnv(build);
+    const { MooMoo, MooMooLoader } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    const ws = new env.win.WebSocket("wss://localhost/");
+    env.emitHandshake();
+    await tick(); await tick();
+    const client = new g.MooMooProtocol.ClientSession(decodeHandshakePayload(env), mod);
+    const dl = env.win.WebSocket.prototype.send;
+    // 60 selectItem in one instant: the server's "z" bucket is [20/s, burst 40].
+    let modAccepted = 0;
+    for (let i = 0; i < 30; i++) {
+        dl.call(ws, client.encodeC2S("z", [0, 1]));
+        if (MooMoo.send.selectItem(0, true)) modAccepted++;
+    }
+    const zs = env.acceptedByServer.filter((a) => a.name === "z");
+    assert.ok(zs.length <= 40 - MooMooLoader.net.BURST_RESERVE, "sent " + zs.length + " z in one burst; server burst is 40");
+    assert.ok(zs.length >= 30, "the governor should still allow most of the burst (" + zs.length + ")");
+    assert.ok(MooMooLoader.net.stats.refused > 0, "some frames refused");
+    assert.ok(env.acceptedByServer.every((d) => !d.error), "no transport errors / gaps");
+    // telemetry is never refused
+    dl.call(ws, client.encodeC2S("T", [3, 0]));
+    assert.ok(env.acceptedByServer.some((a) => a.name === "T"), "T always goes out");
+});
+
+await ok("ping is timed off the client's own 0 -> pong round trip", async () => {
+    const env = makeFakeEnv(build);
+    const { MooMoo, MooMooLoader } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    const ws = new env.win.WebSocket("wss://localhost/");
+    env.emitHandshake();
+    await tick(); await tick();
+    const client = new g.MooMooProtocol.ClientSession(decodeHandshakePayload(env), mod);
+    let got = null;
+    MooMoo.on("pong", (p) => { got = p.ms; });
+    env.win.WebSocket.prototype.send.call(ws, client.encodeC2S("0", []));
+    await new Promise((r) => setTimeout(r, 30));
+    env.emit("0", []);
+    assert.ok(typeof got === "number" && got >= 25, "pong carries ms: " + got);
+    assert.strictEqual(MooMooLoader.net.ping, got);
 });
 
 function decodeHandshakePayload(env) {
