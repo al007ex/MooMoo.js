@@ -47,8 +47,9 @@ this as a proper menu driven by the feature registry.
 - [x] strict soldier / strict monkey (autohat modifiers)
 - [ ] break spike trap
 - [ ] Auto Emp
-- [~] autohat — baseline done (bull in range / soldier otherwise, debounced); bundle
-      has fuller logic (emp near turrets, soldier-on-hit timing) to port
+- [x] autohat — bundle soldier/bull logic (soldier when an incoming hit would
+      leave us low via predictedDamage, bull otherwise), debounced. emp-near-turret
+      pending the object manager.
 - [ ] APA slider (auto place accuracy / angle)
 
 ### healing
@@ -122,3 +123,86 @@ behaviour match.
    don't minify it.
 3. install `mods/examplescript.user.js` in Tampermonkey (it @requires the loader).
 4. in game, press the ` key (or click the gear, bottom-right) for the config menu.
+
+## DISCONNECT ROOT CAUSE — FIXED + verified live
+The official client caches `dl = WebSocket.prototype.send` and sends via
+`dl.call(socket, frame)`. The loader's old per-socket `ws.send` hook never saw
+those frames, so injected packets collided with the client's own sequence →
+server `close (bad sequence)` the instant auto-heal fired.
+
+Fix (`loader/src/anticheat.js`): hook `WebSocket.prototype.send` with a Proxy of
+the native send (still reports `[native code]`, so SOCKET_HOOKED stays false). The
+loader now re-sequences EVERY outgoing frame (client + injected) through one
+counter and scrubs the client's own `T` telemetry.
+
+Proven by `tests/live/realclient.live.test.mjs`: the REAL official client in
+headless Chrome + the built loader + examplescript, hit 8x on the REAL server —
+survives, heals 75→95→100 each time, no anti-cheat action, config menu mounts.
+Also `tests/live/autoheal.live.test.mjs` (emulated client) and a new unit
+regression in `loader.integration.test.mjs` (`dl.call` + injection share one seq).
+
+## combat subsystem added (loader/src/helpers.js) + proven live
+Reconstructed the client's combat state so features can match it:
+- weapon reload readiness (ctx.primaryReady/secondaryReady) from the "K" gather
+  packet + weapon.speed*samRP (Samurai Armor 0.78), exactly like the client fills pr/sr.
+- weapon-variant damage multipliers [1,1.1,1.18,1.18], predictedDamage(range).
+- ctx.combat.{tick,primaryReady,secondaryReady,variantVal,samRP,markSwing}.
+
+Live-verified by tests/live/combat.live.test.mjs: autohat + auto-attack + auto-heal
+all ON through 12s of sustained combat on the real server -> no close/kick/shame/
+strike, hat-swaps stay under the "c" rate bucket.
+
+### live test harness (tests/live/)
+- live-server.mjs  — boots an ISOLATED copy of the server (never touches your real
+  checkout/data), test-account login + join tickets, protocol module, log tap.
+- live-client.mjs  — browser-like ws + an official-client emulation + an admin bot.
+- autoheal.live.test.mjs, realclient.live.test.mjs (real Chrome), combat.live.test.mjs
+Run with MOOMOO_TEST_TMP set to a scratch dir; LIVE_ECHO=1 to watch.
+
+## object manager added (loader/src/objectmanager.js) + proven live
+Rebuilt the world the combat features read, 1-1 with the bundle's GameObject model.
+Parses the wire exactly:
+- objectsLoad "H"  flat [sid,x,y,dir,scale,type,id,ownerSid]*N  -> add (data=item(id))
+- objectKilled "Q" [sid] -> remove one;  objectsKilled "R" [ownerSid] -> remove all of owner
+- wiggle "L" [dir,sid] -> hit;  turretShoot "M" [sid,dir] -> turret reload (.time=2200)
+- itemCount "S" [group,count];  setup/died -> clear
+Derives name/group/realScale/pathScale/trap/dmg/pDmg/owner just like GameObject.
+Queries: near/spikes/walls/mills/traps/turrets/buildings/trapAt + isEnemyObject (team).
+Exposed as ctx.objects. Unit: tests/objectmanager.test.mjs (7). Live:
+tests/live/objects.live.test.mjs — real resources tracked on spawn + a placed spike
+read back with exact fields (name/group/dmg/health/owner/realScale) + spatial query.
+
+## combat engine added (loader/src/combat.js) = the bundle's updatePlayers, 1-1
+Runs the whole combat brain on the server tick (the "a" packet), exactly where the
+bundle does. Every tick, for self + every visible player, it reconstructs:
+- predicted position window (x2/y2 = this tick, preX/preY = last), velocity, movDir/movSpd
+- primary/secondary + their variants, weaponR
+- reload clocks pr (primary), sr (secondary), tr (turret gear) — filled by the real
+  formula ((delta>190?delta:ce)/(speed*samRP)), reset to 0 on the "K" swing echo,
+  with samRP/samRS = 0.78 under Samurai Armor
+- np = l4(player): the accel/decel/real next-position prediction, ported line-for-line
+and on each health change, the 9-tick BULL cadence (lastBull/bleed) the insta combos
+time against. Loadout (ee/A/ly/uy/ay/ry/cy/dy/hy/fy) resolves from self.weapons/items.
+Predicates _y / Vy / o4 and geometry se/B/S4/angleDist ported 1-1. Exposed as
+ctx.combat (self=z, target=Y, visibleEnemies=vn, loadout, …).
+
+Fixed a real correctness bug found doing this: the server only sends your inventory
+("V") on upgrade, never on spawn, so the loader started with an empty loadout. The
+client seeds the default kit (weapons [0], items [0,3,6,10]); the runtime now does too.
+
+Unit: tests/combat.test.mjs (6 — loadout, reconstruction/np, reload cycle, bull
+cadence, targeting, team filter). Live: tests/live/combat-engine.live.test.mjs —
+real client: np present, loadout resolves, pr cycles 1->0->1 on real swings.
+
+### still to port (onto the two engines above)
+- combo layer: apple insta, bleed insta, kbInsta, auto break, melee sync, plus the
+  combo control flags (p/ct/gt/Mt/Nt) and action helpers (Bg attack-with-equip, c4
+  place, u5). apple/bleed insta + auto break need only the combat engine; kbInsta +
+  auto push need the potentials below.
+- potentials: dmgpot (p5/m5), kbpot (w5), placePot (O5) + helpers v3/U5/y5 — damage/
+  knockback/placement prediction per enemy. Needed for kbInsta, auto push, and exact
+  autohat (replaces the predictedDamage approximation).
+- auto place / replace, break spike trap, auto emp (object-manager turret .time),
+  polearm aids, spike sync — read the object manager + potentials.
+- visuals tab: needs a render/overlay subsystem (the loader doesn't draw the game).
+- extra tab: send-ws panel, autobuy, fakePing.

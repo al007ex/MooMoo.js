@@ -25,16 +25,68 @@
 
     const SERVER_TICK = 1000 / 9;   // ~111.11ms — one server tick (combo timing unit)
 
-    // Build the ctxExtensions function. `env` = { MooMoo, input, data }.
+    // Build the ctxExtensions function. `env` = { MooMoo, input, data, objects }.
     function createHelpers(env) {
         const MooMoo = env.MooMoo;
         const data = env.data;
         const input = env.input;
+        const objects = env.objects || null;
+        const combatEngine = env.combat || null;
         const S = () => MooMoo.self;
 
+        // ---- combat state: weapon reload + variants (reconstructed from packets) ----
+        // Mirrors the client's model: a weapon's reload fills over weapon.speed (ms),
+        // scaled by samRP (Samurai Armor = hat 20 -> 0.78). It resets on every swing,
+        // which the server echoes as the gather-animation packet "K" =
+        // [sid, didHit, weaponIndex, (1/atkSpd)?]. So we read our own swings off "K"
+        // and a weapon is "ready" once weapon.speed*samRP ms have passed.
+        const WEAPON_VARIANT = [1, 1.1, 1.18, 1.18];   // damage multiplier by variant (gold/diamond/ruby)
+        let serverTick = 0;
+        let lastPrimarySwing = 0, lastSecondarySwing = 0;
+        MooMoo.on("playersUpdate", () => { serverTick++; });
+        MooMoo.on("gatherAnimation", (p) => {
+            const a = p && p.args;
+            if (!a || a[0] !== S().sid) return;
+            const w = a[2];
+            if (typeof w !== "number") return;
+            if (w > 8) lastSecondarySwing = Date.now(); else lastPrimarySwing = Date.now();
+        });
+        const samRP = () => (S().hat === 20 ? 0.78 : 1);   // Samurai Armor attack-speed bonus
+        const weaponSpeed = (id) => { const w = data.weapon(id); return (w && w.speed != null) ? w.speed : 300; };
+        const primaryId = () => (S().weapons || [])[0];
+        const secondaryId = () => (S().weapons || [])[1];
+        function primaryReady() { const id = primaryId(); return id != null && (Date.now() - lastPrimarySwing) >= weaponSpeed(id) * samRP(); }
+        function secondaryReady() { const id = secondaryId(); return id != null && (Date.now() - lastSecondarySwing) >= weaponSpeed(id) * samRP(); }
+        const variantVal = (v) => WEAPON_VARIANT[v] || 1;
+        // Mark a swing optimistically the instant we send an attack, so back-to-back
+        // combo decisions don't fire before the server's "K" echo arrives.
+        function markSwing() { if (S().weaponIndex > 8) lastSecondarySwing = Date.now(); else lastPrimarySwing = Date.now(); }
+
         // ---- geometry ----
-        const dist = (a, b) => Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
-        const angle = (from, to) => Math.atan2((to.y || 0) - (from.y || 0), (to.x || 0) - (from.x || 0));
+        // The bundle's combat math works on PREDICTED positions (x2/y2) and falls
+        // back to the live position when there's no prediction. These primitives
+        // are ported 1-1 from the bundle so features behave identically:
+        //   S4(a,b)        center distance            -> centerDist
+        //   se(a,b,type)   edge distance (+offset)    -> edgeDist   (player -63, object -scale)
+        //   B(a,b)         angle a->b                 -> angleBetween
+        //   getAngleDist   smallest angle between     -> angleDist
+        const TAU = Math.PI * 2;
+        const px = (e) => (e && e.x2 != null ? e.x2 : (e ? e.x : 0)) || 0;
+        const py = (e) => (e && e.y2 != null ? e.y2 : (e ? e.y : 0)) || 0;
+        const dist = (a, b) => Math.hypot(px(b) - px(a), py(b) - py(a));
+        const centerDist = dist;
+        const edgeDist = (a, b, type) => {
+            const off = type === "player" ? -1.8 * 35 : type === "object" ? -(b && b.scale || 0) : 0;
+            return Math.hypot(px(b) - px(a), py(b) - py(a)) + off;
+        };
+        const angle = (from, to) => Math.atan2(py(to) - py(from), px(to) - px(from));
+        const angleBetween = angle;
+        function angleDist(a, b) {
+            let n = Math.abs(a - b) % TAU;
+            if (n > Math.PI) n = TAU - n;
+            return n;
+        }
+        const toRad = (deg) => deg * (Math.PI / 180);
 
         // ---- targeting ----
         function visiblePlayers() {
@@ -54,6 +106,19 @@
                 if (d < bd && (maxRange == null || d <= maxRange)) { bd = d; best = p; }
             }
             return best;
+        }
+        // Worst-case melee damage an in-range enemy could land this tick (enemies are
+        // assumed max variant, like the client's dmgpot). Used for soldier/heal logic.
+        function predictedDamage(range) {
+            let worst = 0;
+            for (const p of enemies()) {
+                const w = data.weapon(p.weaponIndex);
+                if (!w || w.dmg == null) continue;
+                if (dist(S(), p) > (range != null ? range : (w.range || 0) + 70)) continue;
+                const d = w.dmg * variantVal(p.weaponVariant != null ? p.weaponVariant : 3);
+                if (d > worst) worst = d;
+            }
+            return worst;
         }
 
         // ---- inventory resolution ----
@@ -102,9 +167,9 @@
         // Attacking. If a buildable is selected, reselect the weapon first so the
         // mouse-down is an attack, not a placement.
         function ensureWeapon() { if (S().buildIndex >= 0) selectWeapon(S().weaponIndex); }
-        function startAttack(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); }
+        function startAttack(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); markSwing(); }
         function stopAttack() { MooMoo.send.mouse(false); }
-        function attackOnce(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); MooMoo.send.mouse(false); }
+        function attackOnce(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); MooMoo.send.mouse(false); markSwing(); }
 
         // Aiming.
         function aim(dir) { MooMoo.send.aim(dir); }
@@ -136,9 +201,21 @@
                 // data + input + constants
                 data, gameData: data, input, SERVER_TICK,
                 now: () => Date.now(),
-                // geometry + targeting
+                // geometry + targeting (bundle-faithful primitives)
                 distance: dist, angleTo: angle,
-                visiblePlayers, enemies, nearestEnemy,
+                centerDist, edgeDist, angleBetween, angleDist, toRad,
+                visiblePlayers, enemies, nearestEnemy, predictedDamage,
+                // world objects (buildings / resources / turrets / traps)
+                objects,
+                // combat state: the full engine (per-player prediction/reload/bull)
+                // when present; a minimal reload shim otherwise (headless tests).
+                combat: combatEngine || {
+                    get tick() { return serverTick; },
+                    primaryReady, secondaryReady, variantVal, samRP, markSwing,
+                    primaryId, secondaryId, weaponSpeed,
+                    get primaryVar() { return S().weaponVariant != null ? S().weaponVariant : 0; }
+                },
+                primaryReady, secondaryReady, markSwing,
                 // tick (fires once per server movement update)
                 onTick: (fn) => ctx.on("playersUpdate", fn),
                 // combat verbs

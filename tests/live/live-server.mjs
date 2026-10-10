@@ -107,13 +107,26 @@ export async function startServer(opts = {}) {
 }
 
 // ---- API helpers (the same calls the official client makes) ----
-export async function login(srv, email, password) {
+export async function loginFull(srv, email, password) {
     const r = await fetch(srv.base + "/api/auth/password", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password })
     });
     if (!r.ok) throw new Error("login failed: " + r.status + " " + await r.text());
-    return (await r.json()).token;
+    return r.json();   // { token, email, id }
+}
+export async function login(srv, email, password) { return (await loginFull(srv, email, password)).token; }
+
+// Puppeteer comes from the server checkout's devDependencies. Prefers an installed
+// Chrome (fresh temp profile) so nothing has to be downloaded.
+export function loadPuppeteer() {
+    const req = createRequire(path.join(SERVER_DIR, "package.json"));
+    return req("puppeteer");
+}
+export function chromePath() {
+    const candidates = [process.env.CHROME_PATH, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome", "/usr/bin/chromium"];
+    for (const c of candidates) if (c && fs.existsSync(c)) return c;
+    return undefined;
 }
 
 export async function joinTicket(srv, authToken, serverKey = "LC") {

@@ -143,6 +143,11 @@
             let lastHatTarget = -1, lastHatSent = 0, lastTailTarget = -1, lastTailSent = 0;
             function wantHat() {
                 if (ctx.settings.strictSoldier) return SOLDIER;
+                // Match the bundle's dmgpot logic: go soldier (0.75 dmg taken) when an
+                // in-range enemy could land a hit that leaves us low; otherwise bull
+                // (1.5x dmg done) to pressure. No enemy nearby -> soldier (safe default).
+                const incoming = ctx.predictedDamage ? ctx.predictedDamage() : 0;
+                if (incoming > 0 && ctx.self.health - incoming * 0.75 <= 35) return SOLDIER;
                 return ctx.nearestEnemy(270) ? BULL : SOLDIER;
             }
             function autoHat() {

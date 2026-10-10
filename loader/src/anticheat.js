@@ -15,16 +15,22 @@
  *      installing it at document-start — BEFORE the client captures `pr`. The
  *      client therefore captures OUR proxy as `pr`, and later `window.WebSocket
  *      === pr` holds.
- *   2. Forwarding every `get` to the native target via Reflect and NEVER
- *      touching WebSocket.prototype. `WebSocket.prototype.send` stays the real
- *      native function, so looksNative() is satisfied.
- *   3. Intercepting per-SOCKET inside the `construct` trap, never via the
- *      prototype.
+ *   2. Replacing WebSocket.prototype.send with a Proxy of the NATIVE send. A
+ *      Proxy of a function is transparent to Function.prototype.toString — it
+ *      still reports "[native code]" — so looksNative() stays satisfied, while
+ *      the apply trap lets us see and rewrite every outgoing frame.
  *
- * As a deterministic safety net, the loader also scrubs the outgoing "T" packet
- * (see binding.telemetry.scrub) so even an unforeseen detection path reports
- * clean flags. That part lives in the loader's c2s pipeline; this file only
- * installs the hook.
+ * Why the prototype (not per-socket): the official client caches
+ *   dl = window.WebSocket.prototype.send
+ * and sends with `dl.call(socket, frame)`. That bypasses any per-instance
+ * `socket.send` override, so a per-socket hook never sees the client's frames —
+ * which breaks both sequence ownership (injected packets collide -> the server
+ * closes with "bad sequence") and the telemetry scrub. Hooking the prototype is
+ * the only place that catches `dl.call(...)`.
+ *
+ * The loader re-encodes every frame this trap surfaces through ONE sequence
+ * counter (client frames + injected frames alike) and scrubs the outgoing "T"
+ * telemetry (binding.telemetry.scrub) so the server always sees clean flags.
  *
  * Part of the LOADER (the volatile half).
  */
@@ -51,45 +57,65 @@
 
         const report = (e) => { try { onError && onError(e); } catch (_) {} };
 
-        // Wrap one socket's send() in a Proxy of the NATIVE send so that, even if
-        // some check ever inspects it, Function.prototype.toString unwraps to the
-        // native source. The loader's transform decides what actually goes out.
-        function wrapSend(ws) {
-            const nativeSend = ws.send.bind(ws);
-            let transform = null; // set by the loader via ws.__moomooSetTransform
-            const sendProxy = new Proxy(ws.send, {
-                apply(target, thisArg, args) {
-                    const data = args[0];
-                    if (transform) {
-                        try {
-                            const out = transform(data, (d) => nativeSend(d));
-                            // transform returns:
-                            //   undefined -> it already sent (or dropped); do nothing
-                            //   a value   -> send that value natively
-                            if (out !== undefined) nativeSend(out);
-                            return undefined;
-                        } catch (e) {
-                            report(e);
-                            return nativeSend(data); // fail open: never break the game
-                        }
+        // Per-socket outgoing transform, kept in a WeakMap so nothing is added to
+        // the socket that a page probe could enumerate. The loader installs a
+        // socket's transform (via ws.__moomooSetTransform) once its session is ready.
+        const transforms = new WeakMap();
+        const NativeProtoSend = NativeWebSocket.prototype && NativeWebSocket.prototype.send;
+
+        // Native send bound to a specific socket (used by the loader to put its own
+        // already-encoded frames on the wire WITHOUT re-entering the trap).
+        const nativeSendFor = (ws) => (d) => Reflect.apply(NativeProtoSend, ws, [d]);
+
+        // Give each new socket the loader's hooks. Stored non-enumerable so a
+        // for..in / Object.keys on the socket doesn't reveal them.
+        function tagSocket(ws) {
+            const def = (name, value) => {
+                try { Object.defineProperty(ws, name, { value, writable: true, configurable: true, enumerable: false }); }
+                catch (e) { ws[name] = value; }
+            };
+            def("__moomooNativeSend", nativeSendFor(ws));
+            def("__moomooSetTransform", (fn) => transforms.set(ws, fn));
+        }
+
+        // Replace WebSocket.prototype.send with a Proxy of the native send. The
+        // client's `dl.call(socket, frame)` lands here; we hand the frame to that
+        // socket's transform (re-encode + scrub) and send the result natively.
+        if (NativeProtoSend && !NativeProtoSend.__moomooWrapped) {
+            const sendProxy = new Proxy(NativeProtoSend, {
+                apply(target, ws, args) {
+                    const transform = ws && transforms.get(ws);
+                    if (!transform) return Reflect.apply(target, ws, args); // non-game socket / not ready yet
+                    try {
+                        const out = transform(args[0], (d) => Reflect.apply(target, ws, [d]));
+                        //   undefined -> transform already sent (or dropped); do nothing
+                        //   a value   -> send it natively
+                        if (out !== undefined) Reflect.apply(target, ws, [out]);
+                        return undefined;
+                    } catch (e) {
+                        report(e);
+                        return Reflect.apply(target, ws, args); // fail open: never break the game
                     }
-                    return Reflect.apply(target, thisArg === sendProxy ? ws : thisArg, args);
                 }
             });
+            const orig = Object.getOwnPropertyDescriptor(NativeWebSocket.prototype, "send") || {};
             try {
-                Object.defineProperty(ws, "send", { value: sendProxy, writable: true, configurable: true });
+                Object.defineProperty(NativeWebSocket.prototype, "send", {
+                    value: sendProxy,
+                    writable: "writable" in orig ? orig.writable : true,
+                    enumerable: "enumerable" in orig ? orig.enumerable : false,
+                    configurable: "configurable" in orig ? orig.configurable : true
+                });
             } catch (e) {
-                ws.send = sendProxy;
+                try { NativeWebSocket.prototype.send = sendProxy; } catch (_) { report(e); }
             }
-            // The loader installs its transform here once the session is ready.
-            ws.__moomooSetTransform = (fn) => { transform = fn; };
-            ws.__moomooNativeSend = nativeSend;
+            try { Object.defineProperty(NativeProtoSend, "__moomooWrapped", { value: true, enumerable: false }); } catch (_) {}
         }
 
         const handler = {
             construct(target, args, newTarget) {
                 const ws = Reflect.construct(target, args, newTarget === Proxied ? target : newTarget);
-                try { wrapSend(ws); } catch (e) { report(e); }
+                try { tagSocket(ws); } catch (e) { report(e); }
                 try { onSocket && onSocket(ws, args && args[0]); } catch (e) { report(e); }
                 return ws;
             },

@@ -68,20 +68,38 @@
     function installConfigMenu(win, MooMoo, opts) {
         opts = opts || {};
         const doc = win.document;
-        if (!doc || !doc.createElement) return null;
+        if (!doc || typeof doc.createElement !== "function" || typeof doc.getElementById !== "function") return null;
         const input = opts.input || null;
         let toggleKey = opts.toggleKey || "`";
         const title = opts.title || "moomoo.js";
 
         function el(tag, cls, attrs) { const n = doc.createElement(tag); if (cls) n.className = cls; if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]); return n; }
-        function style() { if (doc.getElementById("mmj-cfg-style")) return; const s = el("style"); s.id = "mmj-cfg-style"; s.textContent = STYLE; (doc.head || doc.documentElement).appendChild(s); }
+        function style() {
+            if (doc.getElementById("mmj-cfg-style")) return;
+            const host = doc.head || doc.documentElement;
+            if (!host) return;
+            const s = el("style"); s.id = "mmj-cfg-style"; s.textContent = STYLE; host.appendChild(s);
+        }
 
-        style();
         const overlay = el("div", null, { id: "mmj-cfg-overlay" });
         const card = el("div", null, { id: "mmj-cfg" });
         const fab = el("div", null, { id: "mmj-cfg-fab" }); fab.textContent = "⚙";
         fab.title = "moomoo.js config (" + toggleKey + ")";
-        doc.body.appendChild(overlay); doc.body.appendChild(card); doc.body.appendChild(fab);
+        // The loader runs at document-start, so <head>/<body> may not exist yet.
+        // Inject the stylesheet and mount the UI as soon as they appear.
+        function mount() {
+            if (!doc.body) return false;
+            style();
+            doc.body.appendChild(overlay); doc.body.appendChild(card); doc.body.appendChild(fab);
+            return true;
+        }
+        if (!mount()) {
+            if (doc.addEventListener) doc.addEventListener("DOMContentLoaded", mount, { once: true });
+            try {
+                const obs = new win.MutationObserver(() => { if (mount()) obs.disconnect(); });
+                obs.observe(doc.documentElement || doc, { childList: true, subtree: true });
+            } catch (e) { /* no observer: DOMContentLoaded will still fire */ }
+        }
 
         let activeTab = null;
         let suppressRerender = false;

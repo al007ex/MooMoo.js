@@ -72,7 +72,7 @@ function emulateClient(ws, mod, hooks) {
         const payload = bind ? bind.parse(dec.args) : { args: dec.args };
         const event = bind ? bind.event : dec.name;
         if (event === "setup") { st.sid = payload.sid; st.alive = true; }
-        if (event === "died") st.alive = false;
+        if (event === "died") { st.alive = false; st.deaths = (st.deaths || 0) + 1; if (hooks.autoRespawn) setTimeout(() => st.send("M", [{ name: hooks.name || "player", moofoll: 1, skin: 0 }]), 400); }
         if (event === "disconnect") st.disconnectReason = payload.reason;
         if (event === "health" && payload.sid === st.sid) st.health = payload.value;
         if (event === "playersUpdate") for (const p of payload.positions) { const o = st.players.get(p.sid) || {}; Object.assign(o, p); st.players.set(p.sid, o); }
@@ -129,6 +129,7 @@ export async function createVictim(opts) {
     // The "official client" opens the game socket through the hooked constructor.
     const ws = new win.WebSocket(opts.url);
     const client = emulateClient(ws, opts.mod, {
+        name: opts.name || "victim", autoRespawn: opts.autoRespawn !== false,
         onHandshake: () => setTimeout(() => client.send("M", [{ name: opts.name || "victim", moofoll: 1, skin: 0 }]), 50)
     });
     await waitFor(() => client.sid >= 0 || client.closed, 8000, "victim spawn");

@@ -1191,10 +1191,16 @@
 
         // ---- game state ----
         const players = new Map();     // sid -> player object
+        // The server only sends your inventory ("V") when it CHANGES (on upgrade);
+        // on spawn you start from the fixed default loadout, exactly like the client
+        // (server player.js: items [0,3,6,10]; the client seeds weapons [0]). We seed
+        // the same so loadout-aware features know the starting kit before any upgrade.
+        const DEFAULT_WEAPONS = [0];              // tool hammer
+        const DEFAULT_ITEMS = [0, 3, 6, 10];      // apple, wood wall, spikes, windmill
         const self = {
             sid: -1, alive: false, health: 0, x: 0, y: 0, dir: 0,
             weaponIndex: 0, buildIndex: -1, hat: 0, accessory: 0,
-            weapons: [], items: []     // owned weapon ids / buildable item ids
+            weapons: DEFAULT_WEAPONS.slice(), items: DEFAULT_ITEMS.slice()  // owned weapon ids / buildable item ids
         };
 
         function playerFor(sid) {
@@ -1210,6 +1216,8 @@
                 case "setup":
                     self.sid = payload.sid;
                     self.alive = true;
+                    self.weapons = DEFAULT_WEAPONS.slice();
+                    self.items = DEFAULT_ITEMS.slice();
                     playerFor(payload.sid);
                     break;
                 case "health": {
@@ -1219,7 +1227,13 @@
                     break;
                 }
                 case "playerAdd":
-                    if (payload.isYou && Array.isArray(payload.data)) self.alive = true;
+                    // You (re)spawned: the server reset your kit to defaults (it won't
+                    // resend "V"), so mirror that locally.
+                    if (payload.isYou && Array.isArray(payload.data)) {
+                        self.alive = true;
+                        self.weapons = DEFAULT_WEAPONS.slice();
+                        self.items = DEFAULT_ITEMS.slice();
+                    }
                     break;
                 case "playerRemove":
                     players.delete(payload.sid);
@@ -1316,7 +1330,7 @@
             players.clear();
             self.sid = -1; self.alive = false; self.health = 0; self.x = 0; self.y = 0; self.dir = 0;
             self.weaponIndex = 0; self.buildIndex = -1; self.hat = 0; self.accessory = 0;
-            self.weapons = []; self.items = [];
+            self.weapons = DEFAULT_WEAPONS.slice(); self.items = DEFAULT_ITEMS.slice();
         }
 
         // ---- outgoing: build send.<action>(...) from the vocabulary ----
@@ -1562,16 +1576,22 @@
  *      installing it at document-start — BEFORE the client captures `pr`. The
  *      client therefore captures OUR proxy as `pr`, and later `window.WebSocket
  *      === pr` holds.
- *   2. Forwarding every `get` to the native target via Reflect and NEVER
- *      touching WebSocket.prototype. `WebSocket.prototype.send` stays the real
- *      native function, so looksNative() is satisfied.
- *   3. Intercepting per-SOCKET inside the `construct` trap, never via the
- *      prototype.
+ *   2. Replacing WebSocket.prototype.send with a Proxy of the NATIVE send. A
+ *      Proxy of a function is transparent to Function.prototype.toString — it
+ *      still reports "[native code]" — so looksNative() stays satisfied, while
+ *      the apply trap lets us see and rewrite every outgoing frame.
  *
- * As a deterministic safety net, the loader also scrubs the outgoing "T" packet
- * (see binding.telemetry.scrub) so even an unforeseen detection path reports
- * clean flags. That part lives in the loader's c2s pipeline; this file only
- * installs the hook.
+ * Why the prototype (not per-socket): the official client caches
+ *   dl = window.WebSocket.prototype.send
+ * and sends with `dl.call(socket, frame)`. That bypasses any per-instance
+ * `socket.send` override, so a per-socket hook never sees the client's frames —
+ * which breaks both sequence ownership (injected packets collide -> the server
+ * closes with "bad sequence") and the telemetry scrub. Hooking the prototype is
+ * the only place that catches `dl.call(...)`.
+ *
+ * The loader re-encodes every frame this trap surfaces through ONE sequence
+ * counter (client frames + injected frames alike) and scrubs the outgoing "T"
+ * telemetry (binding.telemetry.scrub) so the server always sees clean flags.
  *
  * Part of the LOADER (the volatile half).
  */
@@ -1598,45 +1618,65 @@
 
         const report = (e) => { try { onError && onError(e); } catch (_) {} };
 
-        // Wrap one socket's send() in a Proxy of the NATIVE send so that, even if
-        // some check ever inspects it, Function.prototype.toString unwraps to the
-        // native source. The loader's transform decides what actually goes out.
-        function wrapSend(ws) {
-            const nativeSend = ws.send.bind(ws);
-            let transform = null; // set by the loader via ws.__moomooSetTransform
-            const sendProxy = new Proxy(ws.send, {
-                apply(target, thisArg, args) {
-                    const data = args[0];
-                    if (transform) {
-                        try {
-                            const out = transform(data, (d) => nativeSend(d));
-                            // transform returns:
-                            //   undefined -> it already sent (or dropped); do nothing
-                            //   a value   -> send that value natively
-                            if (out !== undefined) nativeSend(out);
-                            return undefined;
-                        } catch (e) {
-                            report(e);
-                            return nativeSend(data); // fail open: never break the game
-                        }
+        // Per-socket outgoing transform, kept in a WeakMap so nothing is added to
+        // the socket that a page probe could enumerate. The loader installs a
+        // socket's transform (via ws.__moomooSetTransform) once its session is ready.
+        const transforms = new WeakMap();
+        const NativeProtoSend = NativeWebSocket.prototype && NativeWebSocket.prototype.send;
+
+        // Native send bound to a specific socket (used by the loader to put its own
+        // already-encoded frames on the wire WITHOUT re-entering the trap).
+        const nativeSendFor = (ws) => (d) => Reflect.apply(NativeProtoSend, ws, [d]);
+
+        // Give each new socket the loader's hooks. Stored non-enumerable so a
+        // for..in / Object.keys on the socket doesn't reveal them.
+        function tagSocket(ws) {
+            const def = (name, value) => {
+                try { Object.defineProperty(ws, name, { value, writable: true, configurable: true, enumerable: false }); }
+                catch (e) { ws[name] = value; }
+            };
+            def("__moomooNativeSend", nativeSendFor(ws));
+            def("__moomooSetTransform", (fn) => transforms.set(ws, fn));
+        }
+
+        // Replace WebSocket.prototype.send with a Proxy of the native send. The
+        // client's `dl.call(socket, frame)` lands here; we hand the frame to that
+        // socket's transform (re-encode + scrub) and send the result natively.
+        if (NativeProtoSend && !NativeProtoSend.__moomooWrapped) {
+            const sendProxy = new Proxy(NativeProtoSend, {
+                apply(target, ws, args) {
+                    const transform = ws && transforms.get(ws);
+                    if (!transform) return Reflect.apply(target, ws, args); // non-game socket / not ready yet
+                    try {
+                        const out = transform(args[0], (d) => Reflect.apply(target, ws, [d]));
+                        //   undefined -> transform already sent (or dropped); do nothing
+                        //   a value   -> send it natively
+                        if (out !== undefined) Reflect.apply(target, ws, [out]);
+                        return undefined;
+                    } catch (e) {
+                        report(e);
+                        return Reflect.apply(target, ws, args); // fail open: never break the game
                     }
-                    return Reflect.apply(target, thisArg === sendProxy ? ws : thisArg, args);
                 }
             });
+            const orig = Object.getOwnPropertyDescriptor(NativeWebSocket.prototype, "send") || {};
             try {
-                Object.defineProperty(ws, "send", { value: sendProxy, writable: true, configurable: true });
+                Object.defineProperty(NativeWebSocket.prototype, "send", {
+                    value: sendProxy,
+                    writable: "writable" in orig ? orig.writable : true,
+                    enumerable: "enumerable" in orig ? orig.enumerable : false,
+                    configurable: "configurable" in orig ? orig.configurable : true
+                });
             } catch (e) {
-                ws.send = sendProxy;
+                try { NativeWebSocket.prototype.send = sendProxy; } catch (_) { report(e); }
             }
-            // The loader installs its transform here once the session is ready.
-            ws.__moomooSetTransform = (fn) => { transform = fn; };
-            ws.__moomooNativeSend = nativeSend;
+            try { Object.defineProperty(NativeProtoSend, "__moomooWrapped", { value: true, enumerable: false }); } catch (_) {}
         }
 
         const handler = {
             construct(target, args, newTarget) {
                 const ws = Reflect.construct(target, args, newTarget === Proxied ? target : newTarget);
-                try { wrapSend(ws); } catch (e) { report(e); }
+                try { tagSocket(ws); } catch (e) { report(e); }
                 try { onSocket && onSocket(ws, args && args[0]); } catch (e) { report(e); }
                 return ws;
             },
@@ -1818,6 +1858,745 @@
 });
 
 
+/* ===== module: objectmanager (loader/src/objectmanager.js) ===== */
+/*
+ * moomoo.js loader — OBJECT MANAGER  (world buildings / resources tracking)
+ * ========================================================================
+ * The bundle's combat features (auto place / replace / push, break spike,
+ * auto emp, spike sync, insta combos) all read the world's OBJECTS: the walls,
+ * spikes, traps, turrets, mills and the natural trees/stones around you. The
+ * official client keeps these in an ObjectManager; the loader never ran one, so
+ * we rebuild an equivalent here from the wire packets the loader already decodes.
+ *
+ * It mirrors the bundle's GameObject model EXACTLY (same derived fields — name,
+ * group, realScale, pathScale, trap, dmg, pDmg, owner, …) so a ported feature
+ * reads an object the same way it did in the bundle. The bundle calls its master
+ * building list `kh`; this is that list, kept current from:
+ *
+ *   objectsLoad  ("H")  flat [sid,x,y,dir,scale,type,id,ownerSid] * N  -> add
+ *   objectKilled ("Q")  [sid]                                          -> remove one
+ *   objectsKilled("R")  [ownerSid]                                     -> remove all of an owner
+ *   wiggle       ("L")  [dir,sid]                                      -> object was hit
+ *   turretShoot  ("M")  [sid,dir]                                      -> turret fired (reload timer)
+ *   itemCount    ("S")  [groupId,count]                               -> your placed-count per group
+ *   setup/died                                                         -> clear (new life)
+ *
+ * Mechanics copied from the server (server/src/moomoo/modules/gameObject.js +
+ * objectManager.js + server.js syncObjects) and the client bundle's GameObject.
+ *
+ * Part of the LOADER (volatile). Exposed on every mod's ctx as `ctx.objects`.
+ */
+(function (root, factory) {
+    const value = factory();
+    if (typeof module === "object" && module.exports) module.exports = value;
+    if (typeof root !== "undefined") root.MooMooObjectManager = value;
+    if (typeof globalThis !== "undefined") globalThis.MooMooObjectManager = value;
+})(typeof self !== "undefined" ? self : this, function () {
+    "use strict";
+
+    const TURRET_RELOAD = 2200;          // turret shootRate (ms) — item 90 shootRate
+    const GATHER_WIGGLE = 10;            // K.gatherWiggle — wiggle px on hit
+
+    const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+
+    // A world object, modelled exactly like the bundle's GameObject so features
+    // can read the same fields. `data` is the item definition (gameData.item(id))
+    // for placed buildings, or null for a natural resource (tree/bush/stone).
+    class GameObject {
+        constructor(sid) { this.sid = sid; }
+
+        init(x, y, dir, scale, type, data, ownerSid) {
+            data = data || {};
+            this.active = true;
+            this.x = x;
+            this.y = y;
+            this.dir = dir;
+            this.xWiggle = 0;
+            this.yWiggle = 0;
+            this.scale = scale;
+            this.type = type;
+            this.id = data.id;
+            this.ownerSid = (ownerSid == null || ownerSid < 0) ? null : ownerSid;
+            // The bundle stores owner as an object {sid}; keep that shape so code
+            // reading `obj.owner.sid` keeps working, but resolve the live player
+            // lazily through the manager when a feature needs team/name.
+            this.owner = this.ownerSid == null ? null : { sid: this.ownerSid };
+            this.name = data.name != null ? data.name
+                : type === 0 ? "Tree"
+                : (type === 1 && y >= 12000) ? "Cactus"
+                : type === 1 ? "Bush"
+                : type === 2 ? "Stone"
+                : type === 3 ? "Gold Stone"
+                : null;
+            this.isItem = this.id != null;
+            this.group = data.group;
+            this.health = this.maxHealth = data.health;
+            this.doUpdate = data.doUpdate;
+            this.colDiv = data.colDiv || 1;
+            this.blocker = data.blocker;
+            this.ignoreCollision = data.ignoreCollision;
+            this.dontGather = data.dontGather;
+            this.hideFromEnemy = data.hideFromEnemy;
+            this.friction = data.friction;
+            this.projDmg = data.projDmg;
+            this.dmg = data.dmg;
+            this.pDmg = data.pDmg;
+            this.pps = data.pps;
+            this.zIndex = data.zIndex || 0;
+            this.turnSpeed = data.turnSpeed;
+            this.req = data.req;
+            this.trap = data.trap;
+            this.healCol = data.healCol;
+            this.teleport = data.teleport;
+            this.boostSpeed = data.boostSpeed;
+            this.projectile = data.projectile;
+            this.shootRange = data.shootRange;
+            this.shootRate = data.shootRate;
+            this.shootCount = this.shootRate;
+            this.spawnPoint = data.spawnPoint;
+            // Layer resolution (gameObject.js): group.layer, else by type.
+            this.layer = 2;
+            if (this.group != null) this.layer = this.group.layer;
+            else if (type === 0) this.layer = 3;
+            else if (type === 2) this.layer = 0;
+            else if (type === 4) this.layer = -1;
+            // Derived collision scales, exactly like the bundle's GameObject.
+            this.realScale = (this.type <= 1 && this.type !== null) ? this.scale * 0.6 : this.scale;
+            // Runtime combat fields.
+            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;  // turret reload countdown
+            this.shot = 0;          // last turret fire timestamp
+            this.lastHit = 0;       // last wiggle (hit) timestamp
+            this.distance = 0;      // scratch: center-distance to a query point
+            this.dmgpot = 0;
+            this.assumeBreak = false;
+            return this;
+        }
+
+        changeHealth(amount) { this.health += amount; return this.health <= 0; }
+
+        // Collision scale the way the server computes it for placement checks.
+        getScale(sM, ig) {
+            sM = sM || 1;
+            return this.scale * (this.isItem || this.type === 2 || this.type === 3 || this.type === 4 ? 1 : 0.6 * sM) * (ig ? 1 : this.colDiv);
+        }
+    }
+
+    // pathScale needs to know whether the owner is an enemy, so it is computed by
+    // the manager (which knows the self/team) rather than on the object itself.
+    function computePathScale(o, isEnemyOwner) {
+        if (o.type === 1 && o.y <= 12000) return o.scale * 0.6 + 15;      // bush
+        if (o.type === 0) return o.scale * 0.7 + 10;                       // tree
+        if (o.dmg && isEnemyOwner) return o.scale + 47;                    // enemy spike
+        if (o.teleport || o.boostSpeed) return o.scale + 47;
+        if (o.type === 1 && o.y >= 12000) return o.scale * 0.55 + 47;      // cactus
+        if (o.name === "pit trap" && isEnemyOwner) return o.scale + 38;    // enemy trap
+        if (o.ignoreCollision) return 0;
+        return o.scale + 10;
+    }
+
+    function createObjectManager(env) {
+        const MooMoo = env.MooMoo;
+        const data = env.data;
+        const S = () => MooMoo.self;
+
+        const byId = new Map();     // sid -> GameObject
+        const list = [];            // active objects (the bundle's `kh`)
+        const itemCounts = {};      // groupId -> your placed count (from "S")
+
+        function indexOfSid(sid) {
+            for (let i = 0; i < list.length; i++) if (list[i].sid === sid) return i;
+            return -1;
+        }
+
+        function removeSid(sid) {
+            const o = byId.get(sid);
+            if (!o) return;
+            byId.delete(sid);
+            const i = indexOfSid(sid);
+            if (i >= 0) list.splice(i, 1);
+        }
+
+        function clearAll() {
+            byId.clear();
+            list.length = 0;
+        }
+
+        // Owner/team resolution (needs the live player table).
+        function myTeam() { const s = S(); return s ? s.team : null; }
+        function isSelf(sid) { const s = S(); return s != null && sid === s.sid; }
+        function isTeammate(sid) {
+            if (sid == null) return false;
+            if (isSelf(sid)) return true;
+            const me = S(); if (!me || me.team == null) return false;
+            const p = MooMoo.players && MooMoo.players.get(sid);
+            return !!(p && p.team != null && p.team === me.team);
+        }
+        // te() in the bundle: sid is me or a teammate.
+        function isFriendly(sid) { return isSelf(sid) || isTeammate(sid); }
+        // Is this object owned by an enemy (not me, not my team)? Unowned natural
+        // resources count as non-enemy.
+        function isEnemyObject(o) { return o != null && o.ownerSid != null && !isFriendly(o.ownerSid); }
+
+        // ---- add one object (from "H"), mirroring the bundle's objectManager.add ----
+        function addObject(sid, x, y, dir, scale, type, id, ownerSid) {
+            const def = (id != null && id >= 0) ? data.item(id) : null;
+            let o = byId.get(sid);
+            if (!o) { o = new GameObject(sid); byId.set(sid, o); list.push(o); }
+            o.init(x, y, dir, scale, type, def, ownerSid);
+            o.pathScale = computePathScale(o, isEnemyObject(o));
+            return o;
+        }
+
+        // ---- wire handlers ----
+        function onObjectsLoad(p) {
+            const flat = (p && p.args && p.args[0]) || [];
+            for (let n = 0; n + 7 < flat.length; n += 8) {
+                addObject(flat[n], flat[n + 1], flat[n + 2], flat[n + 3], flat[n + 4], flat[n + 5], flat[n + 6], flat[n + 7]);
+            }
+        }
+        function onObjectKilled(p) {
+            const sid = p && p.args && p.args[0];
+            if (sid != null) removeSid(sid);
+        }
+        function onObjectsKilled(p) {
+            // "R" carries an OWNER sid: every object that owner placed is gone.
+            const owner = p && p.args && p.args[0];
+            if (owner == null) return;
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (list[i].ownerSid === owner) { byId.delete(list[i].sid); list.splice(i, 1); }
+            }
+        }
+        function onWiggle(p) {
+            const a = p && p.args; if (!a) return;
+            const dir = a[0], sid = a[1];
+            const o = byId.get(sid);
+            if (!o) return;
+            o.xWiggle += GATHER_WIGGLE * Math.cos(dir);
+            o.yWiggle += GATHER_WIGGLE * Math.sin(dir);
+            o.lastHit = Date.now();
+        }
+        function onTurretShoot(p) {
+            const a = p && p.args; if (!a) return;
+            const sid = a[0], dir = a[1];
+            const o = byId.get(sid);
+            if (!o) return;
+            if (dir != null) o.dir = dir;
+            o.time = TURRET_RELOAD;     // just fired -> reload is full (bundle v4())
+            o.shot = Date.now();
+            o.NOW = false;
+        }
+        function onItemCount(p) {
+            const a = p && p.args; if (!a) return;
+            itemCounts[a[0]] = a[1];
+        }
+
+        // Per-tick upkeep: turret reload countdown + spinning dir, mirroring the
+        // bundle's k4() and GameObject.update. Call once per playersUpdate.
+        let lastTick = 0;
+        function update(deltaOverride) {
+            const now = Date.now();
+            const delta = deltaOverride != null ? deltaOverride : (lastTick ? (now - lastTick) : 111);
+            lastTick = now;
+            for (let i = 0; i < list.length; i++) {
+                const o = list[i];
+                if (o.name === "turret" && o.time) {
+                    o.time -= delta;
+                    if (o.time <= 0) o.time = TURRET_RELOAD;
+                }
+                if (o.turnSpeed) o.dir += o.turnSpeed * delta;
+            }
+        }
+
+        MooMoo.on("objectsLoad", onObjectsLoad);
+        MooMoo.on("objectKilled", onObjectKilled);
+        MooMoo.on("objectsKilled", onObjectsKilled);
+        MooMoo.on("wiggle", onWiggle);
+        MooMoo.on("turretShoot", onTurretShoot);
+        MooMoo.on("itemCount", onItemCount);
+        MooMoo.on("playersUpdate", update);
+        MooMoo.on("setup", clearAll);
+        MooMoo.on("died", clearAll);
+
+        // ---- query API (what features call) ----
+        function get(sid) { return byId.get(sid) || null; }
+        function all() { return list.slice(); }
+        function count() { return list.length; }
+
+        // Objects within `range` of (x,y), optionally filtered, sorted nearest
+        // first. Sets `.distance` (center distance) on each returned object, like
+        // the bundle does before reading `e.distance`.
+        function near(x, y, range, filter) {
+            const out = [];
+            for (let i = 0; i < list.length; i++) {
+                const o = list[i];
+                if (!o.active) continue;
+                const d = dist(x, y, o.x, o.y);
+                o.distance = d;
+                if (range != null && d > range) continue;
+                if (filter && !filter(o)) continue;
+                out.push(o);
+            }
+            out.sort((a, b) => a.distance - b.distance);
+            return out;
+        }
+
+        const byGroup = (gname) => (o) => o.group && o.group.name === gname;
+        function spikes(x, y, range) { return near(x, y, range, byGroup("spikes")); }
+        function walls(x, y, range) { return near(x, y, range, byGroup("walls")); }
+        function mills(x, y, range) { return near(x, y, range, byGroup("mill")); }
+        function traps(x, y, range) { return near(x, y, range, (o) => o.name === "pit trap"); }
+        function turrets(x, y, range) { return near(x, y, range, (o) => o.name === "turret"); }
+        function buildings(x, y, range) { return near(x, y, range, (o) => o.ownerSid != null); }
+
+        // A pit trap whose radius covers (x,y) — used by trap detection. `pad`
+        // widens the test (the bundle uses <= 47 around a player).
+        function trapAt(x, y, pad) {
+            pad = pad == null ? 47 : pad;
+            let best = null, bd = Infinity;
+            for (let i = 0; i < list.length; i++) {
+                const o = list[i];
+                if (!o.active || o.name !== "pit trap") continue;
+                const d = dist(x, y, o.x, o.y);
+                if (d <= pad && d < bd) { bd = d; best = o; }
+            }
+            return best;
+        }
+
+        return {
+            GameObject,
+            // direct access for advanced features
+            _list: list, _byId: byId,
+            get, all, count, near, trapAt,
+            spikes, walls, mills, traps, turrets, buildings,
+            isEnemyObject, isFriendly, isTeammate, isSelf,
+            itemCount: (gid) => itemCounts[gid] || 0,
+            clear: clearAll,
+            update,
+            TURRET_RELOAD
+        };
+    }
+
+    return { createObjectManager, GameObject, TURRET_RELOAD };
+});
+
+
+/* ===== module: combat (loader/src/combat.js) ===== */
+/*
+ * moomoo.js loader — COMBAT ENGINE  (the bundle's updatePlayers, ported 1-1)
+ * =========================================================================
+ * The bundle runs its WHOLE combat brain inside one server-tick handler,
+ * `updatePlayers(i)` (the "a" packet). Every tick it, for every player:
+ *   - shifts predicted position (x2/y2 = this tick's server pos, preX/preY = last)
+ *   - derives velocity, move dir/speed, primary/secondary + their variants
+ *   - fills the reload clocks pr (primary), sr (secondary), tr (turret gear)
+ *   - computes the next-position prediction np = l4(player)  (accel/decel/real)
+ * and separately, on each health change, tracks the 9-tick "bull" cadence
+ * (lastBull/bleed) the insta combos time themselves against.
+ *
+ * The loader already decodes the "a" packet into tidy positions+attributes and
+ * keeps MooMoo.self / MooMoo.players, so this engine ENRICHES those same objects
+ * with the combat fields (pr, sr, tr, x2, y2, np, primaryVar, lastBull, …). A mod
+ * then reads them exactly like the bundle did: `z` is MooMoo.self, `Y` is the
+ * current target, `vn` is the sorted visible enemies.
+ *
+ * Constants + formulas are copied verbatim from the bundle / shared/config.js.
+ * Part of the LOADER (volatile). Exposed on ctx as `ctx.combat`.
+ */
+(function (root, factory) {
+    const value = factory();
+    if (typeof module === "object" && module.exports) module.exports = value;
+    if (typeof root !== "undefined") root.MooMooCombat = value;
+    if (typeof globalThis !== "undefined") globalThis.MooMooCombat = value;
+})(typeof self !== "undefined" ? self : this, function () {
+    "use strict";
+
+    // ---- constants (shared/config.js + bundle) ----
+    const K = {
+        mapScale: 14400, riverWidth: 724, snowBiomeTop: 2400,
+        playerScale: 35, playerSpeed: 0.0016, gatherAngle: Math.PI / 2.6, gatherWiggle: 10
+    };
+    const ce = 1000 / 9;                 // server tick ms
+    const r3 = Math.pow(0.993, 111);     // decel constant used by l4's T()
+    const EN = [1, 1.1, 1.18, 1.18];     // weapon-variant damage multipliers (En)
+    const VARIANT_VAL = EN;              // K.weaponVariants[i].val
+
+    // ---- math primitives (bundle aliases) ----
+    const U = Math.cos, V = Math.sin, P = Math.atan2, S = Math.abs;
+    const D = (a, b) => Math.hypot(a, b);
+    const re = (a, b) => Math.pow(a, b);
+    const H = Math.round, j = Math.min, oe = Math.max;
+    const TAU = Math.PI * 2, W = Math.PI;
+    const getDistance = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+    const getDirection = (x1, y1, x2, y2) => Math.atan2(y1 - y2, x1 - x2);
+    function getAngleDist(a, b) { let n = S(a - b) % TAU; if (n > W) n = TAU - n; return n; }
+    const Ay = getAngleDist;
+
+    function createCombat(env) {
+        const MooMoo = env.MooMoo;
+        const data = env.data;
+        const objects = env.objects || null;
+        const selfInput = env.selfInput || { moveDir: null, aimDir: 0 };
+
+        const z = MooMoo.self;               // our own player (the bundle's `z`)
+        let v = 0;                           // tick counter
+        let et = 0;                          // self bull-cycle offset
+        let lastTickTime = 0;                // for delta
+        let Y = null;                        // current target
+        let vn = [];                         // visible enemies sorted nearest-first
+        let manualTargetSid = null;          // xi.ID
+        const prev = new Map();              // sid -> { x2, y2, movDir, np }  (last tick)
+
+        // ---- geometry on predicted positions (se / B / S4), ported 1-1 ----
+        const gx = (e) => (e && e.x2 != null ? e.x2 : (e ? e.x : 0)) || 0;
+        const gy = (e) => (e && e.y2 != null ? e.y2 : (e ? e.y : 0)) || 0;
+        function S4(e, t) { return getDistance(gx(e), gy(e), gx(t), gy(t)); }
+        function se(e, t, n) {
+            const off = n === "player" ? -1.8 * 35 : n === "object" ? -(t && t.scale || 0) : 0;
+            return getDistance(gx(e), gy(e), gx(t), gy(t)) + off;
+        }
+        function B(e, t) { return P(gy(t) - gy(e), gx(t) - gx(e)); }
+
+        // ---- game-data helpers ----
+        const weapon = (id) => data.weapon(id);
+        const item = (id) => data.item(id);
+        const hat = (id) => data.hat(id);
+        const acc = (id) => data.accessory(id);
+        const weaponSpeed = (id) => { const w = weapon(id); return (w && w.speed != null) ? w.speed : 300; };
+        const weaponRange = (id) => { const w = weapon(id); return (w && w.range != null) ? w.range : 0; };
+        const variantVal = (vi) => VARIANT_VAL[vi] || 1;
+
+        // ---- x4: movement-speed multiplier (bundle x4) ----
+        function x4(t) {
+            const w = weapon(t.weaponIndex);
+            const sh = hat(t.skinIndex), ta = acc(t.tailIndex);
+            let e = ((t.buildIndex < 0) + 1) / 2
+                * ((w && w.spdMult) || 1)
+                * ((t.skinIndex && sh && sh.spdMult) || 1)
+                * ((t.tailIndex && ta && ta.spdMult) || 1)
+                * (t.y2 <= K.snowBiomeTop ? ((t.skinIndex && sh && sh.coldM) ? 1 : 0.75) : 1)
+                * 1;
+            if (!t.zIndex && t.y2 >= K.mapScale / 2 - K.riverWidth / 2 && t.y2 <= K.mapScale / 2 + K.riverWidth / 2) {
+                e *= ((t.skinIndex && sh && sh.watrImm) ? 0.75 : 0.33);
+            }
+            return e;
+        }
+
+        // ---- l4: next-position prediction (accel / decel / real), ported 1-1 ----
+        function l4(e, t, n, i, s) {
+            if (s == null) s = 111;
+            if (!i) {
+                if (e.sid === z.sid && t !== 0 && !t) t = selfInput.moveDir;
+                else if (selfInSpike && e.sid === z.sid) t = undefined;
+                else if (!t && t !== 0) t = e.movDir;
+            }
+            let o = U(t), r = V(t);
+            const a = D(o, r);
+            if (a !== 0) { o /= a; r /= a; }
+            if (!n) n = e;
+            const l = x4(n);
+            let speedXD = 0, speedYD = 0, predX = 0, predY = 0;
+            if (o) speedXD += o * 0.0016 * l * s;
+            if (r) speedYD += r * 0.0016 * l * s;
+            if (speedXD) predX += speedXD * s;
+            if (speedYD) predY += speedYD * s;
+            const f = e.xVel * re(0.993, s), h = e.yVel * re(0.993, s);
+            const p = f + predX, m = h + predY;
+            const g = { x: e.x2 + p, y: e.y2 + m, type: "accel" };
+            const y = { x: e.x2 + f, y: e.y2 + h, type: "decel" };
+            const w = { x: e.x2, y: e.y2, type: "current" };
+            const b = { x: p, y: m, type: "nextVel" };
+            const I = s * 1.5 * U(t), So = s * 1.5 * V(t);
+            const E = { x: e.x2 + I, y: e.y2 + So };
+            const x = T(p, m, { x: e.x2 + p, y: e.y2 + m });
+            let real = g;
+            const pnp = prev.get(e.sid) && prev.get(e.sid).np;
+            if (pnp != null && e.sid !== z.sid) {
+                real = (se(e, pnp.accel) > se(e, pnp.decel) && Ay(e.movDir, e.pmovDir) <= 0.3) ? y : g;
+            }
+            if (e.sid === z.sid) real = (selfInput.moveDir == null) ? y : g;
+            const k = H(D(p, m));
+            return { accel: g, decel: y, boostCoords: E, boostVel: { x: I, y: So }, nextVel: b, real, current: w, fullDecel: x, xVel: p, spd: l, yVel: m, vel: k };
+
+            function T(e, t, n) {
+                if (isNaN(e) || isNaN(t)) return;
+                const i = e * r3, sv = t * r3;
+                if (e !== i) { e = i; n.x += e; }
+                if (t !== sv) { t = sv; n.y += t; }
+                if (e === i && t === sv) return { x: n.x, y: n.y, type: "full decel" };
+                return T(e, t, n);
+            }
+        }
+
+        // ---- loadout resolver (yy): map self.items/weapons -> slot ids ----
+        // Action-bar index e maps to item id e-16, so each group's owned item is
+        // simply the self.items entry whose id falls in that group's id range.
+        let selfInSpike = false;         // z in an enemy spike/trap (Nt analogue)
+        const loadout = {
+            ee: null, A: null, ry: null, ay: null, ly: null, cy: null, dy: null, uy: null, fy: null, hy: null,
+            spike: null, wall: null, food: null, windmill: null, utility: null, spawnpad: false
+        };
+        function inRange(id, lo, hi) { return id >= lo && id <= hi; }
+        function resolveLoadout() {
+            const weapons = z.weapons || [], items = z.items || [];
+            loadout.ee = weapons[0] != null ? weapons[0] : null;        // primary weapon id
+            loadout.A = weapons[1] != null ? weapons[1] : null;         // secondary weapon id
+            loadout.ry = loadout.ay = loadout.ly = loadout.cy = loadout.dy = loadout.uy = loadout.fy = loadout.hy = null;
+            for (const id of items) {
+                if (inRange(id, 0, 2)) loadout.ry = id;
+                else if (inRange(id, 3, 5)) loadout.ay = id;
+                else if (inRange(id, 6, 9)) loadout.ly = id;
+                else if (inRange(id, 10, 12)) loadout.cy = id;
+                else if (inRange(id, 13, 14)) loadout.dy = id;
+                else if (inRange(id, 15, 16)) loadout.uy = id;
+                else if (id === 20) loadout.fy = id;
+                else if (inRange(id, 17, 22) && id !== 20) loadout.hy = id;
+            }
+            // b4: classify the spike/wall/food/windmill/utility item defs for dmgpot.
+            loadout.spike = loadout.ly != null ? item(loadout.ly) : null;
+            loadout.wall = loadout.ay != null ? item(loadout.ay) : null;
+            loadout.food = loadout.ry != null ? item(loadout.ry) : null;
+            loadout.windmill = loadout.cy != null ? item(loadout.cy) : null;
+            loadout.utility = loadout.hy != null ? item(loadout.hy) : null;
+            loadout.spawnpad = loadout.fy != null;
+        }
+
+        // ---- reload fill (xy): fill pr/sr/tr for a visible player, one tick ----
+        function xy(t) {
+            if (t.buildIndex === -1) {
+                if (t.weaponIndex <= 8) {
+                    const e = weaponSpeed(t.primary);
+                    t.pr = j(1, t.pr + (t.delta > 190 ? t.delta : ce) / (e * t.samRP));
+                } else if (t.weaponIndex > 8) {
+                    const e = weaponSpeed(t.secondary);
+                    t.sr = j(1, t.sr + (t.delta > 190 ? t.delta : ce) / (e * t.samRS));
+                }
+            }
+            t.tr = j(1, t.tr + t.delta / 2400);
+        }
+        // by: keep filling reload for players no longer visible (bundle by()).
+        function by(t) {
+            if (t.pr != null && t.pr !== 1) t.pr = j(1, t.pr + ce / (weaponSpeed(t.primary) * t.samRP));
+            if (t.sr != null && t.sr !== 1) t.sr = j(1, t.sr + ce / (weaponSpeed(t.secondary) * t.samRS));
+            if (t.tr != null && t.tr !== 1) t.tr = j(1, t.tr + ce / 2500);
+        }
+
+        // ---- per-player state init (new player) ----
+        function initPlayerState(q) {
+            if (q.__combatInit) return;
+            q.__combatInit = true;
+            q.pr = 1; q.sr = 1; q.tr = 1;
+            q.samRP = 1; q.samRS = 1;
+            q.primaryVar = 3; q.secondaryVar = 3;
+            q.primary = undefined; q.secondary = undefined;
+            q.x2 = q.x; q.y2 = q.y; q.preX = q.x; q.preY = q.y;
+            q.xVel = 0; q.yVel = 0; q.movSpd = 0; q.movDir = undefined; q.pmovDir = undefined;
+            q.delta = ce; q.hitProjs = 0; q.visible = false;
+            q.lastBull = 0; q.bleed = undefined; q.poison = 0;
+            q.slowMult = 1; q.shameCount = 0; q.weaponR = 1;
+        }
+
+        // ---- the "a" tick: reconstruct everyone (bundle updatePlayers) ----
+        function updatePlayers(payload) {
+            const now = Date.now();
+            const dt = lastTickTime ? (now - lastTickTime) : ce;
+            lastTickTime = now;
+            v++;
+            if (v % 9 === 0) { /* packet-count bucket upkeep (visual only) */ }
+
+            // self is tracked as MooMoo.self; ensure it has combat fields.
+            initPlayerState(z);
+            resolveLoadout();
+
+            // snapshot which players came in this tick's position list
+            const positions = (payload && payload.positions) || [];
+            const freshSids = new Set();
+
+            // everyone starts invisible this tick (bundle sets visible=false then true)
+            for (const p of MooMoo.players.values()) { initPlayerState(p); p.vis2 = p.visible; p.visible = false; }
+            z.vis2 = z.visible; z.visible = false;
+
+            for (const pos of positions) {
+                const q = (pos.sid === z.sid) ? z : MooMoo.players.get(pos.sid);
+                if (!q) continue;
+                initPlayerState(q);
+                freshSids.add(pos.sid);
+                const pv = prev.get(pos.sid) || {};
+                // shift prediction window
+                q.x1 = q.x; q.y1 = q.y;
+                q.preX = q.x2 != null ? q.x2 : pos.x;
+                q.preY = q.y2 != null ? q.y2 : pos.y;
+                q.pmovDir = q.movDir;
+                q.x2 = pos.x; q.y2 = pos.y;
+                q.x = pos.x; q.y = pos.y; q.dir = pos.dir;
+                q.delta = dt;
+                // Normalise the runtime's attribute names (variant/skin/tail, and
+                // self's hat/accessory/weaponVariant) onto the bundle's names so every
+                // feature reads q.skinIndex / q.tailIndex / q.weaponVariant uniformly.
+                q.weaponVariant = (q === z) ? (z.weaponVariant || 0) : (q.variant || 0);
+                q.skinIndex = (q === z) ? (z.hat || 0) : (q.skin || 0);
+                q.tailIndex = (q === z) ? (z.accessory || 0) : (q.tail || 0);
+                q.loadout = (q === z) ? loadout : (q.loadout || {});
+                // attributes (weaponIndex/buildIndex/variant/team/skin/tail/zIndex) are
+                // kept current on the player object by the runtime; read them back.
+                q.xVel = q.x2 - q.preX; q.yVel = q.y2 - q.preY;
+                q.movSpd = D(q.preY - q.y2, q.preX - q.x2);
+                q.movSpd2 = D(q.y1 - q.y2, q.x1 - q.x2);
+                q.movDir = P(q.y2 - q.preY, q.x2 - q.preX);
+                if ((q.movDir === 0 && q.movSpd === 0) || (q.preX === q.x2 && q.preY === q.y2)) q.movDir = undefined;
+                // weapon / variant
+                if (q.weaponIndex >= 9) q.secondary = q.weaponIndex; else q.primary = q.weaponIndex;
+                const wvar = q.weaponVariant != null ? q.weaponVariant : 3;
+                if (q.weaponIndex === q.primary) q.primaryVar = wvar;
+                if (q.weaponIndex === q.secondary) q.secondaryVar = wvar;
+                // shame/samurai reset for visibility
+                q.lastpr = q.pr; q.lastsr = q.sr; q.lasttr = q.tr;
+                q.tick = v;
+                q.visible = true;
+                xy(q);
+                q.weaponR = (q.weaponIndex === q.secondary) ? q.sr : q.pr;
+                q.hitProjs = 0; q.hitSpike = false;
+                q.np = l4(q);
+                q.inWater = q.y2 >= K.mapScale / 2 - K.riverWidth / 2 && q.y2 <= K.mapScale / 2 + K.riverWidth / 2;
+                q.assumeAge = g4(q);
+                // bleed (bull-cycle phase)
+                q.bleed = q.lastBull ? ((v - q.lastBull + (q.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
+                prev.set(pos.sid, { x2: q.x2, y2: q.y2, movDir: q.movDir, np: q.np });
+                pv.seen = v;
+            }
+            // players still invisible: keep their reload filling (by)
+            for (const p of MooMoo.players.values()) { if (!p.visible && p.sid !== z.sid) by(p); }
+
+            // target selection: manual target, else nearest visible enemy (vn[0])
+            vn = visibleEnemies();
+            for (const e of vn) e.distance = S4(z, e);
+            vn.sort((a, b) => a.distance - b.distance);
+            if (manualTargetSid != null) {
+                const t = vn.find((e) => e.sid === manualTargetSid);
+                Y = t || vn[0] || null;
+            } else Y = vn[0] || null;
+        }
+
+        // ---- g4: assumeAge (highest age gear a player reveals) ----
+        function g4(e) {
+            let t = 0; const n = e.loadout || {};
+            if (n.spawnpad || (weapon(e.secondary) && weapon(e.secondary).age === 9) || (n.spike && n.spike.age === 9)) return 9;
+            if (n.utility) t = 7;
+            const sa = weapon(e.secondary), pa = weapon(e.primary);
+            if (sa && t < sa.age) t = sa.age;
+            if (pa && t < pa.age) t = pa.age;
+            if (n.spike && t < n.spike.age) t = n.spike.age;
+            if (n.food && t < n.food.age) t = n.food.age;
+            if (n.windmill && t < n.windmill.age) t = n.windmill.age;
+            if (n.wall && t < n.wall.age) t = n.wall.age;
+            if (e.weaponIndex === 0) t = 1;
+            if (e.primary === 0 && t > 1) e.primary = undefined;
+            return t;
+        }
+
+        // ---- K (gatherAnimation): a swing resets the swung weapon's reload ----
+        function onGather(p) {
+            const a = p && p.args; if (!a) return;
+            const sid = a[0], weaponIndex = a[2];
+            if (typeof weaponIndex !== "number") return;
+            const o = (sid === z.sid) ? z : MooMoo.players.get(sid);
+            if (!o) return;
+            initPlayerState(o);
+            if (weaponIndex > 9) o.sr = 0; else o.pr = 0;
+            const w = weapon(weaponIndex);
+            o.slowMult -= (w && w.hitSlow) || 0.3;
+            if (o.slowMult < 0) o.slowMult = 0;
+            o.samRS = (o.skinIndex === 20 && weaponIndex > 9) ? 0.78 : 1;
+            o.samRP = (o.skinIndex === 20 && weaponIndex < 9) ? 0.78 : 1;
+        }
+
+        // ---- health: track damage + the 9-tick bull cadence (lastBull/bleed) ----
+        const lastHealth = new Map();
+        function onHealth(p) {
+            const sid = p.sid, value = p.value;
+            const o = (sid === z.sid) ? z : MooMoo.players.get(sid);
+            if (!o) { lastHealth.set(sid, value); return; }
+            initPlayerState(o);
+            const prevH = lastHealth.has(sid) ? lastHealth.get(sid) : value;
+            const t = value - prevH;             // damage (<0) or heal (>0)
+            lastHealth.set(sid, value);
+            // bull-helmet reflect cadence: a bull (skin 7) dealing its periodic hit
+            // marks the cycle. poison tick (-5) also marks it.
+            if (t === -5 * (o.skinIndex === 6 ? 0.75 : 1) && o.poison) o.lastBull = v - 1;
+            if (t > 0) {
+                if (o.skinIndex === 13) {
+                    if (o.tailIndex === 13) { if (t === 6) { o.lastBull = v - 1; if (o === z) et = 0; } }
+                    else { if (t === 3) { o.lastBull = v - 1; if (o === z) et = 0; } }
+                }
+            } else if (t < 0) {
+                if (o.skinIndex === 7) {
+                    if (o.tailIndex === 13) { if (t === -2) { o.lastBull = v - 1; o.lastBull2 = Date.now(); } }
+                    else { if (t === -5) { o.lastBull = v - 1; o.lastBull2 = Date.now(); if (o === z) et = 0; } }
+                }
+            }
+            o.bleed = o.lastBull ? ((v - o.lastBull + (o.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
+        }
+
+        function onDied() { v = 0; et = 0; Y = null; vn = []; prev.clear(); lastHealth.clear(); }
+        function onSetup() { onDied(); }
+
+        // ---- targeting ----
+        function visiblePlayers() {
+            const out = [];
+            for (const p of MooMoo.players.values()) if (p.sid !== z.sid && p.visible) out.push(p);
+            return out;
+        }
+        function visibleEnemies() {
+            return visiblePlayers().filter((p) => !(z.team != null && p.team != null && p.team === z.team));
+        }
+
+        // ---- combat predicates ported 1-1 ----
+        // _y: a player's reload readiness after `t` ms (default 111). ==1 means ready.
+        function _y(e, t) {
+            if (!e) return;
+            if (!t) t = 111;
+            return j(1, e.weaponR + t / weaponSpeed(e.weaponIndex));
+        }
+        // Vy: is t within range n of e (now or on predicted-real positions)?
+        function Vy(e, t, n, i) {
+            return se(e, t, "player") <= n || (i && se(e.np && e.np.real, t.np && t.np.real, "player") <= n);
+        }
+        // o4: not shielded against us (weapon 11 = shield; must hit their back).
+        function o4(e, t) {
+            if (t.weaponIndex !== 11) return true;
+            const n = B(e, t);
+            return getAngleDist(n + W, t.dir) > W / 3;
+        }
+
+        MooMoo.on("playersUpdate", updatePlayers);
+        MooMoo.on("gatherAnimation", onGather);
+        MooMoo.on("health", onHealth);
+        MooMoo.on("died", onDied);
+        MooMoo.on("setup", onSetup);
+
+        return {
+            // state
+            get z() { return z; }, get self() { return z; },
+            get tick() { return v; }, get et() { return et; },
+            get target() { return Y; }, set target(sid) { manualTargetSid = sid; },
+            get visibleEnemies() { return vn; },
+            get loadout() { return loadout; },
+            setSelfInSpike(b) { selfInSpike = b; },
+            get selfInSpike() { return selfInSpike; },
+            // geometry + predicates
+            se, B, S4, angleDist: getAngleDist, getDirection,
+            _y, Vy, o4, l4, x4,
+            variantVal, weaponSpeed, weaponRange,
+            visiblePlayers, visibleEnemies,
+            K, ce, EN,
+            // for tests / advanced
+            _updatePlayers: updatePlayers, _prev: prev
+        };
+    }
+
+    return { createCombat, K, ce, EN, r3 };
+});
+
+
 /* ===== module: helpers (loader/src/helpers.js) ===== */
 /*
  * moomoo.js loader — GAME HELPERS  (combat / placement / hats / targeting)
@@ -1846,16 +2625,68 @@
 
     const SERVER_TICK = 1000 / 9;   // ~111.11ms — one server tick (combo timing unit)
 
-    // Build the ctxExtensions function. `env` = { MooMoo, input, data }.
+    // Build the ctxExtensions function. `env` = { MooMoo, input, data, objects }.
     function createHelpers(env) {
         const MooMoo = env.MooMoo;
         const data = env.data;
         const input = env.input;
+        const objects = env.objects || null;
+        const combatEngine = env.combat || null;
         const S = () => MooMoo.self;
 
+        // ---- combat state: weapon reload + variants (reconstructed from packets) ----
+        // Mirrors the client's model: a weapon's reload fills over weapon.speed (ms),
+        // scaled by samRP (Samurai Armor = hat 20 -> 0.78). It resets on every swing,
+        // which the server echoes as the gather-animation packet "K" =
+        // [sid, didHit, weaponIndex, (1/atkSpd)?]. So we read our own swings off "K"
+        // and a weapon is "ready" once weapon.speed*samRP ms have passed.
+        const WEAPON_VARIANT = [1, 1.1, 1.18, 1.18];   // damage multiplier by variant (gold/diamond/ruby)
+        let serverTick = 0;
+        let lastPrimarySwing = 0, lastSecondarySwing = 0;
+        MooMoo.on("playersUpdate", () => { serverTick++; });
+        MooMoo.on("gatherAnimation", (p) => {
+            const a = p && p.args;
+            if (!a || a[0] !== S().sid) return;
+            const w = a[2];
+            if (typeof w !== "number") return;
+            if (w > 8) lastSecondarySwing = Date.now(); else lastPrimarySwing = Date.now();
+        });
+        const samRP = () => (S().hat === 20 ? 0.78 : 1);   // Samurai Armor attack-speed bonus
+        const weaponSpeed = (id) => { const w = data.weapon(id); return (w && w.speed != null) ? w.speed : 300; };
+        const primaryId = () => (S().weapons || [])[0];
+        const secondaryId = () => (S().weapons || [])[1];
+        function primaryReady() { const id = primaryId(); return id != null && (Date.now() - lastPrimarySwing) >= weaponSpeed(id) * samRP(); }
+        function secondaryReady() { const id = secondaryId(); return id != null && (Date.now() - lastSecondarySwing) >= weaponSpeed(id) * samRP(); }
+        const variantVal = (v) => WEAPON_VARIANT[v] || 1;
+        // Mark a swing optimistically the instant we send an attack, so back-to-back
+        // combo decisions don't fire before the server's "K" echo arrives.
+        function markSwing() { if (S().weaponIndex > 8) lastSecondarySwing = Date.now(); else lastPrimarySwing = Date.now(); }
+
         // ---- geometry ----
-        const dist = (a, b) => Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
-        const angle = (from, to) => Math.atan2((to.y || 0) - (from.y || 0), (to.x || 0) - (from.x || 0));
+        // The bundle's combat math works on PREDICTED positions (x2/y2) and falls
+        // back to the live position when there's no prediction. These primitives
+        // are ported 1-1 from the bundle so features behave identically:
+        //   S4(a,b)        center distance            -> centerDist
+        //   se(a,b,type)   edge distance (+offset)    -> edgeDist   (player -63, object -scale)
+        //   B(a,b)         angle a->b                 -> angleBetween
+        //   getAngleDist   smallest angle between     -> angleDist
+        const TAU = Math.PI * 2;
+        const px = (e) => (e && e.x2 != null ? e.x2 : (e ? e.x : 0)) || 0;
+        const py = (e) => (e && e.y2 != null ? e.y2 : (e ? e.y : 0)) || 0;
+        const dist = (a, b) => Math.hypot(px(b) - px(a), py(b) - py(a));
+        const centerDist = dist;
+        const edgeDist = (a, b, type) => {
+            const off = type === "player" ? -1.8 * 35 : type === "object" ? -(b && b.scale || 0) : 0;
+            return Math.hypot(px(b) - px(a), py(b) - py(a)) + off;
+        };
+        const angle = (from, to) => Math.atan2(py(to) - py(from), px(to) - px(from));
+        const angleBetween = angle;
+        function angleDist(a, b) {
+            let n = Math.abs(a - b) % TAU;
+            if (n > Math.PI) n = TAU - n;
+            return n;
+        }
+        const toRad = (deg) => deg * (Math.PI / 180);
 
         // ---- targeting ----
         function visiblePlayers() {
@@ -1875,6 +2706,19 @@
                 if (d < bd && (maxRange == null || d <= maxRange)) { bd = d; best = p; }
             }
             return best;
+        }
+        // Worst-case melee damage an in-range enemy could land this tick (enemies are
+        // assumed max variant, like the client's dmgpot). Used for soldier/heal logic.
+        function predictedDamage(range) {
+            let worst = 0;
+            for (const p of enemies()) {
+                const w = data.weapon(p.weaponIndex);
+                if (!w || w.dmg == null) continue;
+                if (dist(S(), p) > (range != null ? range : (w.range || 0) + 70)) continue;
+                const d = w.dmg * variantVal(p.weaponVariant != null ? p.weaponVariant : 3);
+                if (d > worst) worst = d;
+            }
+            return worst;
         }
 
         // ---- inventory resolution ----
@@ -1923,9 +2767,9 @@
         // Attacking. If a buildable is selected, reselect the weapon first so the
         // mouse-down is an attack, not a placement.
         function ensureWeapon() { if (S().buildIndex >= 0) selectWeapon(S().weaponIndex); }
-        function startAttack(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); }
+        function startAttack(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); markSwing(); }
         function stopAttack() { MooMoo.send.mouse(false); }
-        function attackOnce(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); MooMoo.send.mouse(false); }
+        function attackOnce(dir) { ensureWeapon(); MooMoo.send.mouse(true, dir == null ? undefined : dir); MooMoo.send.mouse(false); markSwing(); }
 
         // Aiming.
         function aim(dir) { MooMoo.send.aim(dir); }
@@ -1957,9 +2801,21 @@
                 // data + input + constants
                 data, gameData: data, input, SERVER_TICK,
                 now: () => Date.now(),
-                // geometry + targeting
+                // geometry + targeting (bundle-faithful primitives)
                 distance: dist, angleTo: angle,
-                visiblePlayers, enemies, nearestEnemy,
+                centerDist, edgeDist, angleBetween, angleDist, toRad,
+                visiblePlayers, enemies, nearestEnemy, predictedDamage,
+                // world objects (buildings / resources / turrets / traps)
+                objects,
+                // combat state: the full engine (per-player prediction/reload/bull)
+                // when present; a minimal reload shim otherwise (headless tests).
+                combat: combatEngine || {
+                    get tick() { return serverTick; },
+                    primaryReady, secondaryReady, variantVal, samRP, markSwing,
+                    primaryId, secondaryId, weaponSpeed,
+                    get primaryVar() { return S().weaponVariant != null ? S().weaponVariant : 0; }
+                },
+                primaryReady, secondaryReady, markSwing,
                 // tick (fires once per server movement update)
                 onTick: (fn) => ctx.on("playersUpdate", fn),
                 // combat verbs
@@ -2306,20 +3162,38 @@
     function installConfigMenu(win, MooMoo, opts) {
         opts = opts || {};
         const doc = win.document;
-        if (!doc || !doc.createElement) return null;
+        if (!doc || typeof doc.createElement !== "function" || typeof doc.getElementById !== "function") return null;
         const input = opts.input || null;
         let toggleKey = opts.toggleKey || "`";
         const title = opts.title || "moomoo.js";
 
         function el(tag, cls, attrs) { const n = doc.createElement(tag); if (cls) n.className = cls; if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]); return n; }
-        function style() { if (doc.getElementById("mmj-cfg-style")) return; const s = el("style"); s.id = "mmj-cfg-style"; s.textContent = STYLE; (doc.head || doc.documentElement).appendChild(s); }
+        function style() {
+            if (doc.getElementById("mmj-cfg-style")) return;
+            const host = doc.head || doc.documentElement;
+            if (!host) return;
+            const s = el("style"); s.id = "mmj-cfg-style"; s.textContent = STYLE; host.appendChild(s);
+        }
 
-        style();
         const overlay = el("div", null, { id: "mmj-cfg-overlay" });
         const card = el("div", null, { id: "mmj-cfg" });
         const fab = el("div", null, { id: "mmj-cfg-fab" }); fab.textContent = "⚙";
         fab.title = "moomoo.js config (" + toggleKey + ")";
-        doc.body.appendChild(overlay); doc.body.appendChild(card); doc.body.appendChild(fab);
+        // The loader runs at document-start, so <head>/<body> may not exist yet.
+        // Inject the stylesheet and mount the UI as soon as they appear.
+        function mount() {
+            if (!doc.body) return false;
+            style();
+            doc.body.appendChild(overlay); doc.body.appendChild(card); doc.body.appendChild(fab);
+            return true;
+        }
+        if (!mount()) {
+            if (doc.addEventListener) doc.addEventListener("DOMContentLoaded", mount, { once: true });
+            try {
+                const obs = new win.MutationObserver(() => { if (mount()) obs.disconnect(); });
+                obs.observe(doc.documentElement || doc, { childList: true, subtree: true });
+            } catch (e) { /* no observer: DOMContentLoaded will still fire */ }
+        }
 
         let activeTab = null;
         let suppressRerender = false;
@@ -2487,6 +3361,8 @@
             Menu: require("./menu.js"),
             GameData: require("../../shared/gamedata.js"),
             Input: require("./input.js"),
+            ObjectManager: require("./objectmanager.js"),
+            Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
             ConfigMenu: require("./configmenu.js")
         }
@@ -2513,6 +3389,8 @@
             Menu: g.MooMooMenu,
             GameData: g.MooMooGameData,
             Input: g.MooMooInput,
+            ObjectManager: g.MooMooObjectManager,
+            Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
             ConfigMenu: g.MooMooConfigMenu
         };
@@ -2595,10 +3473,17 @@
         let active = null; // the adopted game socket's state
 
         // ---- runtime + sink ----
+        // Self input mirror: the combat engine needs the player's own current move
+        // direction (the bundle's `Dn`) and aim to predict self position. We capture
+        // them as they are sent so the engine reads the same values the client has.
+        const selfInput = { moveDir: null, aimDir: 0 };
         const sink = {
             sendAction(action, payload) {
                 const bind = binding.outgoing[action];
                 if (!bind) { console.warn("%c[moomoo.js]", "color:#e66", "unknown action: " + action); return false; }
+                if (action === "move") selfInput.moveDir = (payload && payload.dir === undefined) ? null : (payload ? payload.dir : null);
+                else if (action === "stopMove") selfInput.moveDir = null;
+                else if (action === "aim" && payload && typeof payload.dir === "number") selfInput.aimDir = payload.dir;
                 return sendWire(active, bind.wire, bind.build(payload || {}));
             },
             sendRaw(wire, args) { return sendWire(active, wire, args || []); }
@@ -2616,10 +3501,24 @@
         if (win.document && D.Input) {
             try { input = D.Input.installInput(win); } catch (e) { errorSink(e); }
         }
+        // The world object manager tracks buildings/resources from the wire; the
+        // combat features read it. Build it before helpers so they can expose it.
+        let objects = null;
+        if (D.ObjectManager && D.GameData) {
+            try { objects = D.ObjectManager.createObjectManager({ MooMoo, data: D.GameData }); }
+            catch (e) { errorSink(e); }
+        }
+        // The combat engine reconstructs per-player prediction/reload/bull state on
+        // every server tick (the bundle's updatePlayers). Features read it as ctx.combat.
+        let combat = null;
+        if (D.Combat && D.GameData) {
+            try { combat = D.Combat.createCombat({ MooMoo, data: D.GameData, objects, input, selfInput }); }
+            catch (e) { errorSink(e); }
+        }
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -2769,6 +3668,8 @@
 
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
+        MooMooLoader.objects = objects;
+        MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).
         if (D.Menu && win.document) {

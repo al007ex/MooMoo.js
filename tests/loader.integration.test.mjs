@@ -94,25 +94,28 @@ const build = await createProtocolBuild({ outDir, pinFile: null });
 const mod = { mixKey: build.mixKey, BUILD_SALT: build.BUILD_SALT, BUILD_ID: build.BUILD_ID };
 
 console.log("\n== undetectable proxy install ==");
-await ok("window.WebSocket is replaced but prototype.send stays native", () => {
+await ok("window.WebSocket === pr and prototype.send still reports [native code]", () => {
     const env = makeFakeEnv(build);
     const nativeOriginal = env.win.WebSocket;
-    const nativeProtoSend = env.win.WebSocket.prototype.send;
 
     // The loader installs at document-start, BEFORE the client runs.
     LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
 
-    // Now the client runs and captures its reference `pr`.
+    // Now the client runs and captures its references `pr` and `dl`.
     const pr = env.win.WebSocket;
+    const dl = env.win.WebSocket.prototype.send;
 
     // 1) The constructor really is hooked (a Proxy), not the bare native one.
     assert.notStrictEqual(pr, nativeOriginal, "WebSocket should be wrapped");
     // 2) Reference check the anti-tamper performs later:  window.WebSocket === pr
     //    The loader never re-assigns, so this holds forever.
     assert.strictEqual(env.win.WebSocket, pr, "window.WebSocket !== pr would set SOCKET_HOOKED");
-    // 3) looksNative(WebSocket.prototype.send): the prototype is pristine, so the
-    //    proxy forwards to the original native send -> [native code] check passes.
-    assert.strictEqual(env.win.WebSocket.prototype.send, nativeProtoSend, "prototype.send must be the original native");
+    // 3) prototype.send IS now replaced (so the loader sees dl.call(socket, frame)),
+    //    but it is a Proxy of the native send, so the SOCKET_HOOKED check
+    //    Function.prototype.toString.call(WebSocket.prototype.send).includes("[native code]")
+    //    still passes.
+    assert.ok(Function.prototype.toString.call(dl).includes("[native code]"),
+        "prototype.send must still look native to toString");
     assert.strictEqual(env.win.WebSocket.prototype, nativeOriginal.prototype, "prototype must forward to native");
     // 4) Constructed sockets are genuine instances (native prototype chain).
     const ws = new env.win.WebSocket("wss://localhost/");
@@ -163,6 +166,30 @@ await ok("intercepted client frames reach the server with valid sequence", async
     assert.strictEqual(accepted[0].seq, 1, "loader-owned seq starts at 1");
     assert.strictEqual(accepted[1].name, "D");
     assert.strictEqual(accepted[1].seq, 2, "loader-owned seq increments");
+});
+
+console.log("\n== client sends via prototype.send.call (the real client's path) ==");
+await ok("dl.call(socket, frame) + an injected frame share ONE contiguous sequence", async () => {
+    const env = makeFakeEnv(build);
+    const { MooMoo } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    const ws = new env.win.WebSocket("wss://localhost/");
+    env.emitHandshake();
+    await tick(); await tick();
+
+    const payload = decodeHandshakePayload(env);
+    const client = new g.MooMooProtocol.ClientSession(payload, mod);
+    // The official client caches dl = WebSocket.prototype.send and calls it as
+    // dl.call(socket, frame). A per-socket hook misses this; the prototype hook
+    // must catch it and re-sequence.
+    const dl = env.win.WebSocket.prototype.send;
+    dl.call(ws, client.encodeC2S("6", ["one"]));      // client frame 1
+    MooMoo.send.chat("injected");                       // mod injects between client frames
+    dl.call(ws, client.encodeC2S("D", [0.5]));         // client frame 2
+
+    const accepted = env.acceptedByServer;
+    assert.ok(accepted.every((d) => !d.error), "server rejected a frame: " + JSON.stringify(accepted.map((a) => a.error || a.name)));
+    assert.deepStrictEqual(accepted.map((a) => a.seq), [1, 2, 3], "all three frames must carry a contiguous loader-owned seq");
+    assert.deepStrictEqual(accepted.map((a) => a.name), ["6", "6", "D"], "order preserved: client, injected, client");
 });
 
 console.log("\n== anti-cheat bypass: telemetry scrub ==");

@@ -27,6 +27,8 @@
             Menu: require("./menu.js"),
             GameData: require("../../shared/gamedata.js"),
             Input: require("./input.js"),
+            ObjectManager: require("./objectmanager.js"),
+            Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
             ConfigMenu: require("./configmenu.js")
         }
@@ -53,6 +55,8 @@
             Menu: g.MooMooMenu,
             GameData: g.MooMooGameData,
             Input: g.MooMooInput,
+            ObjectManager: g.MooMooObjectManager,
+            Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
             ConfigMenu: g.MooMooConfigMenu
         };
@@ -135,10 +139,17 @@
         let active = null; // the adopted game socket's state
 
         // ---- runtime + sink ----
+        // Self input mirror: the combat engine needs the player's own current move
+        // direction (the bundle's `Dn`) and aim to predict self position. We capture
+        // them as they are sent so the engine reads the same values the client has.
+        const selfInput = { moveDir: null, aimDir: 0 };
         const sink = {
             sendAction(action, payload) {
                 const bind = binding.outgoing[action];
                 if (!bind) { console.warn("%c[moomoo.js]", "color:#e66", "unknown action: " + action); return false; }
+                if (action === "move") selfInput.moveDir = (payload && payload.dir === undefined) ? null : (payload ? payload.dir : null);
+                else if (action === "stopMove") selfInput.moveDir = null;
+                else if (action === "aim" && payload && typeof payload.dir === "number") selfInput.aimDir = payload.dir;
                 return sendWire(active, bind.wire, bind.build(payload || {}));
             },
             sendRaw(wire, args) { return sendWire(active, wire, args || []); }
@@ -156,10 +167,24 @@
         if (win.document && D.Input) {
             try { input = D.Input.installInput(win); } catch (e) { errorSink(e); }
         }
+        // The world object manager tracks buildings/resources from the wire; the
+        // combat features read it. Build it before helpers so they can expose it.
+        let objects = null;
+        if (D.ObjectManager && D.GameData) {
+            try { objects = D.ObjectManager.createObjectManager({ MooMoo, data: D.GameData }); }
+            catch (e) { errorSink(e); }
+        }
+        // The combat engine reconstructs per-player prediction/reload/bull state on
+        // every server tick (the bundle's updatePlayers). Features read it as ctx.combat.
+        let combat = null;
+        if (D.Combat && D.GameData) {
+            try { combat = D.Combat.createCombat({ MooMoo, data: D.GameData, objects, input, selfInput }); }
+            catch (e) { errorSink(e); }
+        }
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -309,6 +334,8 @@
 
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
+        MooMooLoader.objects = objects;
+        MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).
         if (D.Menu && win.document) {

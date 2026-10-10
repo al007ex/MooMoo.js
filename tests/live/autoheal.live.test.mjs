@@ -41,16 +41,20 @@ try {
 
     victim = await createVictim({
         WS, srv, mod, name: "victim",
-        url: gameUrl(srv, await joinTicket(srv, victimToken), mod.BUILD_ID),
-        configure: (MooMoo) => MooMoo.setSetting("examplescript", "autoHeal", false)
+        url: gameUrl(srv, await joinTicket(srv, victimToken), mod.BUILD_ID)
+        // auto-heal stays at its default (ON) — exactly what you run in game
     });
     bot = await createBot({ WS, srv, mod, name: "attacker", url: gameUrl(srv, await joinTicket(srv, botToken), mod.BUILD_ID) });
     T0 = Date.now();
     const vsid = victim.client.sid;
-    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}`);
+    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}, autoHeal=${victim.MooMoo.getMods().find((m) => m.id === "examplescript").settings.find((s) => s.key === "autoHeal").value}`);
 
     victim.MooMoo.on("health", (p) => { if (p.sid === vsid) note(`victim health -> ${p.value}`); });
+    victim.MooMoo.on("playerValue", (p) => { if (p.key === "food") note(`victim food -> ${p.value}`); });
     victim.MooMoo.on("disconnect", (p) => note(`victim got disconnect packet: ${p.reason}`));
+    victim.MooMoo.on("died", () => note("victim DIED"));
+    // every select / mouse / store frame the victim puts on the wire (after the loader)
+    victim.MooMooLoader.onRaw((dir, name, args) => { if (dir === "out" && /^(z|F|c)$/.test(name)) note(`victim -> ${name} ${JSON.stringify(args)}`); });
 
     bot.admin("give", 1, 1000, vsid);      // food so auto-heal can eat
     bot.admin("goto", vsid);
@@ -67,36 +71,28 @@ try {
         bot.client.send("F", [0, dir]);
     }
     const victimDown = () => victim.client.closed || victim.client.disconnectReason;
+    const why = () => JSON.stringify(victim.client.closed || victim.client.disconnectReason);
 
-    // ---- A: auto-heal OFF ----
-    note("PHASE A: auto-heal off, 2 hits");
-    for (let i = 0; i < 2 && !victimDown(); i++) { await hit(); await tick(1200); }
-    await tick(800);
-    assert.ok(!victimDown(), "victim dropped with auto-heal OFF (loader problem): " + JSON.stringify(victim.client.closed || victim.client.disconnectReason));
+    // ---- A: single hits with time to heal in between ----
+    note("PHASE A: pulsed hits, auto-heal on");
+    for (let i = 0; i < 6 && !victimDown(); i++) { await hit(); await tick(1500); }
+    assert.ok(!victimDown(), "victim dropped during pulsed hits: " + why());
 
-    // ---- B: auto-heal ON, pulsed ----
-    note("PHASE B: auto-heal on, pulsed hits");
-    victim.MooMoo.setSetting("examplescript", "autoHeal", true);
-    const healthLow = [];
-    for (let i = 0; i < 6 && !victimDown(); i++) { await hit(); healthLow.push(victim.client.health); await tick(1400); }
-    await tick(800);
-    assert.ok(!victimDown(), "victim dropped with auto-heal ON (pulsed): " + JSON.stringify(victim.client.closed || victim.client.disconnectReason));
-
-    // ---- C: held attack ----
-    note("PHASE C: held attack for 4s");
+    // ---- B: held attack (a hit every swing) ----
+    note("PHASE B: held attack for 4s");
     bot.admin("goto", vsid);
     await tick(80);
     let dir = bot.aimAt(vsid);
     bot.client.send("F", [1, dir]);
     for (let i = 0; i < 16 && !victimDown(); i++) { await tick(250); bot.admin("goto", vsid); dir = bot.aimAt(vsid) ?? dir; }
     bot.client.send("F", [0, dir]);
-    await tick(1500);
-    assert.ok(!victimDown(), "victim dropped with auto-heal ON (held attack): " + JSON.stringify(victim.client.closed || victim.client.disconnectReason));
+    await tick(2000);
+    assert.ok(!victimDown(), "victim dropped during held attack: " + why());
 
     // ---- healing actually happened ----
-    const ups = timeline.filter((l) => /victim health -> (\d+)/.test(l)).map((l) => +/-> (\d+)/.exec(l)[1]);
+    const ups = timeline.filter((l) => /victim health -> (-?\d+)/.test(l)).map((l) => +/-> (-?\d+)/.exec(l)[1]);
     let rises = 0; for (let i = 1; i < ups.length; i++) if (ups[i] > ups[i - 1]) rises++;
-    note(`health changes: ${ups.join(",")}  (rises: ${rises})`);
+    note(`health changes: ${ups.join(",")}  (rises: ${rises}, deaths: ${victim.client.deaths || 0})`);
     assert.ok(rises > 0, "auto-heal never raised health");
 
     // ---- server-side: nothing against the victim ----

@@ -37,10 +37,16 @@
 
         // ---- game state ----
         const players = new Map();     // sid -> player object
+        // The server only sends your inventory ("V") when it CHANGES (on upgrade);
+        // on spawn you start from the fixed default loadout, exactly like the client
+        // (server player.js: items [0,3,6,10]; the client seeds weapons [0]). We seed
+        // the same so loadout-aware features know the starting kit before any upgrade.
+        const DEFAULT_WEAPONS = [0];              // tool hammer
+        const DEFAULT_ITEMS = [0, 3, 6, 10];      // apple, wood wall, spikes, windmill
         const self = {
             sid: -1, alive: false, health: 0, x: 0, y: 0, dir: 0,
             weaponIndex: 0, buildIndex: -1, hat: 0, accessory: 0,
-            weapons: [], items: []     // owned weapon ids / buildable item ids
+            weapons: DEFAULT_WEAPONS.slice(), items: DEFAULT_ITEMS.slice()  // owned weapon ids / buildable item ids
         };
 
         function playerFor(sid) {
@@ -56,6 +62,8 @@
                 case "setup":
                     self.sid = payload.sid;
                     self.alive = true;
+                    self.weapons = DEFAULT_WEAPONS.slice();
+                    self.items = DEFAULT_ITEMS.slice();
                     playerFor(payload.sid);
                     break;
                 case "health": {
@@ -65,7 +73,13 @@
                     break;
                 }
                 case "playerAdd":
-                    if (payload.isYou && Array.isArray(payload.data)) self.alive = true;
+                    // You (re)spawned: the server reset your kit to defaults (it won't
+                    // resend "V"), so mirror that locally.
+                    if (payload.isYou && Array.isArray(payload.data)) {
+                        self.alive = true;
+                        self.weapons = DEFAULT_WEAPONS.slice();
+                        self.items = DEFAULT_ITEMS.slice();
+                    }
                     break;
                 case "playerRemove":
                     players.delete(payload.sid);
@@ -162,7 +176,7 @@
             players.clear();
             self.sid = -1; self.alive = false; self.health = 0; self.x = 0; self.y = 0; self.dir = 0;
             self.weaponIndex = 0; self.buildIndex = -1; self.hat = 0; self.accessory = 0;
-            self.weapons = []; self.items = [];
+            self.weapons = DEFAULT_WEAPONS.slice(); self.items = DEFAULT_ITEMS.slice();
         }
 
         // ---- outgoing: build send.<action>(...) from the vocabulary ----
