@@ -15,7 +15,8 @@
             //   m  key + mouse state (m.lc / m.rc / m.mc, m[key])   Ct "e" auto-hit   In "l" auto-push gate
             const combat = ctx.combat, objects = ctx.objects, store = ctx.store, net = ctx.net, data = ctx.data;
             const win = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-            const doc = win.document || null;
+            // a real DOM, or null (the mod also runs headless in the node test harness)
+            const doc = (win.document && typeof win.document.getElementById === "function" && typeof win.document.createElement === "function") ? win.document : null;
 
             // ---- Math aliases (bundle lines 1-30). `let`, as in the bundle's sloppy globals. ----
             let V = Math.sin, U = Math.cos, j = Math.min, oe = Math.max, f = Math.floor, n_trunc = Math.trunc,

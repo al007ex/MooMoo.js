@@ -17,8 +17,8 @@
             const Wm = false;      // the bundle's "still on the main menu" flag (false once in game)
             let Et = 0;
             const K1 = { animationTime: 0, land: null, lava: null, x: K.volcanoLocationX, y: K.volcanoLocationY };
-            V2();
-            n2();
+            // volcano sprites + crown/skull icons (need a DOM; the mod also runs headless in tests)
+            try { V2(); n2(); } catch (e) { /* no document: nothing is drawn anyway */ }
             objects.setMillRotate && objects.setMillRotate(() => us.checked);
             ctx.onCleanup(() => { objects.setMillRotate && objects.setMillRotate(null); });
 
@@ -129,7 +129,23 @@
                             a = j(r * .01 * mh, r);
                         r > .05 ? (Ph += a * U(v6), Rh += a * V(v6)) : (Ph = e.x, Rh = e.y);
                     } else Ph = K.mapScale / 2, Rh = K.mapScale / 2;
-                    // (the per-entity interpolation runs in ctx.combat every frame)
+                    // Players and animals are interpolated by ctx.combat every frame; the
+                    // fake previews (Ci, the "spike kb visual") only exist here (14078-14090).
+                    const x6 = gh - ce;
+                    for (let s6 = 0; s6 < Ci.length; ++s6) {
+                        if ((q = Ci[s6]) && (q.visible || q.fake)) {
+                            if (q.forcePos) q.x = q.x2, q.y = q.y2, q.dir = q.d2;
+                            else {
+                                var r6 = q.t2 - q.t1, a6 = (x6 - q.t1) / r6;
+                                q.dt += mh;
+                                var c6 = j(1.7, q.dt / 170);
+                                var i6 = q.x2 - q.x1;
+                                q.x = q.x1 + i6 * c6, i6 = q.y2 - q.y1, q.y = q.y1 + i6 * c6, q.lastx = q.x;
+                                q.lasty = q.y;
+                                q.dir = Math.lerpAngle(q.d2, q.d1, j(1.2, a6));
+                            }
+                        }
+                    }
                     const w = Ph - Oh / 2 + pi,
                         b = Rh - Lh / 2 + mi;
                     K.snowBiomeTop - b <= 0 && K.mapScale - K.snowBiomeTop - b >= Lh ? (mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, 0, Oh, Lh)) : K.mapScale - K.snowBiomeTop - b <= 0 ? (mainContext.fillStyle = "#dbc666", mainContext.fillRect(0, 0, Oh, Lh)) : K.snowBiomeTop - b >= Lh ? (mainContext.fillStyle = "#fff", mainContext.fillRect(0, 0, Oh, Lh)) : K.snowBiomeTop - b >= 0 ? (mainContext.fillStyle = "#fff", mainContext.fillRect(0, 0, Oh, K.snowBiomeTop - b), mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, K.snowBiomeTop - b, Oh, Lh - (K.snowBiomeTop - b))) : (mainContext.fillStyle = "#b6db66", mainContext.fillRect(0, 0, Oh, K.mapScale - K.snowBiomeTop - b), mainContext.fillStyle = "#dbc666", mainContext.fillRect(0, K.mapScale - K.snowBiomeTop - b, Oh, Lh - (K.mapScale - K.snowBiomeTop - b))), Wm || (Th += Ch * K.waveSpeed * mh, Th >= K.waveMax ? (Th = K.waveMax, Ch = -1) : Th <= 1 && (Th = Ch = 1), mainContext.globalAlpha = 1, mainContext.fillStyle = "#dbc666", p2(w, b, mainContext, K.riverPadding), mainContext.fillStyle = "#91b2db", p2(w, b, mainContext, (Th - 1) * 250)), mainContext.lineWidth = 4, mainContext.strokeStyle = "#000", mainContext.globalAlpha = .06, mainContext.beginPath();
@@ -172,6 +188,7 @@
                         mainContext.fillRect(0, 0, ovl.canvas.width, ovl.canvas.height);
                         mainContext.setTransform(_t);
                     }
+                    Sp(mh);
                 }
             }
 
@@ -511,3 +528,6 @@
                             }
                         }
             }
+
+            // "Legacy Visuals" (bo.onclick, 13567): the health bar width follows it
+            ctx.onSettingChange && ctx.onSettingChange((key) => { if (key === "Legacy Visuals") K.healthBarWidth = bo.checked ? 50 : 35; });

@@ -990,6 +990,9 @@
             en = true;
             // (you join J in addPlayer, like the bundle; setupGame only flags the game on)
             z.sid = p.sid;
+            // the bundle's _n ("https://sandbox..." in the URL). This server tells its
+            // own client through the client's config (window.config.inSandbox).
+            try { if (win && win.config && "inSandbox" in win.config) sandbox = !!win.config.inSandbox; } catch (e) { /* keep */ }
         }
         function onDied() {
             en = false;
