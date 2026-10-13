@@ -1,3 +1,8 @@
+> **Status (latest): see `HANDOFF.md` — it supersedes this log.** The port is now a
+> 1-1 transplant split into `mods/examplescript/*.js` parts (bundle names kept), on
+> the loader's bundle-exact combat engine, with the bundle's own renderer drawing
+> the game on an overlay. The sections below are the historical log.
+
 # Porting examplescript.js → moomoo.js
 
 `examplescript.js` is a full modified MooMoo.io client bundle (~23.5k lines) a

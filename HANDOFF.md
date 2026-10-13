@@ -1,250 +1,221 @@
-# moomoo.js — continuation brief
+# moomoo.js: continuation brief
 
-You are continuing a long-running project. Read this whole file, then read
-`PORT.md`, before doing anything. Work in the current directory (the `MooMoo.js`
-repo). The private server now lives **inside** this repo at `moomoo-clone-main/`.
+Read this whole file before you touch anything. `PORT.md` is the older running
+log. This file supersedes it wherever the two disagree. Work in this repo
+(`MooMoo.js`), on branch `claude/compassionate-ride-w2xudy`.
 
-## 1. Mission & hard rules (do not violate)
-- We are building **moomoo.js**, a modding framework (loader + stable runtime/API)
-  for the user's OWN private MooMoo.io-clone server. This is for **private,
-  educational/testing use only**. Never publish, share, or upload any of this
-  anywhere except where the user explicitly asks (the loader goes to the user's
-  own pastebin as a `@require` target).
-- The reference is `examplescript.js` at the repo root — a **23,510-line full
-  modified game client bundle** a friend made (the game's own client with a big
-  combat/sync mod woven in). Call this **"the bundle"**. We are recreating EVERY
-  one of its features on top of the moomoo.js loader + runtime.
-- **The goal is 1-1 behavioral parity.** The user has said repeatedly, in these
-  words: *"copy every single workflow and every single feature exactly over so
-  they behave 100% the same"*, *"i want everything"*, *"go as deep as the script
-  is, everything should be 1-1, even if it means writing a lot of code"*, *"i
-  dont care how substancial the work is, and i dont care if you say its
-  unobservable. everything should be recreatable since we have the code."* So:
-  implement every feature exactly as it appears in the bundle. Do not
-  approximate, skip, or "simplify" because something seems unobservable or large.
-- **BOTS ARE THE ONLY EXCLUSION.** The user said *"you dont need to do the bots.
-  i want you to do EVERYTHING else tho."* Everything in the bundle's Bots tab,
-  and the bot-coordination plumbing (the `ie`/`c` bot-mirror world, `fs.checked`
-  "send ws" cross-bot messaging), is out of scope. Every other tab is in scope:
-  Combat, Healing, Visuals, Keybinds/Quests, Throttles, Extra.
-- Extend the loader API whenever a feature needs something it lacks — that is
-  expected (*"add new methods and new functionality and features to the api
-  itself as you go"*). But keep the public vocabulary (`shared/vocabulary.js`)
-  stable; game-specific logic belongs in the loader's volatile modules.
-- **Do NOT reproduce the slur** that appears as a default bot-name string in the
-  bundle (`bi = "..."` around line 648). Use a neutral default. Bots are excluded
-  anyway; never carry that string over.
-- Keep the loader **undetectable** and never break the disconnect fix (see §6).
-- **Never minify the loader** you deliver (terser breaks it).
+---
 
-## 2. Layout
-- `examplescript.js` (repo root, ~903 KB) — THE BUNDLE (reference client+mod).
-- `mods/examplescript.js` — OUR PORT of the bundle's mod (the deliverable mod).
-  Built into `mods/examplescript.user.js` (a Tampermonkey userscript that
-  `@require`s the loader) by `node mods/build-examplescript.mjs`.
-- `loader/src/*.js` — the loader (volatile half). Key modules:
-  - `protocol.js`, `msgpack.js`, `sha256.js`, `binding.js` — wire/codec. `binding.js`
-    is the ONLY place that maps wire letters ↔ semantic event/action names.
-  - `runtime.js` — `window.MooMoo`: tracks `self`/`players`, dispatches events,
-    exposes `send.*`, mod registry, ctx. Dispatch calls `updateState` THEN listeners.
-  - `anticheat.js` — the `WebSocket.prototype.send` Proxy (the disconnect fix) +
-    telemetry scrub. **Do not touch without re-reading §6.**
-  - `input.js` — keybinds + mouse/aim tracking (DOM).
-  - `objectmanager.js` — world objects (DONE, see §4).
-  - `combat.js` — the combat engine = the bundle's `updatePlayers` (DONE, see §4).
-  - `helpers.js` — combat/placement/targeting verbs injected into every mod's ctx.
-  - `configmenu.js` — the tabbed config overlay (the `` ` `` key / gear button).
-  - `loader.js` — assembles everything, owns c2s re-encoding + sequence.
-- `shared/gamedata.js` — weapons/items/hats/accessories/projectiles tables +
-  lookups (`data.weapon(id)`, `data.item(id)`, `data.hat(id)`, …). Items carry a
-  resolved `group` object.
-- `shared/vocabulary.js` — the stable event/action contract (don't churn it).
-- `loader/build.mjs` — concatenates `loader/src/*` (+ shared) into
-  `loader/dist/moomoo-loader.user.js`. Module order matters; new modules go in the
-  `MODULES` list.
-- `moomoo-clone-main/` — the private SERVER (ground truth for all mechanics).
-  Read `moomoo-clone-main/server/src/**` whenever you need exact server behavior:
-  `network/packets.js` (c2s handlers), `moomoo/server.js` (sync loops, s2c),
-  `moomoo/modules/{player,objectManager,gameObject,items,projectileManager}.js`,
-  `anticheat/config.js`, `shared/config.js` (map/player/variant constants).
-- `tests/*.test.mjs` — unit tests (`node --test tests/*.test.mjs`).
-- `tests/live/*` — the LIVE harness (real server + real Chrome). See §5.
+## 1. Main objective
 
-## 3. Standards / workflow (follow for every feature)
-1. **Read the feature in the bundle first.** Find its toggle handle (see the
-   glossary in §7), grep its `.checked`/`.value` usages, read the exact block, and
-   resolve every minified symbol it touches. Port the logic line-for-line.
-2. **Check the server** (`moomoo-clone-main/server/src`) for the real mechanic and
-   constants rather than guessing.
-3. **Port onto the engines**, not from scratch: read world objects via
-   `ctx.objects`, combat state via `ctx.combat`. Translate the bundle's raw sends
-   to loader verbs (see §7's packet/equip mapping).
-4. **Unit-test it** (`tests/*.test.mjs`) — drive the runtime with `MooMoo._dispatch`.
-5. **Live-verify it** against the real server + real client (§5). Never tell the
-   user a feature works without proving it live. Watch for ANY anti-cheat action
-   (close/kick/shame/strike) in server incidents.
-6. **Rebuild + deliver**: `node loader/build.mjs`, `node mods/build-examplescript.mjs`,
-   run the full unit suite + the relevant live tests, then send the built loader
-   (and, if the mod changed, `mods/examplescript.user.js`) to the user with
-   `SendUserFile`. Remind them to re-upload the loader to pastebin (unminified).
-7. Keep `PORT.md` updated as you complete features.
+The user runs their **own private MooMoo.io-clone server** (it is in this repo at
+`moomoo-server/`). This repo is **moomoo.js**, a modding framework for it:
 
-## 4. What is already DONE and live-verified (build on it; don't redo)
-- **Disconnect-on-damage fix** (`anticheat.js`): the client caches
-  `dl = WebSocket.prototype.send` and sends via `dl.call(socket, frame)`, bypassing
-  per-instance hooks. We Proxy `WebSocket.prototype.send` (still reports
-  `[native code]`, so the server's SOCKET_HOOKED check stays false), re-sequence
-  EVERY outgoing frame through one counter, and scrub the client's `T` telemetry.
-- **Config menu** (`configmenu.js`): tabbed overlay, document-start-safe.
-- **Object manager** (`objectmanager.js`, `ctx.objects`): mirrors the bundle's
-  `GameObject`. Parses `H`(objectsLoad, flat `[sid,x,y,dir,scale,type,id,ownerSid]`),
-  `Q`(objectKilled `[sid]`), `R`(objectsKilled `[ownerSid]` → remove all of owner),
-  `L`(wiggle/hit `[dir,sid]`), `M`(turretShoot `[sid,dir]` → turret `.time=2200`
-  reload), `S`(itemCount). Derives name/group/realScale/pathScale/trap/dmg/pDmg/
-  owner. Queries: `near/spikes/walls/mills/traps/turrets/buildings/trapAt`,
-  `isEnemyObject` (team-aware). Unit: `tests/objectmanager.test.mjs`. Live:
-  `tests/live/objects.live.test.mjs`.
-- **Combat engine** (`combat.js`, `ctx.combat`) = the bundle's `updatePlayers`
-  (the `a`/playersUpdate handler), which is where the bundle runs its ENTIRE combat
-  brain on the server tick. Per tick it reconstructs, for `self`(z) + every visible
-  player: `x2/y2`+`preX/preY`, velocity/`movDir`/`movSpd`, `primary/secondary`
-  +`primaryVar/secondaryVar`, `weaponR`; the reload clocks `pr`/`sr`/`tr`
-  (`min(1, r + (delta>190?delta:ce)/(speed*samRP))`, reset to 0 on the `K` swing
-  echo, samRP/samRS=0.78 under Samurai Armor hat 20); `np = l4(player)` (accel/
-  decel/real next-position prediction, ported line-for-line); and on each health
-  change the 9-tick **bull cadence** `lastBull`/`bleed`. Loadout
-  (`ee/A/ly/uy/ay/ry/cy/dy/hy/fy`) resolves from `self.weapons/items`. Predicates
-  `_y`/`Vy`/`o4` + geometry `se/B/S4/angleDist` ported 1-1. Exposed: `ctx.combat.{self,
-  target(Y), visibleEnemies(vn), loadout, tick(v), et, se,B,S4,_y,Vy,o4,l4,x4,
-  variantVal,weaponSpeed,weaponRange, K,ce,EN}`. Unit: `tests/combat.test.mjs`.
-  Live: `tests/live/combat-engine.live.test.mjs`.
-- **Inventory-default fix** (`runtime.js`): the server only sends `V`(inventory) on
-  UPGRADE, never on spawn, so the loader started empty. The runtime now seeds the
-  client defaults on spawn/respawn: `weapons [0]`, `items [0,3,6,10]`.
-- Already shipped earlier: **auto-heal** (shame-safe), **autohat** (soldier/bull
-  via `predictedDamage`; replace with real `dmgpot` once potentials land),
-  **auto-attack** (basic), **auto-equip-fastest**, strict soldier/monkey.
-- All unit tests + live tests currently green.
+- a **loader**: a Tampermonkey userscript that hooks the game's WebSocket, decodes
+  and encodes the server's keyed protocol, and exposes a stable API
+  (`window.MooMoo`) plus engines (combat, objects, store, outgoing governor);
+- **mods** that run on that API.
 
-## 5. The live harness (this is how you prove parity)
-- `tests/live/live-server.mjs` boots an ISOLATED copy of the server (never touches
-  the real checkout/data) and gives login/join/protocol helpers + a server-incident
-  tap. `tests/live/live-client.mjs` has a browser-like ws + an admin bot.
-- The strongest tests inject the built loader + `mods/examplescript.js` into the
-  REAL official client in headless Chrome (installed Google Chrome; bundled Chrome
-  isn't downloaded). See `realclient.live.test.mjs` / `combat.live.test.mjs` /
-  `objects.live.test.mjs` / `combat-engine.live.test.mjs` for the pattern.
-- **Run them like this** (the server is now nested in this repo, and a scratch dir
-  is required because the harness `mkdtemp`s inside it):
+The reference is `examplescript.js` at the repo root: a 23.5k-line **modified old
+game client** ("**the bundle**") with a big combat mod woven into it. It targeted
+an old protocol and can't run on this server. **The goal is to have every one of
+the bundle's features inside the new mod `mods/examplescript.js`, behaving exactly
+1-1 with the bundle**, running on the loader against the user's server, plus
+whatever extra moomoo.js API the work needs.
+
+The user, verbatim: *"copy every single workflow and every single feature exactly
+so they behave 100% the same"*, *"i want everything"*, *"go as deep as the script
+is, everything should be 1-1 even if it means writing a lot of code"*, *"i dont
+care how substantial the work is, and i dont care if you say it's unobservable"*,
+*"i want every single visual feature accessible too. weapon reloads, object health
+bars, etc. everything"*.
+
+### Hard rules
+- Private, educational/testing use only. Never publish or share anything, except
+  the built loader, which goes to the user's own pastebin (the mod `@require`s it).
+- **Exclusions** (user's decisions): **bots** (the whole Bots tab and bot plumbing:
+  `ie`, `ts`, `es`, `Ci` formations, `Zy`, `w3`), and **chat commands** (`Xp`,
+  pathfinder chat goals). Also the "send ws" relay (`Ki`/`Hn`). It never connects
+  in the bundle anyway (a T5 bug).
+- If the bundle and the server disagree, **translate the bundle's way into what the
+  server does** (user's rule). Examples already done: store `c` action is swapped
+  (bundle 0=equip/1=buy, server 0=buy/1=equip); `D`/`9` source tags are dropped
+  from the wire; the ping loop runs at the server's `0` bucket rate; sandbox comes
+  from `window.config.inSandbox`; and there is a 5th weapon variant (`En[4]=1.18`).
+- Never reproduce the slur in the bundle's default bot-name string (~line 648).
+- **Never minify** the delivered loader.
+- **Never regress the disconnect fix**: the `WebSocket.prototype.send` Proxy, one
+  gap-free c2s sequence for all frames, and the telemetry `T` scrubbed to `[0,0]`.
+  Keep the loader undetectable.
+- Keep `shared/vocabulary.js` stable. Game logic goes in loader modules or the mod.
+- Never commit the official client (FRVR's). The repo is public.
+  `moomoo-server/client-official/`, `client/`, `dist/` and `server/data/` are gitignored.
+- Commit trailers: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and
+  the session link. Pushing currently fails with **403**: the user must reconnect
+  GitHub / install the Claude app (https://claude.ai/connect-github). All work is
+  committed locally.
+
+---
+
+## 2. Architecture (how the port is built)
+
+### Loader (`loader/src/*.js` → `node loader/build.mjs` → `loader/dist/moomoo-loader.user.js`)
+- `anticheat.js`: WebSocket constructor and `prototype.send` Proxies (the disconnect fix).
+- `protocol.js`, `msgpack.js`, `sha256.js`, `binding.js`: the codec. `binding.js` is the
+  only wire↔name map. It also has `outgoingParse` and `rateLimits`, which mirror
+  the server's anti-cheat buckets.
+- `loader.js`: owns the single c2s sequence. Every official-client frame is decoded,
+  passed through mods' `onOutgoing` filters (they can drop or rewrite it), then
+  governed and re-encoded. Exposes `MooMooLoader.{net,store,config,combat,...}`.
+- `outgoing.js`: the governor. It refuses anything that would overflow a server
+  bucket (no strike), and handles ping timing (`pong` payload carries `ms`).
+- `runtime.js`: `window.MooMoo`, the event dispatch, `send.*`, the mod registry, and ctx.
+  ctx includes `onOutgoing`, `onSent`, `after`, `onCleanup`, `onSettingChange`, and
+  `settings`/`setSetting`.
+- `combat.js`: **the bundle's player model and tick pipeline (`updatePlayers`)**.
+  It reconstructs every visible player per tick exactly like the bundle. Reload
+  resets (`k2`) and projectile owners (`tg`) are deferred via `pn`. Health analysis
+  (`l5`: shame, bull cadence, spike hits) runs in the next frame. It provides `A4()`
+  next-tick promises, the O3 building-damage inference, animals, projectile
+  stepping, the sandbox flag, and the render-rate interpolation (`x/y/dir`).
+  **Hook points at the bundle's exact places**: `onPreTick`, `onTickStart`
+  (after v++), `onPostReconstruct`, `onAfterSleep` (after the 1 ms wait + Xt/Q),
+  `onDeferredFlushed`, `onAfterPlayers`, `onFrame` (before `by()`), `onFrameLate`
+  (after `by()`), `onFramePlayer(i, "died"|"damage"|"deathAnim")`, `onProjectile`,
+  `onPlayerAdded`, `onBuildingDamage`.
+- `objectmanager.js`: the bundle's `GameObject` (`Gl.init`, `getScale`, and now
+  `update`: wiggle ease-out plus mill rotation gated by a hook), plus `onRemove` taps.
+- `store.js`: owned/equipped hats and tails from `"5"`, with the bundle's
+  `equip()` semantics and `forgetEquipped()`.
+- `configmenu.js`: the tabbed settings menu. The toggle key is now dynamic, and the
+  mod sets it to **Escape** like the bundle.
+- `helpers.js`: legacy ctx helpers from the first port (still loaded, mostly unused now).
+
+### The mod (`mods/examplescript/*.js` → `node mods/build-examplescript.mjs` → `mods/examplescript.js` + `.user.js`)
+The parts are concatenated in name order into **one function body**, so they share
+one scope. **The bundle's minified names are kept on purpose**, so any line can be
+compared side by side with the bundle. The glossary is at the top of `10-env.js`.
+
+| part | contents (bundle line refs inside) |
+|---|---|
+| `00-head.js` | SETTINGS (the bundle's exact menu: Combat/heal/Visuals/Keybinds/Throttles/Extra), `MooMoo.register` |
+| `10-env.js` | globals with the bundle's initial values, the config constants `K`, `x` items, `X` utils, toggle handles (`tog()` → `.checked/.value`), engine aliases, `sync()` (mirrors engine state at every hook), `own()`/`listen()` cleanup helpers |
+| `11-packet.js` | the bundle's `packet.send` (aliases, its own He/We limiter, move dedupe, St/qt) and `toWire()` translation; `equip/Rp/Mp`; the takeover (drops the official client's aim/move/mouse/toggle) |
+| `20-world.js` | object manager `C` (`add`, `checkItemLocation*`, fake objects `Ze/$e/Je`) |
+| `30-input.js` | keys/mouse (`Tm`/`Cm`), movement `Om`, spike-stop `E3`, zoom (q+wheel, p), Escape → menu, store-reply bookkeeping (Fn/Gt/Kt), item select/map ping owned by the mod |
+| `40-potentials.js` | `p5 m5 y5 w5 v3 k3 O5 U5 j5 H5 W5 Q5 Y5 l3 h3 m3 g3` (damage/kb/place potentials, spike-kb visual) |
+| `50-placement.js` | `c4 d4 h4 u4 p4 f4 u5 Z5 L5 F5 _5 J5 Jm q5 $5 e4` (auto place), auto replace (`$m` via `objects.onRemove`), `i4`, spike-tick helpers, `kx Ax Og d5` |
+| `55-autopush.js` | `Oy Ly Fy Py` + the A* worker (`F3/U3`) |
+| `60-combat.js` | the whole `updatePlayers` tail on the engine hooks: autoQ, heal, autohat `Vg/b5`, `Tg Cg Bg Rg`, apple/bleed/kb (`sy`)/r-R (`P5`)/Numpad* (`Nx/Mx`) instas, polearm aids `Qx/Yx`, spike sync `jx`, auto break / break spike trap, anti-boost, anti bow insta, Auto Emp, Assassin, shame leak, aim/weapon/auto-gather sends, `A5 t3 s4 Iy $y`, death/damage logs |
+| `70-chatlog.js` | the bundle's chat-log panel `b()` (ChatLog visual), chat lines, the ping loop + display (fakePing) |
+| `80-overlay.js` | the overlay canvas, inserted after `#textCanvas` with pointer-events off; the floating text `U1` (`Ml/Nl`); the frame driver |
+| `81-render-lib.js` | **verbatim** bundle draw functions (`b2 c2 A2 I2 C2 M2 O2 F2 j2 H2 ...`, `Le`, icons) |
+| `82-render.js` | the bundle's main render loop `l2` + the per-player overlay + chat bubbles (verbatim), camera, `sm()` 0.7× canvas, entity swing animations, client-side projectiles, `"8"` damage numbers |
+| `83-minimap.js` | `Sp()` extras: destroyed-out-of-view buildings (`Yt`) drawn with the bundle's item icons over the official minimap |
+| `90-debug.js` | test-only `window.__mmjES` (only when `localStorage.mmj_debug === "1"`) |
+| `99-tail.js` | closes setup and boot |
+
+**The visuals decision:** the bundle drew the whole game itself, and most of its
+visuals live inside that drawing (custom player colours, sprite shadows,
+see-through players, hit pulses, placement previews, hidden names, its grid,
+tints, zoom). The official client renders with WebGL, which can't be altered. So
+the overlay draws **the bundle's complete frame, opaque**, over the official
+canvas. Every Visuals toggle then behaves as in the bundle. The overlay shows only
+once you've spawned. If a frame throws, it is cleared so the official rendering
+shows through. DOM UI (leaderboard, action bar, store, minimap, chat) stays above it.
+
+---
+
+## 3. What is done and verified
+
+- All of the above is written and builds. `eslint no-undef` is clean (use
+  `/opt/node-tools/node_modules/.bin/eslint` with a config like the one described
+  in §5; only harmless `var` redeclarations from verbatim bundle code remain).
+- Unit tests: `node --test tests/*.test.mjs` → **21/21 pass**.
+- Live tests (real server + real Chrome), **all pass**:
+  - `tests/live/examplescript.live.test.mjs` (new): spawn, ticks, chat log,
+    overlay mounted, Escape menu, tail running, **auto heal live** (75→95→100 per
+    hit), "Encountered" log, **zero anti-cheat incidents**, no page errors. It also
+    writes a screenshot to `/tmp/mmj-es.png`.
+  - `realclient`, `combat-engine`, `objects`, `combat`, `autoheal` (old tests, still green).
+- Seen live, but not asserted: anti-boost walls/spikes you in when an enemy rushes
+  you (the admin bot's teleports trigger it). The bundle renderer draws grid, tint,
+  shadowed resources, sid numbers, gain/leak text, neon health bars, the far-target
+  name and animal health.
+
+## 4. What still needs to be done (priority order)
+
+1. **Feature-level live verification.** Not yet done for most combat features.
+   Write `tests/live/examplescript.features.live.test.mjs` with the admin bot
+   (packets.js admin: `weapon <id> <variant> <target>`, `item <id> <target>`,
+   `give <0..3> <amt> <target>` (3 = points), `goto`, `summon`, `tp`, `spawn`).
+   Give the player a polearm (5) + great hammer (10) and items (spikes 6/7, pit trap 15).
+   For points, buy hats through `MooMoo.send.store` (or let sandbox autobuy do it).
+   Then prove, with zero incidents:
+   - **autohat**: soldier near an enemy, biome hat when idle, emp vs turrets.
+   - **auto break**: the bot places a pit trap on the player (bot `goto` puts it at
+     +70 px, so a trap placed facing the player lands on them) → the player breaks
+     it with hammer + tank gear.
+   - **auto place / auto replace** near an enemy.
+   - The instas (apple/bleed/kb/r-R/TA/PA) show their chat-log lines.
+   - **auto push**, **autoQ**. autoQ needs ping ≥ 95, so add latency.
+
+   Use `window.__mmjES.state()` / `.eval("name")` (needs `localStorage.mmj_debug="1"`)
+   to read bundle variables. The live test server runs in **sandbox** (`_n` true).
+2. **Fidelity review.** The `bundle-port-fidelity` workflow was stopped early (only
+   1 of 6 chunks returned). Re-run a line-by-line comparison of every part against
+   the bundle ranges listed in the part comments. The parts written earlier
+   (`40-potentials`, `50-placement`, `20-world`) were transcribed from memory in a
+   previous context and are the most likely to drift. Known open item from that
+   review: `c3` (18415) and `g5` (21864) are unported. They are never called, so
+   adding them is optional.
+3. **Visual check against the bundle.** Compare screenshots for colours/tints/
+   positions. Known gaps:
+   - **zoom** works on the overlay, but the official client underneath keeps its
+     fixed view (harmless, it's covered).
+   - **"hide name"** works, because the overlay is opaque.
+   - The official **boss health bar and map markers** drawn in the canvas are
+     covered (the bundle didn't have them).
+   - Official-only content the bundle can't draw (new AI types without sprites) needs checking.
+   - The minimap only adds the `Yt` icons; the rest is the official minimap.
+4. **Pathfinder (`si`/`ri`, Xy/Jy, bundle 17336-18290) is not ported.** It is
+   driven by chat commands, which the user said to skip. Still reachable without
+   commands: the `K` key quick waypoint and its waypoint drawing (minimap +
+   `drawWaypoints`). Port `Jy` waypoints if the user wants them.
+5. **Performance.** Two renderers now run (official WebGL + the bundle's 2D at
+   0.7×). Consider `visibility:hidden` on `#gameCanvas`/`#textCanvas` while the
+   overlay is drawing. That stops their compositing; the client logic is unaffected.
+6. **Cleanup.** `loader/src/helpers.js` holds legacy helpers from the first port
+   (e.g. its `fastestWeapon` picks the shield). Prune or fix it once nothing
+   uses it. Update `PORT.md`. Re-check the "fix ws", "send ws", "melee sync" and
+   quest toggles: they exist in the menu but are dead in the bundle too (fine).
+7. **Deliver after each change**: `node loader/build.mjs && node mods/build-examplescript.mjs`.
+   Send the user `loader/dist/moomoo-loader.user.js` (to re-upload, **unminified**,
+   to their pastebin, `https://pastebin.com/raw/jWDq3mmF`) and
+   `mods/examplescript.user.js`.
+
+## 5. How to work
+
+- Per feature: read the bundle → check `moomoo-server/server/src/**` (ground truth
+  for mechanics: `network/packets.js`, `moomoo/server.js`, `moomoo/modules/*`,
+  `anticheat/config.js`) → port 1-1 with the bundle's names → unit test → **live
+  test** → build → deliver. Never tell the user a feature works without live proof.
+- Live tests:
   ```
-  MOOMOO_SERVER_DIR="$PWD/moomoo-clone-main" MOOMOO_TEST_TMP=/tmp/mmj-live \
-    node tests/live/combat-engine.live.test.mjs
+  mkdir -p /tmp/mmj-live
+  MOOMOO_SERVER_DIR="$PWD/moomoo-server" MOOMOO_TEST_TMP=/tmp/mmj-live node tests/live/examplescript.live.test.mjs
   ```
-  (`mkdir -p /tmp/mmj-live` first; `LIVE_ECHO=1` to watch logs, `HEADFUL=1` to see
-  the browser.) Also consider adding `path.resolve(root, "moomoo-clone-main")` as a
-  candidate in `tests/server-fixture.mjs` so the nested copy is found without the
-  env var — right now it auto-finds the sibling `../moomoo-clone-main` first.
-- Sandbox: start the test server with `env: { IS_SANDBOX: "1", SANDBOX_UNLIMITED:
-  "1" }` when a feature needs resources/placement (the user's server runs sandbox).
-- The real spawn is crowded; when placing buildings, sweep directions until one
-  lands (the `F` packet's dir sets the build angle; `this.dir` is used server-side).
-
-## 6. The disconnect fix — never regress it
-The server's anti-cheat (`moomoo-clone-main/server/src/anticheat/config.js`):
-per-packet token buckets (F=[40,80], z=[20,40], c=[10,20], global=[150,300]),
-40 strikes = kick; transport bad sequence/tag = immediate close; `SOCKET_HOOKED`
-telemetry bit = kick; eating within 120ms of a hit 8× = forced Shame hat + eating
-blocked. Therefore every auto-send feature MUST be bounded and driven by server
-replies, never an open loop; never eat inside 120ms of a hit; and the loader must
-keep owning a single gap-free c2s sequence (that's why `anticheat.js` Proxies the
-prototype send). If you add outgoing sends, route them through the loader's
-`send.*`/ctx verbs so they get sequenced, and keep rates under the buckets.
-
-## 7. Bundle reverse-engineering cheat-sheet
-**Where the combat system lives:** `async function updatePlayers(i)` (~line 15985)
-is the `a`/playersUpdate handler and runs the WHOLE combat brain on the server tick
-— reconstruction (the giant per-player line ~16009), then ALL the combos
-(~16185–16415). The combos are NOT independent: they share frame-local state
-(`g[0]`,`y`,`p`,`ct`,`Nt`,`Sg`) and the `Bg` swing helper, so port the tail as one
-cohesive block, not feature-by-feature in isolation.
-
-**Globals → engine/ctx:**
-- `z` = self = `ctx.combat.self` (= MooMoo.self, enriched). `Y` = target =
-  `ctx.combat.target`. `vn` = sorted visible enemies = `ctx.combat.visibleEnemies`.
-  `J` = all players = MooMoo.players. `v` = tick = `ctx.combat.tick`. `et` =
-  `ctx.combat.et`. `ce = 1000/9`, `u = ce*2` (combo duration).
-- Loadout slots (`ctx.combat.loadout`): `ee`=primary weapon id, `A`=secondary
-  weapon id, `ry`=food item, `ay`=wall, `ly`=spike, `cy`=mill, `dy`=mine/sapling,
-  `uy`=trap, `hy`=turret/platform/etc, `fy`=spawn pad. Also `.spike/.wall/.food/
-  .windmill/.utility` item defs.
-- `Q` = objects within ~800px, `Xt` = within ~2000px, `kh` = all buildings. Use
-  `ctx.objects.near(z.x2,z.y2,range,filter)` etc. `te(sid)` = is me/teammate =
-  `ctx.objects.isFriendly(sid)` (so `!te(owner.sid)` = enemy object =
-  `ctx.objects.isEnemyObject(o)`). `Nt` = self standing in an enemy spike-trap
-  (compute via `ctx.objects.trapAt`). `Sg` = emp-able enemy turrets (auto-emp).
-- Combo flags (module-local in the port): `p` = combo busy (blocks others; reset
-  after `u`), `ct` = aim/attacking latch, `gt`/`Mt` = polearm-aids state (false
-  unless polearm aids is on), `jt` = stop-on-collision state. `g[0]` = pending aim
-  dir, `y` = pending weapon to select.
-- Settings handles (the bundle reads DOM checkboxes; the port reads `ctx.settings`):
-  `Cs`=apple insta, `Bs`=bleed insta, `to`=kbInsta, `Ds`=auto break, `Ps`=stop
-  break, `cs`=auto place, `ms`=auto replace, `Js`=auto push, `fo`=polearm aids,
-  `ko`=aids spike sync, `Xs`=melee sync, `Vs`=break spike trap, `no`=Auto Emp,
-  `Ts`=autoQ, `Ys`=stop on collision, `zs`=movement on collision, `Hs`=autohat,
-  `js`=strict soldier, `Ws`=strict monkey, `Ms`=auto equip fastest, `ls`=Auto Place
-  Accuracy (APA slider), plus the Visuals/Extra handles (grep `getElementById`).
-
-**Geometry/predicate primitives (already in `ctx.combat`):**
-- `se(a,b,type)` edge distance (type `"player"`→ −63, `"object"`→ −b.scale, else 0)
-  on predicted positions (`x2/y2` fallback `x/y`). `S4` center distance. `B(a,b)`
-  angle a→b. `angleDist` smallest angle (bundle `Ay`/`getAngleDist`). `Z(deg)`=
-  `toRad`. `_y(e,t=111)` = enemy reload readiness after t ms (==1 ready). `Vy(e,t,n,
-  i)` = in range n now or on predicted-real positions. `o4(e,t)` = not shielded
-  against us (weapon 11 = shield). `x4(p)` = movement speed multiplier.
-- Variant damage mult `En = [1,1.1,1.18,1.18]` = `ctx.combat.variantVal(i)` /
-  `ctx.combat.EN`; server's `K.weaponVariants[i].val` matches.
-
-**Outgoing send translation (bundle `packet.send` aliases → wire → loader verb):**
-- `packet.send("G", id, isWeapon)` → wire `z` → `MooMoo.send.selectItem(id,
-  isWeapon)` (or `ctx.selectWeapon/selectItem`). Note `d`→`F`, `a`→`9`, `G`→`z`.
-- `packet.send("D", dir)` → wire `D` → `ctx.aim(dir)`.
-- `packet.send("d", 1, dir)` (alias `F`) → `ctx.place(...)` / mouse-down build.
-- `packet.send("F", 1)` → `ctx.startAttack(dir)`; `packet.send("F", null, 0)` →
-  `ctx.stopAttack()`.
-- `equip(hatId, accId)` → `ctx.setHat(hatId)` / `ctx.setTail(accId)` (the bundle
-  only equips OWNED hats and unequips to 0 otherwise; track owned hats/accessories
-  if you need that guard — `Nn` = owned hats, `On` = owned accessories).
-- `c4(item, dir, weapon)` / `u5(...)` = place helpers (buildings toward an angle).
-- `Bg(dir, weapon, variant, hat, mode)` = the attack-with-equip helper (equip the
-  right weapon+hat, aim, swing). Read it (~line 15838) and port it; the combos
-  depend on it.
-
-**Key mechanic references in the bundle (read before porting each):**
-- apple insta ~16234, bleed insta ~16258, kbInsta ~16656, auto break ~16293–16347,
-  auto place ~23019 (+ `Jm`/APA), auto replace ~13867/13892, auto push (`Ly`),
-  break spike trap (`z.spikeTrap` ~16231), auto emp (`Sg` ~16288), polearm aids
-  ~21170–21265, spike sync ~21098. Potentials: `p5`(self dmgpot ~21767),
-  `m5`(enemy dmgpot ~21801), `w5`(kbpot ~21888), `O5`(placePot ~22495) + helpers
-  `v3`(~18636), `P3`(~18896), `U5`, `y5`. `l4`(np) ~23240 (already ported in
-  `combat.js` — reuse it). Reload fill `xy` ~16789, swing reset `k2` ~14623,
-  health/bull `updateHealth` ~15646 (ported into `combat.js`).
-
-## 8. Remaining work (in dependency order)
-1. **Combo layer**: port the `updatePlayers` tail as one block — the control flags
-   (`p/ct/gt/Mt/Nt/Sg`) + `Bg`/`c4`/`u5` helpers, then apple insta, bleed insta,
-   auto break, melee sync. (apple/bleed insta + auto break need only `ctx.combat`;
-   kbInsta/auto push need the potentials below.)
-2. **Potentials**: `dmgpot`(p5/m5), `kbpot`(w5), `placePot`(O5) + `v3/U5/y5`. Then
-   make autohat use the real `dmgpot` (replace the `predictedDamage` approximation),
-   and enable kbInsta / auto push.
-3. **Object-aware combat**: auto place / auto replace, break spike trap, auto emp
-   (turret `.time`), polearm aids, aids spike sync, APA slider, autoQ.
-4. **Visuals tab**: build a render/overlay subsystem (the loader doesn't draw the
-   game — add a canvas overlay synced to the game camera), then reload bars/arcs,
-   building hp/owner, grid, stacked damages/heal, skull, shame count, shadows,
-   animated text, ChatLog, vis aim, hide name, see-through player, visual presets.
-5. **Extra tab**: send-ws raw packet panel, autobuy, fakePing (+ ping slider).
-   (Skip the bot-coordination parts of "send ws".)
-
-Verify each against the live harness before telling the user it's done, and keep
-every auto-send bounded + sequenced so the anti-cheat never fires.
+  Set `LIVE_ECHO=1` for logs and `HEADFUL=1` to watch. Chrome runs as root with
+  `--no-sandbox` (`chromeArgs()`). Watch `srv.incidents()`: any close, kick,
+  strike or shame is a failure.
+- Server anti-cheat buckets ([refill/s, burst]): global [150,300], D[60,120],
+  9[40,80], F[40,80], z[20,40], c[10,20], K[10,20], H[10,20], 0[2,4], S[1,2],
+  6[2,4], T[1,3]. 40 strikes = kick. Eating 8× within 120 ms of a hit = Shame.
+  The loader governor refuses anything over a bucket instead of sending it.
+- Lint the built mod for undefined names with eslint 10 (`/opt/node-tools`), using a
+  flat config with `no-undef` and browser globals (window, document, Image, Blob,
+  Worker, URL, OffscreenCanvas, createImageBitmap, MutationObserver, ...). The
+  config file must sit inside the repo dir.
+- Bundle landmarks: `updatePlayers` 15985 (tail 16074-16413), render `l2` 14065,
+  draw helpers 14470-15135, keys `Tm` 13412 / `Cm` 13514, `Om` 13609, menu HTML
+  ~470, globals 599-797, config `K` 2005-2180, items with icon urls ~3500-3810.

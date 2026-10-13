@@ -3,8 +3,9 @@
  * truth. The server lives in its own repo; moomoo.js is standalone, so we find
  * it by:
  *   1. $MOOMOO_SERVER_DIR
- *   2. ../moomoo-clone-main      (sibling layout, the usual case)
- *   3. ..                        (moomoo.js living inside the server repo)
+ *   2. ./moomoo-server           (the copy nested inside this repo)
+ *   3. ../moomoo-clone-main      (sibling layout)
+ *   4. ..                        (moomoo.js living inside the server repo)
  * If none is found the ground-truth tests SKIP (exit 0) instead of failing, so
  * `npm test` is still green on a machine without the server checked out.
  */
@@ -17,6 +18,7 @@ const root = path.resolve(here, "..");
 
 const candidates = [
     process.env.MOOMOO_SERVER_DIR,
+    path.resolve(root, "moomoo-server"),
     path.resolve(root, "..", "moomoo-clone-main"),
     path.resolve(root, "..")
 ].filter(Boolean);

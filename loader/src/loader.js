@@ -30,7 +30,9 @@
             ObjectManager: require("./objectmanager.js"),
             Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
-            ConfigMenu: require("./configmenu.js")
+            ConfigMenu: require("./configmenu.js"),
+            Outgoing: require("./outgoing.js"),
+            Store: require("./store.js")
         }
         : null;
     const value = factory(deps);
@@ -40,7 +42,7 @@
 })(typeof self !== "undefined" ? self : this, function (nodeDeps) {
     "use strict";
 
-    const VERSION = "1.0.0";
+    const VERSION = "1.1.0";
 
     // Resolve dependencies either from Node require (tests) or page globals (bundle).
     function resolveDeps(win) {
@@ -58,7 +60,9 @@
             ObjectManager: g.MooMooObjectManager,
             Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
-            ConfigMenu: g.MooMooConfigMenu
+            ConfigMenu: g.MooMooConfigMenu,
+            Outgoing: g.MooMooOutgoing,
+            Store: g.MooMooStore
         };
     }
 
@@ -138,6 +142,9 @@
 
         let active = null; // the adopted game socket's state
 
+        // Rate governor + packet accounting + ping (see outgoing.js).
+        const out = D.Outgoing ? D.Outgoing.createOutgoing({ rateLimits: binding.rateLimits }) : null;
+
         // ---- runtime + sink ----
         // Self input mirror: the combat engine needs the player's own current move
         // direction (the bundle's `Dn`) and aim to predict self position. We capture
@@ -174,6 +181,12 @@
             try { objects = D.ObjectManager.createObjectManager({ MooMoo, data: D.GameData }); }
             catch (e) { errorSink(e); }
         }
+        // Owned / equipped hats + accessories (the bundle's Nn/On/$t/Zt + equip()).
+        let store = null;
+        if (D.Store && D.GameData) {
+            try { store = D.Store.createStore({ MooMoo, data: D.GameData }); }
+            catch (e) { errorSink(e); }
+        }
         // The combat engine reconstructs per-player prediction/reload/bull state on
         // every server tick (the bundle's updatePlayers). Features read it as ctx.combat.
         let combat = null;
@@ -184,7 +197,7 @@
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat, net: out, store });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -195,12 +208,28 @@
         }
 
         // ---- outgoing (client -> server), loader-owned ----
+        // Every frame that actually leaves: count it (governor stats, ping timing)
+        // and tell mods (MooMoo.onSent).
+        function noteSent(wire, args, source) {
+            if (out) {
+                out.record(wire);
+                if (wire === "0") out.onPingSent();
+            }
+            const pb = binding.outgoingParse && binding.outgoingParse[wire];
+            if (pb && MooMoo._notifySent) {
+                let payload; try { payload = pb.parse(args || []); } catch (e) { payload = { args }; }
+                MooMoo._notifySent(pb.action, payload, source);
+            }
+        }
+
         function sendWire(st, wire, args) {
             if (!st || st.ignore) { console.warn("%c[moomoo.js]", "color:#e66", "no active game socket to send on"); return false; }
             if (st.ready) {
+                if (out && !out.allow(wire)) return false;             // would overflow a server bucket
                 const bytes = st.session.encodeC2S(wire, args);
                 tapRaw("out", wire, args);
                 st.nativeSend(bytes);
+                noteSent(wire, args, "mod");
                 return true;
             }
             if (st.failed) { console.warn("%c[moomoo.js]", "color:#e66", "cannot inject packets without the protocol key"); return false; }
@@ -218,16 +247,35 @@
             };
         }
 
+        // Returns the bytes to send, or undefined to drop the frame entirely. A
+        // dropped frame never consumes a sequence number, so the stream stays
+        // gap-free.
         function reencodeClientFrame(st, bytes) {
+            let dec;
+            try { dec = st.session.decodeC2S(bytes); }
+            catch (e) { errorSink(e); return bytes; } // fail open
             try {
-                const dec = st.session.decodeC2S(bytes);
                 let name = dec.name, args = dec.args;
                 if (name === telemetry.wire) args = telemetry.scrub(args); // ANTI-CHEAT BYPASS
+                // Let mods inspect / rewrite / drop what the official client sends.
+                const pb = binding.outgoingParse && binding.outgoingParse[name];
+                if (pb && MooMoo._filterOutgoing && name !== telemetry.wire) {
+                    const payload = pb.parse(args);
+                    const res = MooMoo._filterOutgoing(pb.action, payload, { source: "client", wire: name, args: args.slice() });
+                    if (res === null) return undefined;                    // a mod dropped it
+                    if (res !== payload) {
+                        const ob = binding.outgoing[pb.action];
+                        if (ob) args = ob.build(res);
+                    }
+                }
+                if (out && !out.allow(name)) return undefined;          // would overflow a server bucket
                 tapRaw("out", name, args);
-                return st.session.encodeC2S(name, args);               // our own gap-free seq
+                const enc = st.session.encodeC2S(name, args);          // our own gap-free seq
+                noteSent(name, args, "client");
+                return enc;
             } catch (e) {
                 errorSink(e);
-                return bytes; // fail open
+                return st.session.encodeC2S(dec.name, dec.name === telemetry.wire ? telemetry.scrub(dec.args) : dec.args);
             }
         }
 
@@ -258,6 +306,10 @@
             let payload;
             try { payload = bind.parse(dec.args); }
             catch (e) { errorSink(e); return; }
+            if (bind.event === "pong" && out) {
+                const ms = out.onPong();
+                if (ms != null) payload.ms = ms;
+            }
             MooMoo._dispatch(bind.event, payload);
         }
 
@@ -265,6 +317,8 @@
         function adopt(st, payload) {
             active = st;
             if (MooMoo._reset) MooMoo._reset();
+            if (out) out.reset();
+            if (store) store.reset();
             getProtocolModule().then((mod) => {
                 try {
                     st.session = new D.Protocol.ClientSession(payload, mod);
@@ -281,7 +335,13 @@
                 const outq = st.outQueue; st.outQueue = [];
                 for (const item of outq) {
                     if (item.kind === "client") { const b = reencodeClientFrame(st, item.data); if (b !== undefined) st.nativeSend(b); }
-                    else { try { st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args); } catch (e) { errorSink(e); } }
+                    else {
+                        try {
+                            if (out && !out.allow(item.wire)) continue;
+                            st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args);
+                            noteSent(item.wire, item.args, "mod");
+                        } catch (e) { errorSink(e); }
+                    }
                 }
                 MooMoo._setReady(true);
                 try { win.dispatchEvent(new win.Event("moomoo:ready")); } catch (e) { /* non-DOM env */ }
@@ -335,6 +395,8 @@
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;
+        MooMooLoader.net = out;
+        MooMooLoader.store = store;
         MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).

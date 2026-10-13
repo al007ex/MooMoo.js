@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { available, startServer, loginFull, gameUrl, loadPuppeteer, chromePath } from "./live-server.mjs";
+import { available, startServer, loginFull, gameUrl, loadPuppeteer, chromePath, chromeArgs } from "./live-server.mjs";
 import { tick } from "./live-client.mjs";
 
 if (!available) { console.log("SKIP objects.live: server not found"); process.exit(0); }
@@ -31,7 +31,7 @@ const note = (m) => { const l = `${((Date.now() - T0) / 1000).toFixed(2)}s  ${m}
 let browser, failed = false;
 try {
     const puppeteer = loadPuppeteer();
-    browser = await puppeteer.launch({ executablePath: chromePath(), headless: process.env.HEADFUL ? false : true, args: ["--no-first-run", "--mute-audio"] });
+    browser = await puppeteer.launch({ executablePath: chromePath(), headless: process.env.HEADFUL ? false : true, args: chromeArgs() });
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 720 });
     page.on("pageerror", (err) => note(`PAGE ERROR: ${err.message.slice(0, 200)}`));

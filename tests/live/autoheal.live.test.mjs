@@ -47,7 +47,7 @@ try {
     bot = await createBot({ WS, srv, mod, name: "attacker", url: gameUrl(srv, await joinTicket(srv, botToken), mod.BUILD_ID) });
     T0 = Date.now();
     const vsid = victim.client.sid;
-    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}, autoHeal=${victim.MooMoo.getMods().find((m) => m.id === "examplescript").settings.find((s) => s.key === "autoHeal").value}`);
+    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}, autoHeal=${victim.MooMoo.getMods().find((m) => m.id === "examplescript").settings.find((s) => s.key === "auto heal").value}`);
 
     victim.MooMoo.on("health", (p) => { if (p.sid === vsid) note(`victim health -> ${p.value}`); });
     victim.MooMoo.on("playerValue", (p) => { if (p.key === "food") note(`victim food -> ${p.value}`); });

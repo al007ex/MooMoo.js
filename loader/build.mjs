@@ -30,10 +30,12 @@ const MODULES = [
     { label: "anticheat", file: path.join(srcDir, "anticheat.js") },
     { label: "input", file: path.join(srcDir, "input.js") },
     { label: "objectmanager", file: path.join(srcDir, "objectmanager.js") },
+    { label: "store", file: path.join(srcDir, "store.js") },
     { label: "combat", file: path.join(srcDir, "combat.js") },
     { label: "helpers", file: path.join(srcDir, "helpers.js") },
     { label: "menu", file: path.join(srcDir, "menu.js") },
     { label: "configmenu", file: path.join(srcDir, "configmenu.js") },
+    { label: "outgoing", file: path.join(srcDir, "outgoing.js") },
     { label: "loader", file: path.join(srcDir, "loader.js") }
 ];
 

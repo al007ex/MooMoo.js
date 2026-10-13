@@ -32,6 +32,8 @@
         const input = env.input;
         const objects = env.objects || null;
         const combatEngine = env.combat || null;
+        const net = env.net || null;
+        const store = env.store || null;
         const S = () => MooMoo.self;
 
         // ---- combat state: weapon reload + variants (reconstructed from packets) ----
@@ -207,6 +209,10 @@
                 visiblePlayers, enemies, nearestEnemy, predictedDamage,
                 // world objects (buildings / resources / turrets / traps)
                 objects,
+                // outgoing: rate governor, packet counts, ping (see outgoing.js)
+                net,
+                // owned/equipped hats + accessories, bundle equip() semantics (store.js)
+                store,
                 // combat state: the full engine (per-player prediction/reload/bull)
                 // when present; a minimal reload shim otherwise (headless tests).
                 combat: combatEngine || {

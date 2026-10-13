@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { available, startServer, login, loginFull, joinTicket, loadProtocolModule, gameUrl, loadWs, loadPuppeteer, chromePath } from "./live-server.mjs";
+import { available, startServer, login, loginFull, joinTicket, loadProtocolModule, gameUrl, loadWs, loadPuppeteer, chromePath, chromeArgs } from "./live-server.mjs";
 import { createBot, tick, waitFor } from "./live-client.mjs";
 
 if (!available) { console.log("SKIP combat.live: server not found"); process.exit(0); }
@@ -25,7 +25,7 @@ const log = []; const note = (m) => { const l = `${((Date.now()-T0)/1000).toFixe
 let browser, bot, failed = false, wsClosed = false;
 try {
     const pp = loadPuppeteer();
-    browser = await pp.launch({ executablePath: chromePath(), headless: process.env.HEADFUL ? false : true, args: ["--no-first-run","--mute-audio"] });
+    browser = await pp.launch({ executablePath: chromePath(), headless: process.env.HEADFUL ? false : true, args: chromeArgs() });
     const page = await browser.newPage();
     const cdp = await page.createCDPSession(); await cdp.send("Network.enable");
     let gameKey = "LC";

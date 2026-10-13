@@ -96,10 +96,12 @@
                         pl.weaponIndex = at.weaponIndex; pl.buildIndex = at.buildIndex;
                         pl.variant = at.variant; pl.team = at.team; pl.isLeader = at.isLeader;
                         pl.skin = at.skin; pl.tail = at.tail;
+                        pl.icon = at.icon; pl.zIndex = at.zIndex;
                         if (at.sid === self.sid) {
                             self.weaponIndex = at.weaponIndex; self.buildIndex = at.buildIndex;
                             self.hat = at.skin; self.accessory = at.tail; self.team = at.team;
                             self.weaponVariant = at.variant;
+                            self.isLeader = at.isLeader; self.icon = at.icon; self.zIndex = at.zIndex;
                         }
                     }
                     for (const sid of payload.hidden) {
@@ -125,7 +127,7 @@
 
         // ---- event plumbing ----
         function on(event, handler) {
-            if (!vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
+            if (event !== "*" && !vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
             let set = listeners.get(event);
             if (!set) { set = new Set(); listeners.set(event, set); }
             set.add(handler);
@@ -138,6 +140,46 @@
         function once(event, handler) {
             const wrap = (payload) => { off(event, wrap); handler(payload); };
             return on(event, wrap);
+        }
+
+        // ---- outgoing hooks ----
+        // onOutgoing(action, fn): see (and optionally change) every frame the
+        // OFFICIAL CLIENT tries to send, by vocabulary action name ("aim", "move",
+        // "mouse", "selectItem", "toggle", "store", ... or "*" for all).
+        //   fn(payload, info, action) returns
+        //     undefined      -> send it unchanged
+        //     false / null   -> drop it (it never reaches the server)
+        //     an object      -> send this payload instead
+        // This is how a mod takes over a control the client normally owns (the
+        // bundle replaced the client's own aim/move/attack sending with its own).
+        const outFilters = new Map();   // action -> Set<fn>
+        const sentTaps = new Set();     // fn(action, payload, source)
+        function onOutgoing(action, fn) {
+            let set = outFilters.get(action);
+            if (!set) { set = new Set(); outFilters.set(action, set); }
+            set.add(fn);
+            return () => set.delete(fn);
+        }
+        function _filterOutgoing(action, payload, info) {
+            let cur = payload;
+            const sets = [outFilters.get(action), outFilters.get("*")];
+            for (const set of sets) {
+                if (!set) continue;
+                for (const fn of Array.from(set)) {
+                    let r;
+                    try { r = fn(cur, info || {}, action); }
+                    catch (e) { console.error(logPrefix + " outgoing filter for '" + action + "' threw", logStyle, e); continue; }
+                    if (r === false || r === null) return null;
+                    if (r && typeof r === "object") cur = r;
+                }
+            }
+            return cur;
+        }
+        // onSent(fn): every frame that actually went out (client or mod), after
+        // the rate governor. fn(action, payload, source) with source "client"|"mod".
+        function onSent(fn) { sentTaps.add(fn); return () => sentTaps.delete(fn); }
+        function _notifySent(action, payload, source) {
+            for (const fn of Array.from(sentTaps)) { try { fn(action, payload, source); } catch (e) { /* ignore */ } }
         }
 
         // Called by the loader for every decoded incoming packet.
@@ -237,7 +279,7 @@
         }
 
         function buildCtx(rec) {
-            const active = { unsubs: [], timers: [], cleanups: [] };
+            const active = { unsubs: [], timers: [], timeouts: [], cleanups: [] };
             const settings = {};
             for (const s of rec.schema) Object.defineProperty(settings, s.key, {
                 get: () => rec.values[s.key],
@@ -254,6 +296,14 @@
                 on: (ev, h) => { const un = on(ev, h); active.unsubs.push(un); return un; },
                 once: (ev, h) => { const un = once(ev, h); active.unsubs.push(un); return un; },
                 every: (ms, fn) => { const t = setInterval(fn, ms); active.timers.push(t); return t; },
+                // One-shot timer, cleared if the mod is disabled first.
+                after: (ms, fn) => {
+                    const t = setTimeout(() => { const i = active.timeouts.indexOf(t); if (i >= 0) active.timeouts.splice(i, 1); fn(); }, ms);
+                    active.timeouts.push(t);
+                    return t;
+                },
+                onOutgoing: (action, fn) => { const un = onOutgoing(action, fn); active.unsubs.push(un); return un; },
+                onSent: (fn) => { const un = onSent(fn); active.unsubs.push(un); return un; },
                 onCleanup: (fn) => { active.cleanups.push(fn); },
                 // Live-settings mods react to a toggle/slider change here instead of
                 // being torn down and re-run. fn(key, newValue, oldValue).
@@ -278,6 +328,7 @@
             if (!a) return;
             for (const un of a.unsubs) { try { un(); } catch (e) { /* ignore */ } }
             for (const t of a.timers) { try { clearInterval(t); } catch (e) { /* ignore */ } }
+            for (const t of a.timeouts) { try { clearTimeout(t); } catch (e) { /* ignore */ } }
             for (const c of a.cleanups) { try { c(); } catch (e) { /* ignore */ } }
             rec._active = null;
         }
@@ -386,6 +437,8 @@
             isReady: () => ready,
             // events
             on, off, once, onReady,
+            // outgoing (see onOutgoing / onSent above)
+            onOutgoing, onSent,
             // actions
             send,
             // mods (managed units with enable/disable + settings)
@@ -394,7 +447,7 @@
             // logging
             log,
             // internal hooks used by the loader (underscore-prefixed)
-            _dispatch, _setReady, _reset, _clearMods,
+            _dispatch, _setReady, _reset, _clearMods, _filterOutgoing, _notifySent,
             _setCtxExtensions: (ext) => { ctxExtensions = ext; }
         };
         return MooMoo;

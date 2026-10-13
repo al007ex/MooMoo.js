@@ -254,7 +254,7 @@
 
 /* ===== module: gamedata (shared/gamedata.js) ===== */
 /*
- * moomoo.js — GAME DATA  (weapons, items, projectiles, hats, accessories)
+ * moomoo.js — GAME DATA  (weapons, items, projectiles, hats, accessories, animals)
  * =======================================================================
  * Ported entry-for-entry from the private server's own config
  * (server `shared/config/items.js` + `shared/config/store.js`), which is itself
@@ -295,7 +295,7 @@
     // ---- projectiles ----
     const projectiles = [
         { indx: 0, layer: 0, src: "arrow_1", dmg: 25, speed: 1.6, scale: 103, range: 1000 },
-        { indx: 1, layer: 1, dmg: 25, scale: 20 },
+        { indx: 1, layer: 1, dmg: 25, speed: 1.5, scale: 20 },   // turret: speed 1.5 is the bundle's edit (range stays undefined, as there)
         { indx: 0, layer: 0, src: "arrow_1", dmg: 35, speed: 2.5, scale: 103, range: 1200 },
         { indx: 0, layer: 0, src: "arrow_1", dmg: 30, speed: 2, scale: 103, range: 1200 },
         { indx: 1, layer: 1, dmg: 16, scale: 20 },
@@ -303,24 +303,28 @@
     ];
 
     // ---- weapons (id = index; type 0 = primary/melee, type 1 = secondary) ----
+    // Server stats, plus the fields the bundle's combat math added to the table:
+    // uF (upgrade-compatibility ids, read by its damage predictor), dmg/projSpd on
+    // the ranged weapons, shield dmg 0 / speed 1 (keeps its reload finite), and
+    // spdMult 1 on the tool hammer and bat.
     // `speed` is the swing/reload time in ms. `spdMult` is the movement multiplier.
     const weapons = [
-        { id: 0, type: 0, name: "tool hammer", desc: "tool for gathering all resources", src: "hammer_1", length: 140, width: 140, xOff: -3, yOff: 18, dmg: 25, range: 65, gather: 1, speed: 300 },
-        { id: 1, type: 0, age: 2, name: "hand axe", desc: "gathers resources at a higher rate", src: "axe_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 30, spdMult: 1, range: 70, gather: 2, speed: 400 },
-        { id: 2, type: 0, age: 8, pre: 1, name: "great axe", desc: "deal more damage and gather more resources", src: "great_axe_1", length: 140, width: 140, xOff: -8, yOff: 25, dmg: 35, spdMult: 1, range: 75, gather: 4, speed: 400 },
-        { id: 3, type: 0, age: 2, name: "short sword", desc: "increased attack power but slower move speed", src: "sword_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 46, dmg: 35, spdMult: 0.85, range: 110, gather: 1, speed: 300 },
-        { id: 4, type: 0, age: 8, pre: 3, name: "katana", desc: "greater range and damage", src: "samurai_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 59, dmg: 40, spdMult: 0.8, range: 118, gather: 1, speed: 300 },
-        { id: 5, type: 0, age: 2, name: "polearm", desc: "long range melee weapon", src: "spear_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 53, dmg: 45, knock: 0.2, spdMult: 0.82, range: 142, gather: 1, speed: 700 },
-        { id: 6, type: 0, age: 2, name: "bat", desc: "fast long range melee weapon", src: "bat_1", iPad: 1.3, length: 110, width: 180, xOff: -8, yOff: 53, dmg: 20, knock: 0.7, range: 110, gather: 1, speed: 300 },
-        { id: 7, type: 0, age: 2, name: "daggers", desc: "really fast short range weapon", src: "dagger_1", iPad: 0.8, length: 110, width: 110, xOff: 18, yOff: 0, dmg: 20, knock: 0.1, range: 65, gather: 1, hitSlow: 0.1, spdMult: 1.13, speed: 100 },
-        { id: 8, type: 0, age: 2, name: "stick", desc: "great for gathering but very weak", src: "stick_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 1, spdMult: 1, range: 70, gather: 7, speed: 400 },
-        { id: 9, type: 1, age: 6, name: "hunting bow", desc: "bow used for ranged combat and hunting", src: "bow_1", req: ["wood", 4], length: 120, width: 120, xOff: -6, yOff: 0, projectile: 0, spdMult: 0.75, speed: 600 },
-        { id: 10, type: 1, age: 6, name: "great hammer", desc: "hammer used for destroying structures", src: "great_hammer_1", length: 140, width: 140, xOff: -9, yOff: 25, dmg: 10, spdMult: 0.88, range: 75, sDmg: 7.5, gather: 1, speed: 400 },
-        { id: 11, type: 1, age: 6, name: "wooden shield", desc: "blocks projectiles and reduces melee damage", src: "shield_1", length: 120, width: 120, shield: 0.2, xOff: 6, yOff: 0, spdMult: 0.7 },
-        { id: 12, type: 1, age: 8, pre: 9, name: "crossbow", desc: "deals more damage and has greater range", src: "crossbow_1", req: ["wood", 5], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 2, spdMult: 0.7, speed: 700 },
-        { id: 13, type: 1, age: 9, pre: 12, name: "repeater crossbow", desc: "high firerate crossbow with reduced damage", src: "crossbow_2", req: ["wood", 10], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 3, spdMult: 0.7, speed: 230 },
-        { id: 14, type: 1, age: 6, name: "mc grabby", desc: "steals resources from enemies", src: "grab_1", length: 130, width: 210, xOff: -8, yOff: 53, dmg: 0, steal: 250, knock: 0.2, spdMult: 1.05, range: 125, gather: 0, speed: 700 },
-        { id: 15, type: 1, age: 9, pre: 12, name: "musket", desc: "slow firerate but high damage and range", src: "musket_1", req: ["stone", 10], aboveHand: true, rec: 0.35, armS: 0.6, hndS: 0.3, hndD: 1.6, length: 205, width: 205, xOff: 25, yOff: 0, projectile: 5, hideProjectile: true, spdMult: 0.6, speed: 1500 }
+        { id: 0, type: 0, spdMult: 1, uF: [], name: "tool hammer", desc: "tool for gathering all resources", src: "hammer_1", length: 140, width: 140, xOff: -3, yOff: 18, dmg: 25, range: 65, gather: 1, speed: 300 },
+        { id: 1, type: 0, uF: [0], age: 2, name: "hand axe", desc: "gathers resources at a higher rate", src: "axe_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 30, spdMult: 1, range: 70, gather: 2, speed: 400 },
+        { id: 2, type: 0, uF: [1, 0, 15, 12, 13, null], age: 8, pre: 1, name: "great axe", desc: "deal more damage and gather more resources", src: "great_axe_1", length: 140, width: 140, xOff: -8, yOff: 25, dmg: 35, spdMult: 1, range: 75, gather: 4, speed: 400 },
+        { id: 3, type: 0, uF: [0, 4], age: 2, name: "short sword", desc: "increased attack power but slower move speed", src: "sword_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 46, dmg: 35, spdMult: 0.85, range: 110, gather: 1, speed: 300 },
+        { id: 4, type: 0, uF: [3, 0, 15, 12, 13, null, 9], age: 8, pre: 3, name: "katana", desc: "greater range and damage", src: "samurai_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 59, dmg: 40, spdMult: 0.8, range: 118, gather: 1, speed: 300 },
+        { id: 5, type: 0, uF: [0], age: 2, name: "polearm", desc: "long range melee weapon", src: "spear_1", iPad: 1.3, length: 130, width: 210, xOff: -8, yOff: 53, dmg: 45, knock: 0.2, spdMult: 0.82, range: 142, gather: 1, speed: 700 },
+        { id: 6, type: 0, spdMult: 1, uF: [0], age: 2, name: "bat", desc: "fast long range melee weapon", src: "bat_1", iPad: 1.3, length: 110, width: 180, xOff: -8, yOff: 53, dmg: 20, knock: 0.7, range: 110, gather: 1, speed: 300 },
+        { id: 7, type: 0, uF: [0], age: 2, name: "daggers", desc: "really fast short range weapon", src: "dagger_1", iPad: 0.8, length: 110, width: 110, xOff: 18, yOff: 0, dmg: 20, knock: 0.1, range: 65, gather: 1, hitSlow: 0.1, spdMult: 1.13, speed: 100 },
+        { id: 8, type: 0, uF: [0], age: 2, name: "stick", desc: "great for gathering but very weak", src: "stick_1", length: 140, width: 140, xOff: 3, yOff: 24, dmg: 1, spdMult: 1, range: 70, gather: 7, speed: 400 },
+        { id: 9, type: 1, dmg: 25, projSpd: 1.6, uF: [null], age: 6, name: "hunting bow", desc: "bow used for ranged combat and hunting", src: "bow_1", req: ["wood", 4], length: 120, width: 120, xOff: -6, yOff: 0, projectile: 0, spdMult: 0.75, speed: 600 },
+        { id: 10, type: 1, uF: [null], age: 6, name: "great hammer", desc: "hammer used for destroying structures", src: "great_hammer_1", length: 140, width: 140, xOff: -9, yOff: 25, dmg: 10, spdMult: 0.88, range: 75, sDmg: 7.5, gather: 1, speed: 400 },
+        { id: 11, type: 1, dmg: 0, speed: 1, uF: [null], age: 6, name: "wooden shield", desc: "blocks projectiles and reduces melee damage", src: "shield_1", length: 120, width: 120, shield: 0.2, xOff: 6, yOff: 0, spdMult: 0.7 },
+        { id: 12, type: 1, dmg: 35, projSpd: 2.5, uF: [9, null, 4], age: 8, pre: 9, name: "crossbow", desc: "deals more damage and has greater range", src: "crossbow_1", req: ["wood", 5], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 2, spdMult: 0.7, speed: 700 },
+        { id: 13, type: 1, dmg: 30, projSpd: 2, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "repeater crossbow", desc: "high firerate crossbow with reduced damage", src: "crossbow_2", req: ["wood", 10], aboveHand: true, armS: 0.75, length: 120, width: 120, xOff: -4, yOff: 0, projectile: 3, spdMult: 0.7, speed: 230 },
+        { id: 14, type: 1, uF: [null], age: 6, name: "mc grabby", desc: "steals resources from enemies", src: "grab_1", length: 130, width: 210, xOff: -8, yOff: 53, dmg: 0, steal: 250, knock: 0.2, spdMult: 1.05, range: 125, gather: 0, speed: 700 },
+        { id: 15, type: 1, dmg: 50, projSpd: 3.6, uF: [12, 9, null, 4, 2], age: 9, pre: 12, name: "musket", desc: "slow firerate but high damage and range", src: "musket_1", req: ["stone", 10], aboveHand: true, rec: 0.35, armS: 0.6, hndS: 0.3, hndD: 1.6, length: 205, width: 205, xOff: 25, yOff: 0, projectile: 5, hideProjectile: true, spdMult: 0.6, speed: 1500 }
     ];
 
     // ---- items (buildables + food). id = index. `heal` added for food. ----
@@ -434,6 +438,10 @@
         { id: 21, name: "Corrupt X Wings", price: 20000, scale: 178, xOff: 26, desc: "deal damage to players that damage you", dmg: 0.25 }
     ];
 
+    // ---- animals (aiTypes; index = the "index" field of packet "I") ----
+    // From the server's AI_TYPES (server/src/moomoo/modules/aiManager.js).
+    const animals = [{"index": 0, "id": 0, "src": "cow_1", "killScore": 150, "health": 500, "weightM": 0.8, "speed": 0.00095, "turnSpeed": 0.001, "scale": 72, "drop": ["food", 50]}, {"index": 1, "id": 1, "src": "pig_1", "killScore": 200, "health": 800, "weightM": 0.6, "speed": 0.00085, "turnSpeed": 0.001, "scale": 72, "drop": ["food", 80]}, {"index": 2, "id": 2, "name": "Bull", "src": "bull_2", "hostile": true, "dmg": 20, "killScore": 1000, "health": 1800, "weightM": 0.5, "speed": 0.00094, "turnSpeed": 0.00074, "scale": 78, "viewRange": 800, "chargePlayer": true, "drop": ["food", 100]}, {"index": 3, "id": 3, "name": "Bully", "src": "bull_1", "hostile": true, "dmg": 20, "killScore": 2000, "health": 2800, "weightM": 0.45, "speed": 0.001, "turnSpeed": 0.0008, "scale": 90, "viewRange": 900, "chargePlayer": true, "drop": ["food", 400]}, {"index": 4, "id": 4, "name": "Wolf", "src": "wolf_1", "hostile": true, "dmg": 8, "killScore": 500, "health": 300, "weightM": 0.45, "speed": 0.001, "turnSpeed": 0.002, "scale": 84, "viewRange": 800, "chargePlayer": true, "drop": ["food", 200]}, {"index": 5, "id": 5, "name": "Quack", "src": "chicken_1", "dmg": 8, "killScore": 2000, "noTrap": true, "health": 300, "weightM": 0.2, "speed": 0.0018, "turnSpeed": 0.006, "scale": 70, "drop": ["food", 100]}, {"index": 6, "id": 6, "name": "MOOSTAFA", "nameScale": 50, "src": "enemy", "hostile": true, "dontRun": true, "fixedSpawn": true, "spawnDelay": 60000, "noTrap": true, "colDmg": 100, "dmg": 40, "killScore": 8000, "health": 18000, "weightM": 0.4, "speed": 0.0007, "turnSpeed": 0.01, "scale": 80, "spriteMlt": 1.8, "leapForce": 0.9, "viewRange": 1000, "hitRange": 210, "hitDelay": 1000, "chargePlayer": true, "drop": ["food", 100]}, {"index": 7, "id": 7, "name": "Treasure", "hostile": true, "nameScale": 35, "src": "crate_1", "fixedSpawn": true, "spawnDelay": 120000, "colDmg": 200, "killScore": 5000, "health": 20000, "weightM": 0.1, "speed": 0, "turnSpeed": 0, "scale": 70, "spriteMlt": 1}, {"index": 8, "id": 8, "name": "MOOFIE", "src": "wolf_2", "hostile": true, "fixedSpawn": true, "dontRun": true, "hitScare": 4, "spawnDelay": 30000, "noTrap": true, "nameScale": 35, "dmg": 10, "colDmg": 100, "killScore": 3000, "health": 7000, "weightM": 0.45, "speed": 0.0015, "turnSpeed": 0.002, "scale": 90, "viewRange": 800, "chargePlayer": true, "drop": ["food", 1000]}, {"index": 9, "id": 9, "name": "Boar", "src": "boar_1", "hostile": true, "dmg": 14, "killScore": 800, "health": 900, "weightM": 0.55, "speed": 0.00105, "turnSpeed": 0.0012, "scale": 76, "viewRange": 700, "chargePlayer": true, "drop": ["food", 150]}, {"index": 10, "id": 10, "name": "Yeti", "src": "yeti_1", "hostile": true, "dmg": 25, "killScore": 4500, "health": 3200, "weightM": 0.35, "speed": 0.0008, "turnSpeed": 0.0008, "scale": 95, "viewRange": 750, "leapForce": 0.6, "chargePlayer": true, "drop": ["food", 800]}, {"index": 11, "id": 11, "name": "Crab King", "src": "crab_1", "boss": true, "hostile": true, "dontRun": true, "fixedSpawn": true, "noTrap": true, "dmg": 45, "killScore": 4000, "health": 480000, "weightM": 0, "speed": 0.00045, "turnSpeed": 0.0007, "scale": 280, "viewRange": 1800, "hitRange": 400, "hitDelay": 700}, {"index": 12, "id": 12, "src": "sheep_1", "killScore": 200, "health": 650, "weightM": 0.7, "speed": 0.0009, "turnSpeed": 0.001, "scale": 72, "drop": ["food", 150]}, {"index": 13, "id": 13, "name": "Crab", "src": "crab_1", "diver": true, "hostile": true, "noTrap": true, "dmg": 14.4, "killScore": 400, "health": 500, "weightM": 0.5, "speed": 0.0014, "turnSpeed": 0.003, "scale": 78, "viewRange": 4000, "chargePlayer": true}, {"index": 14, "id": 14, "name": "Crabling", "src": "crab_1", "diver": true, "hostile": true, "noTrap": true, "dmg": 6, "killScore": 200, "health": 250, "weightM": 0.5, "speed": 0.0017, "turnSpeed": 0.004, "scale": 39, "viewRange": 4000, "chargePlayer": true}];
+
     // ---- lookups ----
     const byId = (arr) => { const m = new Map(); for (const x of arr) m.set(x.id, x); return m; };
     const byName = (arr) => { const m = new Map(); for (const x of arr) m.set(String(x.name).toLowerCase(), x); return m; };
@@ -444,7 +452,8 @@
     const accId = byId(accessories), accName = byName(accessories);
 
     return {
-        groups, projectiles, weapons, items, hats, accessories,
+        groups, projectiles, weapons, items, hats, accessories, animals,
+        animal: (index) => animals[index],
         weapon: (id) => weaponId.get(id),
         weaponByName: (n) => weaponName.get(String(n).toLowerCase()),
         item: (id) => itemId.get(id),
@@ -1134,10 +1143,51 @@
         admin: { wire: "A", build: (d) => d.args || [] }
     };
 
+    // ---- OUTGOING, inverse: wire args -> action payload ----
+    // Lets the loader turn a frame the official client sent back into a named
+    // action, so mods can inspect, rewrite or drop it (see runtime onOutgoing).
+    const outgoingParse = {
+        M: { action: "spawn", parse: (a) => Object.assign({}, a[0] || {}) },
+        D: { action: "aim", parse: (a) => ({ dir: a[0] }) },
+        9: { action: "move", parse: (a) => ({ dir: a[0] == null ? null : a[0] }) },
+        e: { action: "stopMove", parse: () => ({}) },
+        F: { action: "mouse", parse: (a) => ({ down: !!a[0], dir: a.length > 1 ? a[1] : undefined }) },
+        z: { action: "selectItem", parse: (a) => ({ index: a[0], isWeapon: !!a[1] }) },
+        H: { action: "upgrade", parse: (a) => ({ index: a[0] }) },
+        K: { action: "toggle", parse: (a) => ({ which: a[0] }) },
+        L: { action: "createTribe", parse: (a) => ({ name: a[0] }) },
+        N: { action: "leaveTribe", parse: () => ({}) },
+        b: { action: "joinTribe", parse: (a) => ({ name: a[0] }) },
+        P: { action: "answerJoin", parse: (a) => ({ sid: a[0], accept: !!a[1] }) },
+        Q: { action: "kickMember", parse: (a) => ({ sid: a[0] }) },
+        c: { action: "store", parse: (a) => ({ action: a[0], id: a[1], isAccessory: !!a[2] }) },
+        6: { action: "chat", parse: (a) => ({ message: a[0] }) },
+        S: { action: "pingMap", parse: () => ({}) },
+        0: { action: "ping", parse: () => ({}) },
+        V: { action: "watchStats", parse: (a) => ({ sid: a[0] }) },
+        R: { action: "report", parse: (a) => ({ args: a.slice() }) },
+        A: { action: "admin", parse: (a) => ({ args: a.slice() }) }
+    };
+
+    // The server's per-packet token buckets ([refill per second, burst]) from
+    // server/src/anticheat/config.js. The loader mirrors them so that the sum of
+    // the client's own packets and mod-injected packets can never exceed a bucket
+    // (exceeding one = a strike; 40 strikes = kicked).
+    const rateLimits = {
+        global: [150, 300],
+        packets: {
+            M: [1, 3], D: [60, 120], 9: [40, 80], e: [10, 20], F: [40, 80], z: [20, 40], H: [10, 20],
+            K: [10, 20], L: [2, 4], N: [2, 4], b: [2, 4], P: [5, 10], Q: [5, 10], c: [10, 20],
+            6: [2, 4], S: [1, 2], 0: [2, 4], T: [1, 3], R: [2, 5], A: [20, 40], V: [4, 8]
+        }
+    };
+
     return {
         version: 1,
         incoming,
         outgoing,
+        outgoingParse,
+        rateLimits,
         // Used by the anti-cheat bypass: the outgoing packet that carries the
         // anti-tamper telemetry (flags bitfield + untrusted-event count).
         telemetry: {
@@ -1250,10 +1300,12 @@
                         pl.weaponIndex = at.weaponIndex; pl.buildIndex = at.buildIndex;
                         pl.variant = at.variant; pl.team = at.team; pl.isLeader = at.isLeader;
                         pl.skin = at.skin; pl.tail = at.tail;
+                        pl.icon = at.icon; pl.zIndex = at.zIndex;
                         if (at.sid === self.sid) {
                             self.weaponIndex = at.weaponIndex; self.buildIndex = at.buildIndex;
                             self.hat = at.skin; self.accessory = at.tail; self.team = at.team;
                             self.weaponVariant = at.variant;
+                            self.isLeader = at.isLeader; self.icon = at.icon; self.zIndex = at.zIndex;
                         }
                     }
                     for (const sid of payload.hidden) {
@@ -1279,7 +1331,7 @@
 
         // ---- event plumbing ----
         function on(event, handler) {
-            if (!vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
+            if (event !== "*" && !vocab.isEvent(event)) console.warn(logPrefix + " unknown event: " + event, logStyle);
             let set = listeners.get(event);
             if (!set) { set = new Set(); listeners.set(event, set); }
             set.add(handler);
@@ -1292,6 +1344,46 @@
         function once(event, handler) {
             const wrap = (payload) => { off(event, wrap); handler(payload); };
             return on(event, wrap);
+        }
+
+        // ---- outgoing hooks ----
+        // onOutgoing(action, fn): see (and optionally change) every frame the
+        // OFFICIAL CLIENT tries to send, by vocabulary action name ("aim", "move",
+        // "mouse", "selectItem", "toggle", "store", ... or "*" for all).
+        //   fn(payload, info, action) returns
+        //     undefined      -> send it unchanged
+        //     false / null   -> drop it (it never reaches the server)
+        //     an object      -> send this payload instead
+        // This is how a mod takes over a control the client normally owns (the
+        // bundle replaced the client's own aim/move/attack sending with its own).
+        const outFilters = new Map();   // action -> Set<fn>
+        const sentTaps = new Set();     // fn(action, payload, source)
+        function onOutgoing(action, fn) {
+            let set = outFilters.get(action);
+            if (!set) { set = new Set(); outFilters.set(action, set); }
+            set.add(fn);
+            return () => set.delete(fn);
+        }
+        function _filterOutgoing(action, payload, info) {
+            let cur = payload;
+            const sets = [outFilters.get(action), outFilters.get("*")];
+            for (const set of sets) {
+                if (!set) continue;
+                for (const fn of Array.from(set)) {
+                    let r;
+                    try { r = fn(cur, info || {}, action); }
+                    catch (e) { console.error(logPrefix + " outgoing filter for '" + action + "' threw", logStyle, e); continue; }
+                    if (r === false || r === null) return null;
+                    if (r && typeof r === "object") cur = r;
+                }
+            }
+            return cur;
+        }
+        // onSent(fn): every frame that actually went out (client or mod), after
+        // the rate governor. fn(action, payload, source) with source "client"|"mod".
+        function onSent(fn) { sentTaps.add(fn); return () => sentTaps.delete(fn); }
+        function _notifySent(action, payload, source) {
+            for (const fn of Array.from(sentTaps)) { try { fn(action, payload, source); } catch (e) { /* ignore */ } }
         }
 
         // Called by the loader for every decoded incoming packet.
@@ -1391,7 +1483,7 @@
         }
 
         function buildCtx(rec) {
-            const active = { unsubs: [], timers: [], cleanups: [] };
+            const active = { unsubs: [], timers: [], timeouts: [], cleanups: [] };
             const settings = {};
             for (const s of rec.schema) Object.defineProperty(settings, s.key, {
                 get: () => rec.values[s.key],
@@ -1408,6 +1500,14 @@
                 on: (ev, h) => { const un = on(ev, h); active.unsubs.push(un); return un; },
                 once: (ev, h) => { const un = once(ev, h); active.unsubs.push(un); return un; },
                 every: (ms, fn) => { const t = setInterval(fn, ms); active.timers.push(t); return t; },
+                // One-shot timer, cleared if the mod is disabled first.
+                after: (ms, fn) => {
+                    const t = setTimeout(() => { const i = active.timeouts.indexOf(t); if (i >= 0) active.timeouts.splice(i, 1); fn(); }, ms);
+                    active.timeouts.push(t);
+                    return t;
+                },
+                onOutgoing: (action, fn) => { const un = onOutgoing(action, fn); active.unsubs.push(un); return un; },
+                onSent: (fn) => { const un = onSent(fn); active.unsubs.push(un); return un; },
                 onCleanup: (fn) => { active.cleanups.push(fn); },
                 // Live-settings mods react to a toggle/slider change here instead of
                 // being torn down and re-run. fn(key, newValue, oldValue).
@@ -1432,6 +1532,7 @@
             if (!a) return;
             for (const un of a.unsubs) { try { un(); } catch (e) { /* ignore */ } }
             for (const t of a.timers) { try { clearInterval(t); } catch (e) { /* ignore */ } }
+            for (const t of a.timeouts) { try { clearTimeout(t); } catch (e) { /* ignore */ } }
             for (const c of a.cleanups) { try { c(); } catch (e) { /* ignore */ } }
             rec._active = null;
         }
@@ -1540,6 +1641,8 @@
             isReady: () => ready,
             // events
             on, off, once, onReady,
+            // outgoing (see onOutgoing / onSent above)
+            onOutgoing, onSent,
             // actions
             send,
             // mods (managed units with enable/disable + settings)
@@ -1548,7 +1651,7 @@
             // logging
             log,
             // internal hooks used by the loader (underscore-prefixed)
-            _dispatch, _setReady, _reset, _clearMods,
+            _dispatch, _setReady, _reset, _clearMods, _filterOutgoing, _notifySent,
             _setCtxExtensions: (ext) => { ctxExtensions = ext; }
         };
         return MooMoo;
@@ -1902,12 +2005,22 @@
     // A world object, modelled exactly like the bundle's GameObject so features
     // can read the same fields. `data` is the item definition (gameData.item(id))
     // for placed buildings, or null for a natural resource (tree/bush/stone).
+    // The engine's "is this sid me or my clan" test (the bundle's te) and its tick
+    // counter, injected by the combat engine; until then, plain self/team checks.
+    const hooksRef = { te: null, tick: () => 0, millRotate: () => false };
+
     class GameObject {
         constructor(sid) { this.sid = sid; }
 
-        init(x, y, dir, scale, type, data, ownerSid) {
-            data = data || {};
+        // The bundle's Gl.init (3022-3025), argument for argument:
+        //   init(x, y, dir, scale, type, data, owner, bot, _, fake, restricter, preplace)
+        // owner is {sid} (or null / undefined), like the bundle's.
+        init(x, y, dir, scale, type, data, owner, bot, _unused, fake, restricter, preplace) {
+            const o = data || {};
+            this.sentTo = {};
+            this.gridLocations = [];
             this.active = true;
+            this.doUpdate = o.doUpdate;
             this.x = x;
             this.y = y;
             this.dir = dir;
@@ -1915,83 +2028,80 @@
             this.yWiggle = 0;
             this.scale = scale;
             this.type = type;
-            this.id = data.id;
-            this.ownerSid = (ownerSid == null || ownerSid < 0) ? null : ownerSid;
-            // The bundle stores owner as an object {sid}; keep that shape so code
-            // reading `obj.owner.sid` keeps working, but resolve the live player
-            // lazily through the manager when a feature needs team/name.
-            this.owner = this.ownerSid == null ? null : { sid: this.ownerSid };
-            this.name = data.name != null ? data.name
-                : type === 0 ? "Tree"
-                : (type === 1 && y >= 12000) ? "Cactus"
-                : type === 1 ? "Bush"
-                : type === 2 ? "Stone"
-                : type === 3 ? "Gold Stone"
-                : null;
+            this.id = o.id;
+            this.owner = owner;
+            this.ownerSid = owner && owner.sid != null ? owner.sid : null;
+            this.name = o.name ? o.name : this.type === 0 ? "Tree" : this.type === 1 && this.y >= 12e3 ? "Cactus" : this.type === 1 ? "Bush" : this.type === 2 ? "Stone" : this.type === 3 ? "Gold Stone" : null;
             this.isItem = this.id != null;
-            this.group = data.group;
-            this.health = this.maxHealth = data.health;
-            this.doUpdate = data.doUpdate;
-            this.colDiv = data.colDiv || 1;
-            this.blocker = data.blocker;
-            this.ignoreCollision = data.ignoreCollision;
-            this.dontGather = data.dontGather;
-            this.hideFromEnemy = data.hideFromEnemy;
-            this.friction = data.friction;
-            this.projDmg = data.projDmg;
-            this.dmg = data.dmg;
-            this.pDmg = data.pDmg;
-            this.pps = data.pps;
-            this.zIndex = data.zIndex || 0;
-            this.turnSpeed = data.turnSpeed;
-            this.req = data.req;
-            this.trap = data.trap;
-            this.healCol = data.healCol;
-            this.teleport = data.teleport;
-            this.boostSpeed = data.boostSpeed;
-            this.projectile = data.projectile;
-            this.shootRange = data.shootRange;
-            this.shootRate = data.shootRate;
-            this.shootCount = this.shootRate;
-            this.spawnPoint = data.spawnPoint;
-            // Layer resolution (gameObject.js): group.layer, else by type.
+            this.group = o.group;
+            this.health = this.maxHealth = o.health;
+            this.health2 = 0;
+            this.buildingID = o.buildingID;
+            this.setType = o.setType;
             this.layer = 2;
-            if (this.group != null) this.layer = this.group.layer;
-            else if (type === 0) this.layer = 3;
-            else if (type === 2) this.layer = 0;
-            else if (type === 4) this.layer = -1;
-            // Derived collision scales, exactly like the bundle's GameObject.
-            this.realScale = (this.type <= 1 && this.type !== null) ? this.scale * 0.6 : this.scale;
-            // Runtime combat fields.
-            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;  // turret reload countdown
-            this.shot = 0;          // last turret fire timestamp
-            this.lastHit = 0;       // last wiggle (hit) timestamp
-            this.distance = 0;      // scratch: center-distance to a query point
+            this.group != null ? this.layer = this.group.layer : this.type == 0 ? this.layer = 3 : this.type == 2 ? this.layer = 0 : this.type == 4 && (this.layer = -1);
+            this.colDiv = o.colDiv || 1;
+            this.blocker = o.blocker;
+            this.ignoreCollision = o.ignoreCollision;
+            this.dontGather = o.dontGather;
+            this.hideFromEnemy = o.hideFromEnemy;
+            this.friction = o.friction;
+            this.projDmg = o.projDmg;
+            this.dmg = o.dmg;
+            this.pDmg = o.pDmg;
+            this.pps = o.pps;
+            this.zIndex = o.zIndex || 0;
+            this.turnSpeed = o.turnSpeed;
+            this.req = o.req;
+            this.trap = o.trap;
+            this.healCol = o.healCol;
+            this.teleport = o.teleport;
+            this.boostSpeed = o.boostSpeed;
+            this.projectile = o.projectile;
+            this.opacity = o.name == "pit trap" ? 1 : 1;
+            this.opacity2 = 1;
+            this.fadingOut = false;
             this.dmgpot = 0;
             this.assumeBreak = false;
+            this.ignoreWiggleDirs = [];
+            this.wiggleDirs = [];
+            this.shootRange = o.shootRange;
+            this.shootRate = o.shootRate;
+            this.shootCount = this.shootRate;
+            this.spawnPoint = o.spawnPoint;
+            this.tick = hooksRef.tick();
+            this.preplace = preplace;
+            this.fake = fake;
+            this.bot = bot;
+            this.elevation = typeof this.type === "number" && this.owner === null || this.name == "turret" || this?.group?.name === "mill" ? 2 : 1;
+            this.restricter = restricter;
+            this.realScale = this.type <= 1 && this.type !== null ? this.scale * 0.6 : this.scale;
+            const te = hooksRef.te || (() => false);
+            this.pathScale = this.type === 1 && this.y <= 12e3 ? this.scale * 0.6 + 15 : this.type === 0 ? this.scale * 0.7 + 10 : this.dmg && !te(this?.owner?.sid) || this.teleport || this.boostSpeed ? this.scale + 47 : this.type === 1 && this.y >= 12e3 ? this.scale * 0.55 + 47 : this.name == "pit trap" && !te(this?.owner?.sid) ? this.scale + 38 : this.ignoreCollision ? 0 : this.scale + 10;
+            // loader runtime fields
+            this.time = this.name === "turret" ? TURRET_RELOAD : undefined;
+            this.shot = 0;
+            this.lastHit = 0;
+            this.distance = 0;
             return this;
         }
 
-        changeHealth(amount) { this.health += amount; return this.health <= 0; }
+        changeHealth(e) { this.health += e; return this.health <= 0; }
 
-        // Collision scale the way the server computes it for placement checks.
-        getScale(sM, ig) {
-            sM = sM || 1;
-            return this.scale * (this.isItem || this.type === 2 || this.type === 3 || this.type === 4 ? 1 : 0.6 * sM) * (ig ? 1 : this.colDiv);
+        // Gl.update (bundle 3032): per render frame, the hit wiggle eases out and
+        // spinning things turn (windmills only with the mod's "mill rotate").
+        update(e) {
+            this.active && (this.xWiggle && (this.xWiggle *= Math.pow(0.99, e)), this.yWiggle && (this.yWiggle *= Math.pow(0.99, e)), (hooksRef.millRotate() && this?.group?.name == "mill" || this?.group?.name != "mill") && this.turnSpeed && (this.dir += this.turnSpeed * e));
         }
-    }
 
-    // pathScale needs to know whether the owner is an enemy, so it is computed by
-    // the manager (which knows the self/team) rather than on the object itself.
-    function computePathScale(o, isEnemyOwner) {
-        if (o.type === 1 && o.y <= 12000) return o.scale * 0.6 + 15;      // bush
-        if (o.type === 0) return o.scale * 0.7 + 10;                       // tree
-        if (o.dmg && isEnemyOwner) return o.scale + 47;                    // enemy spike
-        if (o.teleport || o.boostSpeed) return o.scale + 47;
-        if (o.type === 1 && o.y >= 12000) return o.scale * 0.55 + 47;      // cactus
-        if (o.name === "pit trap" && isEnemyOwner) return o.scale + 38;    // enemy trap
-        if (o.ignoreCollision) return 0;
-        return o.scale + 10;
+        getScale(e, t) {
+            e = e || 1;
+            return this.scale * (this.isItem || this.type == 2 || this.type == 3 || this.type == 4 ? 1 : 0.6 * e) * (t ? 1 : this.colDiv);
+        }
+
+        visibleToPlayer(e) {
+            return !this.hideFromEnemy || this.owner && (this.owner == e || this.owner.team && e.team == this.owner.team);
+        }
     }
 
     function createObjectManager(env) {
@@ -2008,9 +2118,12 @@
             return -1;
         }
 
+        const removeTaps = new Set();   // fn(obj, cause) just before an object is forgotten
+        function tapRemove(o, cause) { for (const fn of Array.from(removeTaps)) { try { fn(o, cause); } catch (e) { /* ignore */ } } }
         function removeSid(sid) {
             const o = byId.get(sid);
             if (!o) return;
+            tapRemove(o, "killed");
             byId.delete(sid);
             const i = indexOfSid(sid);
             if (i >= 0) list.splice(i, 1);
@@ -2040,10 +2153,14 @@
         // ---- add one object (from "H"), mirroring the bundle's objectManager.add ----
         function addObject(sid, x, y, dir, scale, type, id, ownerSid) {
             const def = (id != null && id >= 0) ? data.item(id) : null;
-            let o = byId.get(sid);
-            if (!o) { o = new GameObject(sid); byId.set(sid, o); list.push(o); }
-            o.init(x, y, dir, scale, type, def, ownerSid);
-            o.pathScale = computePathScale(o, isEnemyObject(o));
+            // The bundle's objectManager.add always creates a NEW object (no reuse
+            // by sid) and pushes it to kh.
+            const o = new GameObject(sid);
+            const old = byId.get(sid);
+            if (old) { const k = list.indexOf(old); if (k >= 0) list.splice(k, 1); }
+            byId.set(sid, o); list.push(o);
+            // The bundle's J2 (s2c "H"): add(sid, x, y, dir, scale, type, item, true, owner >= 0 ? {sid} : null)
+            o.init(x, y, dir, scale, type, def, ownerSid >= 0 && ownerSid != null ? { sid: ownerSid } : null);
             return o;
         }
 
@@ -2063,7 +2180,7 @@
             const owner = p && p.args && p.args[0];
             if (owner == null) return;
             for (let i = list.length - 1; i >= 0; i--) {
-                if (list[i].ownerSid === owner) { byId.delete(list[i].sid); list.splice(i, 1); }
+                if (list[i].ownerSid === owner) { tapRemove(list[i], "ownerLeft"); byId.delete(list[i].sid); list.splice(i, 1); }
             }
         }
         function onWiggle(p) {
@@ -2103,7 +2220,7 @@
                     o.time -= delta;
                     if (o.time <= 0) o.time = TURRET_RELOAD;
                 }
-                if (o.turnSpeed) o.dir += o.turnSpeed * delta;
+                if (!driven && o.turnSpeed) o.dir += o.turnSpeed * delta;   // driven: GameObject.update per frame
             }
         }
 
@@ -2113,7 +2230,10 @@
         MooMoo.on("wiggle", onWiggle);
         MooMoo.on("turretShoot", onTurretShoot);
         MooMoo.on("itemCount", onItemCount);
-        MooMoo.on("playersUpdate", update);
+        // Turret countdowns + spin advance once per tick. The combat engine drives
+        // this at the bundle's point in the tick (k4); without it, the "a" packet does.
+        let driven = false;
+        MooMoo.on("playersUpdate", () => { if (!driven) update(); });
         MooMoo.on("setup", clearAll);
         MooMoo.on("died", clearAll);
 
@@ -2172,6 +2292,11 @@
             itemCount: (gid) => itemCounts[gid] || 0,
             clear: clearAll,
             update,
+            setDriven: (b) => { driven = !!b; },
+            setFriendlyTest: (fn) => { hooksRef.te = fn; },
+            onRemove: (fn) => { removeTaps.add(fn); return () => removeTaps.delete(fn); },
+            setTickSource: (fn) => { hooksRef.tick = fn; },
+            setMillRotate: (fn) => { hooksRef.millRotate = typeof fn === "function" ? fn : () => false; },
             TURRET_RELOAD
         };
     }
@@ -2180,26 +2305,168 @@
 });
 
 
+/* ===== module: store (loader/src/store.js) ===== */
+/*
+ * moomoo.js loader — STORE  (owned / equipped hats + accessories)
+ * ===============================================================
+ * Hat swapping is the core of every combo in the bundle, and the bundle never
+ * trusts its own sends: it keeps
+ *   Nn  = hats you own          (free hats at spawn + every "5" buy reply)
+ *   On  = accessories you own   (every "5" buy reply)
+ *   $t  = hat you have on       (from the "5" equip reply only)
+ *   Zt  = accessory you have on (from the "5" equip reply only)
+ * and its equip(hat, acc) only sends when the target differs from what the
+ * server last confirmed, and unequips (to 0) when you don't own the target.
+ * This module keeps exactly that state from the wire and exposes the same
+ * equip semantics, so a dropped or rejected store packet simply retries.
+ *
+ * Wire (server/src/network/packets.js):
+ *   s2c "5" storeUpdate [action, id, isAccessory]   action 0 = bought, 1 = equipped
+ *   c2s "c" store       [action, id, isAccessory]   through binding: vocabulary
+ *                                                   store(0 = buy, 1 = equip)
+ * The server gives you every hat with price 0 that isn't dontSell at spawn
+ * (player.js), i.e. the bundle's starting Nn list.
+ *
+ * Part of the LOADER (volatile). Exposed on ctx as `ctx.store`.
+ */
+(function (root, factory) {
+    const value = factory();
+    if (typeof module === "object" && module.exports) module.exports = value;
+    if (typeof root !== "undefined") root.MooMooStore = value;
+    if (typeof globalThis !== "undefined") globalThis.MooMooStore = value;
+})(typeof self !== "undefined" ? self : this, function () {
+    "use strict";
+
+    const BUY = 0, EQUIP = 1;   // vocabulary store(action) values
+
+    function createStore(env) {
+        const MooMoo = env.MooMoo;
+        const data = env.data;
+
+        // Free hats in the bundle's order (its Nn initializer), which is also the
+        // server's "price 0 and not dontSell" set.
+        const FREE_HATS = data.hats.filter((h) => h.price <= 0 && !h.dontSell).map((h) => h.id);
+        const FREE_TAILS = data.accessories.filter((a) => a.price <= 0 && !a.dontSell).map((a) => a.id);
+
+        const ownedHats = FREE_HATS.slice();     // Nn
+        const ownedTails = FREE_TAILS.slice();   // On
+        let hat = null;                          // $t (null until the server confirms one)
+        let tail = null;                         // Zt
+        const listeners = new Set();
+        const emit = (ev) => { for (const fn of Array.from(listeners)) { try { fn(ev); } catch (e) { /* ignore */ } } };
+
+        // "5": exactly the bundle's Dp(e, t, n).
+        function onStoreUpdate(p) {
+            const a = p && p.args; if (!a) return;
+            const action = a[0], id = a[1], isTail = !!a[2];
+            if (action) {                                   // equipped
+                if (isTail) tail = id; else hat = id;
+                if (isTail) MooMoo.self.accessory = id; else MooMoo.self.hat = id;
+            }
+            if (action === 0 && id !== 0) {                 // bought
+                if (isTail) { if (ownedTails.indexOf(id) < 0) ownedTails.push(id); }
+                else if (ownedHats.indexOf(id) < 0) ownedHats.push(id);
+            }
+            emit({ action: action ? "equip" : "buy", id, isAccessory: isTail });
+        }
+
+        function reset() {
+            ownedHats.length = 0; ownedHats.push(...FREE_HATS);
+            ownedTails.length = 0; ownedTails.push(...FREE_TAILS);
+            hat = null; tail = null;
+        }
+
+        const ownsHat = (id) => id === 0 || ownedHats.indexOf(id) >= 0;
+        const ownsTail = (id) => id === 0 || ownedTails.indexOf(id) >= 0;
+
+        // Raw store verbs (go through the vocabulary/binding).
+        const equipHatRaw = (id) => MooMoo.send.store(EQUIP, id | 0, false);
+        const equipTailRaw = (id) => MooMoo.send.store(EQUIP, id | 0, true);
+        const buyHat = (id) => MooMoo.send.store(BUY, id | 0, false);
+        const buyTail = (id) => MooMoo.send.store(BUY, id | 0, true);
+
+        // The bundle's equip(hatId, accessoryId), 1-1:
+        //   a null/NaN id leaves that slot alone;
+        //   not owned -> unequip that slot (to 0) unless it's already bare;
+        //   owned     -> equip it unless the server already has it on.
+        function equip(hatId, accessoryId) {
+            if (hatId === undefined) hatId = null;
+            if (accessoryId === undefined) accessoryId = null;
+            if (hatId !== null && !isNaN(hatId)) {
+                if (ownedHats.indexOf(hatId) < 0) {
+                    if (hat !== 0) equipHatRaw(0);
+                } else if (hat !== hatId) {
+                    equipHatRaw(hatId);
+                }
+            }
+            if (accessoryId !== null && !isNaN(accessoryId)) {
+                if (ownedTails.indexOf(accessoryId) < 0) {
+                    if (tail !== 0) equipTailRaw(0);
+                } else if (tail !== accessoryId) {
+                    equipTailRaw(accessoryId);
+                }
+            }
+        }
+
+        MooMoo.on("storeUpdate", onStoreUpdate);
+
+        return {
+            get ownedHats() { return ownedHats; },       // Nn (live array)
+            get ownedTails() { return ownedTails; },     // On (live array)
+            get hat() { return hat; },                   // $t
+            get tail() { return tail; },                 // Zt
+            ownsHat, ownsTail,
+            equip, equipHat: equipHatRaw, equipTail: equipTailRaw, buyHat, buyTail,
+            onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+            reset,
+            // the bundle's "m" debug key set $t / Zt back to null: equip() then
+            // re-sends whatever it is asked for next
+            forgetEquipped: () => { hat = null; tail = null; },
+            FREE_HATS, FREE_TAILS, BUY, EQUIP
+        };
+    }
+
+    return { createStore, BUY, EQUIP };
+});
+
+
 /* ===== module: combat (loader/src/combat.js) ===== */
 /*
- * moomoo.js loader — COMBAT ENGINE  (the bundle's updatePlayers, ported 1-1)
- * =========================================================================
- * The bundle runs its WHOLE combat brain inside one server-tick handler,
- * `updatePlayers(i)` (the "a" packet). Every tick it, for every player:
- *   - shifts predicted position (x2/y2 = this tick's server pos, preX/preY = last)
- *   - derives velocity, move dir/speed, primary/secondary + their variants
- *   - fills the reload clocks pr (primary), sr (secondary), tr (turret gear)
- *   - computes the next-position prediction np = l4(player)  (accel/decel/real)
- * and separately, on each health change, tracks the 9-tick "bull" cadence
- * (lastBull/bleed) the insta combos time themselves against.
+ * moomoo.js loader — COMBAT ENGINE  (the bundle's player model + tick pipeline, 1-1)
+ * ==============================================================================
+ * The bundle runs its whole combat brain inside one server-tick handler,
+ * `updatePlayers` (the "a" packet), and keeps a rich model of every player that
+ * its packet handlers feed. This engine is that model and that pipeline, ported
+ * from the bundle line for line, so a mod that hooks in sees exactly the state
+ * the bundle saw, at exactly the moment it saw it.
  *
- * The loader already decodes the "a" packet into tidy positions+attributes and
- * keeps MooMoo.self / MooMoo.players, so this engine ENRICHES those same objects
- * with the combat fields (pr, sr, tr, x2, y2, np, primaryVar, lastBull, …). A mod
- * then reads them exactly like the bundle did: `z` is MooMoo.self, `Y` is the
- * current target, `vn` is the sorted visible enemies.
+ * Ordering is the whole point. The bundle does NOT apply most packets when they
+ * arrive:
+ *   - a swing ("K")       -> reload reset k2() is queued (pn) and applied on the
+ *                            next tick, AFTER that tick's reload fill;
+ *   - a projectile ("X")  -> owner detection tg() is queued (pn) the same way;
+ *   - a health change     -> only recorded (healArr); the shame / bull-cadence
+ *     ("O")                  analysis l5() runs in the next tick's frame, when the
+ *                            tick counter has already advanced;
+ *   - a wiggle ("L")      -> waits for the next tick (A4) before a building-damage
+ *                            resolver (O3) is created, and a swing that hit
+ *                            something resolves it one tick later still.
+ * The server sends a tick's K / L / O / X before that tick's "a" (server.js:
+ * update everyone, then sync), and eating sends O between ticks, so these
+ * queues decide which tick a reload / bull / health event lands on.
  *
- * Constants + formulas are copied verbatim from the bundle / shared/config.js.
+ * Tick pipeline (bundle updatePlayers, ~line 15985):
+ *   [hooks.preTick]  -> v++ -> reset per-tick lists -> reconstruct every visible
+ *   player -> [hooks.postReconstruct] -> await 1ms (wx(1): let the rest of this
+ *   tick's packets land) -> Xt / Q object windows -> resolve A4 (Ve) -> run
+ *   deferred handlers (pn) -> per-player frame upkeep (poison, deaths, health
+ *   analysis l5, bleed) -> [hooks.frame]  (where the bundle's features run)
+ *
+ * Player objects ARE the runtime's (MooMoo.self / MooMoo.players), enriched with
+ * the bundle's fields. x/y are the rendered (interpolated) position, maintained
+ * every animation frame with the bundle's own interpolation; x2/y2 are the latest
+ * server position, x1/y1 the rendered position at the last tick.
+ *
  * Part of the LOADER (volatile). Exposed on ctx as `ctx.combat`.
  */
 (function (root, factory) {
@@ -2212,385 +2479,1046 @@
 
     // ---- constants (shared/config.js + bundle) ----
     const K = {
-        mapScale: 14400, riverWidth: 724, snowBiomeTop: 2400,
-        playerScale: 35, playerSpeed: 0.0016, gatherAngle: Math.PI / 2.6, gatherWiggle: 10
+        mapScale: 14400, riverWidth: 724, snowBiomeTop: 2400, snowSpeed: 0.75,
+        playerScale: 35, playerSpeed: 0.0016, gatherAngle: Math.PI / 2.6, gatherWiggle: 10,
+        maxScreenWidth: 1920, maxScreenHeight: 1080, serverUpdateRate: 9, clientSendRate: 5,
+        shieldAngle: Math.PI / 3, hitReturnRatio: 0.25, hitAngle: Math.PI / 2,
+        weaponVariants: [{ id: 0, src: "", xp: 0, val: 1 }, { id: 1, src: "_g", xp: 3000, val: 1.1 },
+            { id: 2, src: "_d", xp: 7000, val: 1.18 }, { id: 3, src: "_r", poison: true, xp: 12000, val: 1.18 },
+            { id: 4, src: "_e", xp: 20000, val: 1.18, lifesteal: 0.15, membersOnly: true }]
     };
     const ce = 1000 / 9;                 // server tick ms
+    const u = ce * 2;                    // two ticks (combo length)
     const r3 = Math.pow(0.993, 111);     // decel constant used by l4's T()
-    const EN = [1, 1.1, 1.18, 1.18];     // weapon-variant damage multipliers (En)
-    const VARIANT_VAL = EN;              // K.weaponVariants[i].val
+    const EN = [1, 1.1, 1.18, 1.18];     // En: weapon-variant damage multipliers as the bundle used them
+    const h = Math.PI / 2.6;             // gather angle (bundle `h`)
 
     // ---- math primitives (bundle aliases) ----
     const U = Math.cos, V = Math.sin, P = Math.atan2, S = Math.abs;
-    const D = (a, b) => Math.hypot(a, b);
+    const D = Math.sqrt;
     const re = (a, b) => Math.pow(a, b);
     const H = Math.round, j = Math.min, oe = Math.max;
     const TAU = Math.PI * 2, W = Math.PI;
     const getDistance = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
     const getDirection = (x1, y1, x2, y2) => Math.atan2(y1 - y2, x1 - x2);
-    function getAngleDist(a, b) { let n = S(a - b) % TAU; if (n > W) n = TAU - n; return n; }
-    const Ay = getAngleDist;
+    function getAngleDist(a, b) { const d = S(b - a) % TAU; return d > W ? TAU - d : d; }
+    function Ay(e, t) { let n = S(e - t); n = n % TAU; if (n > W) n = TAU - n; return n; }
+    function lerpAngle(e, t, n) {   // Math.lerpAngle as the client defines it
+        if (S(t - e) > W) { if (e > t) t += TAU; else e += TAU; }
+        const i = t + (e - t) * n;
+        return i >= 0 && i <= TAU ? i : i % TAU;
+    }
+    const Ne = (t, n) => { const e = Math.SQRT2 - 1; t = S(t); n = S(n); if (t > n) { const x = t; t = n; n = x; } return e * t + n; };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
     function createCombat(env) {
         const MooMoo = env.MooMoo;
         const data = env.data;
         const objects = env.objects || null;
         const selfInput = env.selfInput || { moveDir: null, aimDir: 0 };
+        const win = env.win || (typeof window !== "undefined" ? window : null);
+        if (objects && objects.setDriven) objects.setDriven(true);
+        if (objects && objects.setFriendlyTest) objects.setFriendlyTest((sid) => te(sid));
+        if (objects && objects.setTickSource) objects.setTickSource(() => v);
+
+        const x = { list: data.items, weapons: data.weapons, projectiles: data.projectiles, groups: data.groups };
+        const C0 = data.hats, B0 = data.accessories;
+        const hatOf = (id) => data.hat(id), accOf = (id) => data.accessory(id);
 
         const z = MooMoo.self;               // our own player (the bundle's `z`)
         let v = 0;                           // tick counter
         let et = 0;                          // self bull-cycle offset
-        let lastTickTime = 0;                // for delta
-        let Y = null;                        // current target
-        let vn = [];                         // visible enemies sorted nearest-first
-        let manualTargetSid = null;          // xi.ID
-        const prev = new Map();              // sid -> { x2, y2, movDir, np }  (last tick)
+        let tn = 0;                          // time of this tick
+        let en = false;                      // in game (setupGame .. died)
+        let Y = null;                        // current target (nearest visible enemy / !target)
+        const xi = { ID: null, player: null };   // manual target (!target)
+        const J = [];                        // every player we know, self included (bundle J)
+        let vn = [], Sn = [];                // visible enemies / visible friends this tick
+        let Xt = [], Q = [];                 // objects within 2000 / 800 this tick
+        const bh = [];                       // animals (bundle bh)
+        let bosses = { Xi: null, Ji: null, qi: null };
+        const Ln = [];                       // tracked live projectiles (bundle Ln)
+        let ng = [];                         // per-player projectile volleys this tick
+        const ft = [];                       // pending building-damage resolvers (O3)
+        let py = [];                         // clan members [sid, name, sid, name, ...]
+        const rn = [], an = [], ln = [];     // per-sid reload mirrors (bundle rn/an/ln)
+        const Xe = {};                       // sid -> player (bundle Xe)
+        let Ve = [];                         // A4() resolvers
+        let pn = [];                         // deferred packet handlers (run next tick)
+        const hooks = {
+            preTick: new Set(), tickStart: new Set(), postReconstruct: new Set(), afterSleep: new Set(),
+            deferredFlushed: new Set(), afterPlayers: new Set(), frame: new Set(), frameLate: new Set(), framePlayer: new Set(),
+            projectile: new Set(), playerAdded: new Set(), playerLeft: new Set(), buildingDamage: new Set(),
+            died: new Set(), setup: new Set()
+        };
+        const runHooks = (set, a, b, c) => {
+            for (const fn of Array.from(set)) { try { fn(a, b, c); } catch (e) { console.error("[moomoo.js] combat hook threw", e); } }
+        };
 
-        // ---- geometry on predicted positions (se / B / S4), ported 1-1 ----
-        const gx = (e) => (e && e.x2 != null ? e.x2 : (e ? e.x : 0)) || 0;
-        const gy = (e) => (e && e.y2 != null ? e.y2 : (e ? e.y : 0)) || 0;
+        // ---- A4(): resolves at the next tick, at the exact point the bundle did ----
+        function A4() { return new Promise((e) => { Ve[Ve.length] = e; }); }
+
+        // ---- te(sid): me or a clan member ----
+        function te(t) {
+            if (t == z.sid) return true;
+            for (let e = 0; e < py.length; e += 2) if (t == py[e]) return true;
+            return false;
+        }
+
+        // ---- player lookup ----
+        function Hg(t) { for (let e = 0; e < J.length; ++e) if (J[e].sid == t) return J[e]; return null; }
+        function jg(t) { for (let e = 0; e < J.length; ++e) if (J[e].id == t) return J[e]; return null; }
+        function Wg(t) { for (let e = 0; e < bh.length; ++e) if (bh[e].sid == t) return bh[e]; return null; }
+
+        // ---- geometry on predicted positions (se / B / S4 / L3), ported 1-1 ----
+        const gx = (e) => (e.x2 || e.x);
+        const gy = (e) => (e.y2 || e.y);
         function S4(e, t) { return getDistance(gx(e), gy(e), gx(t), gy(t)); }
         function se(e, t, n) {
-            const off = n === "player" ? -1.8 * 35 : n === "object" ? -(t && t.scale || 0) : 0;
-            return getDistance(gx(e), gy(e), gx(t), gy(t)) + off;
+            const i = n === "player" ? -1.8 * 35 : n === "object" ? -(t && t.scale) : 0;
+            return getDistance(gx(e), gy(e), gx(t), gy(t)) + i;
         }
-        function B(e, t) { return P(gy(t) - gy(e), gx(t) - gx(e)); }
+        function B(e, t) { return P((t.y2 || t.y) - (e.y2 || e.y), (t.x2 || t.x) - (e.x2 || e.x)); }
+        function Dy(e, t) { return Math.hypot((e.x2 || e.x) - (t.x2 || t.x), (e.y2 || e.y) - (t.y2 || t.y)); }
+        function P3(e, t, n, i) { if (n == undefined) return { x: z.x, y: z.y }; return { x: e + i * U(n), y: t + i * V(n) }; }
+        function L3(e, t) {
+            const n = S((e.x2 || e.x) - (t.x2 || t.x));
+            const i = S((e.y2 || e.y) - (t.y2 || t.y));
+            return n <= K.maxScreenWidth / 2 * 1.3 && i <= K.maxScreenHeight / 2 * 1.3;
+        }
+        const X5 = (e, t) => D(e * e + t * t);
 
         // ---- game-data helpers ----
         const weapon = (id) => data.weapon(id);
-        const item = (id) => data.item(id);
-        const hat = (id) => data.hat(id);
-        const acc = (id) => data.accessory(id);
-        const weaponSpeed = (id) => { const w = weapon(id); return (w && w.speed != null) ? w.speed : 300; };
+        const weaponSpeed = (id) => { const w = weapon(id); return (w && w.speed != null) ? w.speed : undefined; };
         const weaponRange = (id) => { const w = weapon(id); return (w && w.range != null) ? w.range : 0; };
-        const variantVal = (vi) => VARIANT_VAL[vi] || 1;
+        const variantVal = (vi) => EN[vi] || 1;
 
         // ---- x4: movement-speed multiplier (bundle x4) ----
         function x4(t) {
             const w = weapon(t.weaponIndex);
-            const sh = hat(t.skinIndex), ta = acc(t.tailIndex);
-            let e = ((t.buildIndex < 0) + 1) / 2
-                * ((w && w.spdMult) || 1)
-                * ((t.skinIndex && sh && sh.spdMult) || 1)
+            const sh = t.skinIndex ? hatOf(t.skinIndex) : null, ta = t.tailIndex ? accOf(t.tailIndex) : null;
+            let e = ((t.buildIndex < 0) + 1) / 2 * ((w && w.spdMult) || 1) * ((t.skinIndex && sh && sh.spdMult) || 1)
                 * ((t.tailIndex && ta && ta.spdMult) || 1)
-                * (t.y2 <= K.snowBiomeTop ? ((t.skinIndex && sh && sh.coldM) ? 1 : 0.75) : 1)
-                * 1;
+                * (t.y2 <= K.snowBiomeTop ? ((t.skinIndex && sh && sh.coldM) ? 1 : 0.75) : 1) * 1;
             if (!t.zIndex && t.y2 >= K.mapScale / 2 - K.riverWidth / 2 && t.y2 <= K.mapScale / 2 + K.riverWidth / 2) {
-                e *= ((t.skinIndex && sh && sh.watrImm) ? 0.75 : 0.33);
+                e *= (t.skinIndex && sh && sh.watrImm) ? 0.75 : 0.33;
             }
             return e;
         }
+        // ---- w4: per-tick movement distance for a loadout (bundle w4) ----
+        function w4(t, e) {
+            t = {
+                buildIndex: t?.buildIndex ?? e?.buildIndex ?? -1,
+                weaponIndex: t?.weaponIndex ?? e?.weaponIndex ?? null,
+                skinIndex: t?.skinIndex ?? e?.skinIndex ?? null,
+                tailIndex: t?.tailIndex ?? e?.tailIndex ?? null,
+                y2: t?.y2 ?? e?.y2 ?? 0,
+                zIndex: t?.zIndex ?? e?.zIndex ?? false
+            };
+            return (ce / 2) * x4(t);
+        }
 
         // ---- l4: next-position prediction (accel / decel / real), ported 1-1 ----
+        // `Nt` (standing in an enemy trap) and `Dn` (our move dir) are read the way
+        // the bundle read them: Nt as last tick's value, Dn = what we last sent.
         function l4(e, t, n, i, s) {
             if (s == null) s = 111;
             if (!i) {
-                if (e.sid === z.sid && t !== 0 && !t) t = selfInput.moveDir;
-                else if (selfInSpike && e.sid === z.sid) t = undefined;
+                if (e.sid == z.sid && t !== 0 && !t) t = selfInput.moveDir;
+                else if (state.Nt && e.sid == z.sid) t = undefined;
                 else if (!t && t !== 0) t = e.movDir;
             }
             let o = U(t), r = V(t);
-            const a = D(o, r);
-            if (a !== 0) { o /= a; r /= a; }
+            const a = D(o * o + r * r);
+            a != 0 && (o /= a, r /= a);
             if (!n) n = e;
             const l = x4(n);
-            let speedXD = 0, speedYD = 0, predX = 0, predY = 0;
-            if (o) speedXD += o * 0.0016 * l * s;
-            if (r) speedYD += r * 0.0016 * l * s;
-            if (speedXD) predX += speedXD * s;
-            if (speedYD) predY += speedYD * s;
-            const f = e.xVel * re(0.993, s), h = e.yVel * re(0.993, s);
-            const p = f + predX, m = h + predY;
+            e.speedXD = 0; e.speedYD = 0; e.predY = 0; e.predX = 0;
+            o && (e.speedXD += o * 0.0016 * l * s);
+            r && (e.speedYD += r * 0.0016 * l * s);
+            e.speedXD && (e.predX += e.speedXD * s);
+            e.speedYD && (e.predY += e.speedYD * s);
+            const f = e.xVel * re(0.993, s), hh = e.yVel * re(0.993, s);
+            const p = f + e.predX, m = hh + e.predY;
             const g = { x: e.x2 + p, y: e.y2 + m, type: "accel" };
-            const y = { x: e.x2 + f, y: e.y2 + h, type: "decel" };
+            const y = { x: e.x2 + f, y: e.y2 + hh, type: "decel" };
+            const xx = T(p, m, { x: e.x2 + p, y: e.y2 + m });
             const w = { x: e.x2, y: e.y2, type: "current" };
             const b = { x: p, y: m, type: "nextVel" };
+            let real = g;
+            const k = H(D(p * p + m * m));
             const I = s * 1.5 * U(t), So = s * 1.5 * V(t);
             const E = { x: e.x2 + I, y: e.y2 + So };
-            const x = T(p, m, { x: e.x2 + p, y: e.y2 + m });
-            let real = g;
-            const pnp = prev.get(e.sid) && prev.get(e.sid).np;
-            if (pnp != null && e.sid !== z.sid) {
-                real = (se(e, pnp.accel) > se(e, pnp.decel) && Ay(e.movDir, e.pmovDir) <= 0.3) ? y : g;
-            }
-            if (e.sid === z.sid) real = (selfInput.moveDir == null) ? y : g;
-            const k = H(D(p, m));
-            return { accel: g, decel: y, boostCoords: E, boostVel: { x: I, y: So }, nextVel: b, real, current: w, fullDecel: x, xVel: p, spd: l, yVel: m, vel: k };
+            if (Xe[e.sid]?.np != undefined && e.sid != z.sid) real = se(e, Xe[e.sid]?.np?.accel) > se(e, Xe[e.sid]?.np?.decel) && Ay(e.movDir, e.pmovDir) <= 0.3 ? y : g;
+            if (e.sid == z.sid) real = (selfInput.moveDir == undefined || selfInput.moveDir == null) ? y : g;
+            return { accel: g, decel: y, boostCoords: E, boostVel: { x: I, y: So }, nextVel: b, real, current: w, fullDecel: xx, xVel: p, spd: l, yVel: m, vel: k };
 
-            function T(e, t, n) {
+            function T(e, t, n, i, s) {
                 if (isNaN(e) || isNaN(t)) return;
-                const i = e * r3, sv = t * r3;
-                if (e !== i) { e = i; n.x += e; }
-                if (t !== sv) { t = sv; n.y += t; }
-                if (e === i && t === sv) return { x: n.x, y: n.y, type: "full decel" };
-                return T(e, t, n);
+                try {
+                    i = e * r3; s = t * r3;
+                    if (e != i) { e = i; n.x += e; }
+                    if (t != s) { t = s; n.y += t; }
+                    if (e == i && t == s) return { x: n.x, y: n.y, type: "full decel" };
+                    return T(e, t, n);
+                } catch (err) { /* deep recursion: bundle swallows */ }
             }
         }
+        // ---- a4: n-tick prediction chain (bundle a4) ----
+        function a4(e, t, n, i, s = [], o, r, a) {
+            r = { ...e };
+            if (e.sid == z.sid && n !== 0 && !n) n = selfInput.moveDir;
+            else if (state.Nt && e.sid == z.sid) n = undefined;
+            else if (!n && n !== 0) n = e.movDir;
+            a = l4(r, n);
+            r.xVel = a.xVel; r.yVel = a.yVel; r.x2 = a.real.x; r.y2 = a.real.y;
+            s.push(a);
+            if (t - 1 <= 0) return s;
+            return a4(r, t - 1, n, r, s);
+        }
 
-        // ---- loadout resolver (yy): map self.items/weapons -> slot ids ----
-        // Action-bar index e maps to item id e-16, so each group's owned item is
-        // simply the self.items entry whose id falls in that group's id range.
-        let selfInSpike = false;         // z in an enemy spike/trap (Nt analogue)
+        // ---- b4: learn a player's loadout from what they build (bundle b4) ----
+        function b4(e, t) {
+            const i = x.list[t];
+            if (!i || !e) return;
+            if (i.group.name == "mill") e.windmill = i;
+            if (i.group.name == "spikes") e.spike = i;
+            if (i.name == "boost pad") e.spike = false;
+            if (i.age == 7) e.utility = i;
+            if (i.group.name == "walls") e.wall = i;
+            if (i.group.name == "food") e.food = i;
+            if (i.name == "spawn pad") e.spawnpad = true;
+        }
+        // ---- g4: assumeAge, the highest age a player has revealed (bundle g4) ----
+        function g4(e) {
+            let t = 0;
+            const n = e.loadout;
+            if (n?.spawnpad || weapon(e?.secondary)?.age == 9 || n?.spike?.age == 9) return 9;
+            n.utility && (t = 7);
+            t < weapon(e?.secondary)?.age && (t = weapon(e?.secondary)?.age);
+            t < weapon(e?.primary)?.age && (t = weapon(e?.primary)?.age);
+            t < n?.spike?.age && (t = n.spike.age);
+            t < n?.food?.age && (t = n.food.age);
+            t < n?.windmill?.age && (t = n.windmill.age);
+            t < n?.wall?.age && (t = n.wall.age);
+            e?.weaponIndex == 0 && (t = 1);
+            if (e?.primary == 0 && t > 1) e.primary = undefined;
+            return t;
+        }
+
+        // ---- self loadout (bundle yy(), which read the action bar) ----
+        // Action-bar slot k shows item k-16, so each slot range is an item-id range.
         const loadout = {
             ee: null, A: null, ry: null, ay: null, ly: null, cy: null, dy: null, uy: null, fy: null, hy: null,
             spike: null, wall: null, food: null, windmill: null, utility: null, spawnpad: false
         };
-        function inRange(id, lo, hi) { return id >= lo && id <= hi; }
-        function resolveLoadout() {
+        function yy() {
             const weapons = z.weapons || [], items = z.items || [];
-            loadout.ee = weapons[0] != null ? weapons[0] : null;        // primary weapon id
-            loadout.A = weapons[1] != null ? weapons[1] : null;         // secondary weapon id
-            loadout.ry = loadout.ay = loadout.ly = loadout.cy = loadout.dy = loadout.uy = loadout.fy = loadout.hy = null;
+            loadout.ee = null; loadout.ry = null; loadout.A = null; loadout.dy = null; loadout.ay = null;
+            loadout.ly = null; loadout.cy = null; loadout.fy = null; loadout.hy = null; loadout.uy = null;
+            for (const id of weapons) { if (id != null && id < 9) loadout.ee = id; else if (id != null) loadout.A = id; }
             for (const id of items) {
-                if (inRange(id, 0, 2)) loadout.ry = id;
-                else if (inRange(id, 3, 5)) loadout.ay = id;
-                else if (inRange(id, 6, 9)) loadout.ly = id;
-                else if (inRange(id, 10, 12)) loadout.cy = id;
-                else if (inRange(id, 13, 14)) loadout.dy = id;
-                else if (inRange(id, 15, 16)) loadout.uy = id;
+                if (id >= 0 && id <= 2) loadout.ry = id;
+                else if (id >= 3 && id <= 5) loadout.ay = id;
+                else if (id >= 6 && id <= 9) loadout.ly = id;
+                else if (id >= 10 && id <= 12) loadout.cy = id;
+                else if (id >= 13 && id <= 14) loadout.dy = id;
+                else if (id >= 15 && id <= 16) loadout.uy = id;
                 else if (id === 20) loadout.fy = id;
-                else if (inRange(id, 17, 22) && id !== 20) loadout.hy = id;
+                else if (id >= 17 && id <= 22) loadout.hy = id;
             }
-            // b4: classify the spike/wall/food/windmill/utility item defs for dmgpot.
-            loadout.spike = loadout.ly != null ? item(loadout.ly) : null;
-            loadout.wall = loadout.ay != null ? item(loadout.ay) : null;
-            loadout.food = loadout.ry != null ? item(loadout.ry) : null;
-            loadout.windmill = loadout.cy != null ? item(loadout.cy) : null;
-            loadout.utility = loadout.hy != null ? item(loadout.hy) : null;
+            loadout.spike = loadout.ly != null ? x.list[loadout.ly] : null;
+            loadout.wall = loadout.ay != null ? x.list[loadout.ay] : null;
+            loadout.food = loadout.ry != null ? x.list[loadout.ry] : null;
+            loadout.windmill = loadout.cy != null ? x.list[loadout.cy] : null;
+            loadout.utility = loadout.hy != null ? x.list[loadout.hy] : null;
             loadout.spawnpad = loadout.fy != null;
+            return loadout;
         }
 
-        // ---- reload fill (xy): fill pr/sr/tr for a visible player, one tick ----
-        function xy(t) {
-            if (t.buildIndex === -1) {
+        // ---- reload fill (xy) / fill while invisible (by), ported 1-1 ----
+        function xy(t, e) {
+            if (t.buildIndex == -1) {
                 if (t.weaponIndex <= 8) {
-                    const e = weaponSpeed(t.primary);
-                    t.pr = j(1, t.pr + (t.delta > 190 ? t.delta : ce) / (e * t.samRP));
+                    const sp = weaponSpeed(t.primary);
+                    t.pr = j(1, t.pr + (t.delta > 190 ? t.delta : ce) / (sp * t.samRP));
                 } else if (t.weaponIndex > 8) {
-                    const e = weaponSpeed(t.secondary);
-                    t.sr = j(1, t.sr + (t.delta > 190 ? t.delta : ce) / (e * t.samRS));
+                    const sp = weaponSpeed(t.secondary);
+                    t.sr = j(1, t.sr + (t.delta > 190 ? t.delta : ce) / (sp * t.samRS));
                 }
             }
             t.tr = j(1, t.tr + t.delta / 2400);
+            rn[t.sid] = t.pr; an[t.sid] = t.sr; ln[t.sid] = t.tr;
+            if (t.sid != z.sid) {
+                if (!t.hasSoldier && t.skinIndex == 6) t.hasSoldier = true;
+                if (!t.hasTank && t.skinIndex == 40) t.hasTank = true;
+            }
         }
-        // by: keep filling reload for players no longer visible (bundle by()).
-        function by(t) {
-            if (t.pr != null && t.pr !== 1) t.pr = j(1, t.pr + ce / (weaponSpeed(t.primary) * t.samRP));
-            if (t.sr != null && t.sr !== 1) t.sr = j(1, t.sr + ce / (weaponSpeed(t.secondary) * t.samRS));
-            if (t.tr != null && t.tr !== 1) t.tr = j(1, t.tr + ce / 2500);
-        }
-
-        // ---- per-player state init (new player) ----
-        function initPlayerState(q) {
-            if (q.__combatInit) return;
-            q.__combatInit = true;
-            q.pr = 1; q.sr = 1; q.tr = 1;
-            q.samRP = 1; q.samRS = 1;
-            q.primaryVar = 3; q.secondaryVar = 3;
-            q.primary = undefined; q.secondary = undefined;
-            q.x2 = q.x; q.y2 = q.y; q.preX = q.x; q.preY = q.y;
-            q.xVel = 0; q.yVel = 0; q.movSpd = 0; q.movDir = undefined; q.pmovDir = undefined;
-            q.delta = ce; q.hitProjs = 0; q.visible = false;
-            q.lastBull = 0; q.bleed = undefined; q.poison = 0;
-            q.slowMult = 1; q.shameCount = 0; q.weaponR = 1;
+        function by() {
+            for (let e = 0; e < J.length; e++) {
+                const t = J[e];
+                if (!t.visible && t.sid != z.sid) {
+                    t.pr != undefined && t.pr !== 1 && (t.pr = j(1, t.pr + ce / (weaponSpeed(t?.primary) * t.samRP)));
+                    t.sr != undefined && t.sr !== 1 && (t.sr = j(1, t.sr + ce / (weaponSpeed(t?.secondary) * t.samRS)));
+                    t.tr != undefined && t.tr !== 1 && (t.tr = j(1, t.tr + ce / 2500));
+                    rn[t.sid] = t.pr; an[t.sid] = t.sr; ln[t.sid] = t.tr;
+                }
+            }
         }
 
-        // ---- the "a" tick: reconstruct everyone (bundle updatePlayers) ----
-        function updatePlayers(payload) {
-            const now = Date.now();
-            const dt = lastTickTime ? (now - lastTickTime) : ce;
-            lastTickTime = now;
+        // ---- addPlayer ("D"): vanilla spawn/setData + the bundle's per-player state ----
+        function spawnFields(e) {
+            Object.assign(e, {
+                active: true, alive: true, lockMove: false, lockDir: false, minimapCounter: 0, chatCountdown: 0,
+                shameCount: 0, shameTimer: 0, gathering: 0, autoGather: 0, animTime: 0, animSpeed: 0, mouseState: 0,
+                buildIndex: -1, weaponIndex: 0, noMovTimer: 0, maxXP: 300, deathCount: 0, XP: 0, age: 1, kills: 0,
+                upgrAge: 2, upgradePoints: 0, zIndex: 0, xVel: 0, yVel: 0, slowMult: 1, dir: 0, dirPlus: 0, targetDir: 0,
+                targetAngle: 0, maxHealth: 100, health2: 0, samRP: 1, samRS: 1, pr: 1, sr: 1, hasSoldier: false,
+                hasTank: false, scale: K.playerScale, speed: K.playerSpeed, shootCount: 0, timeSpentNearVolcano: 0
+            });
+            e.health = e.maxHealth;
+            if (!e.weaponXP) e.weaponXP = [];
+            e.dmgOverTime = {};
+            e.reloads = {};
+        }
+        function onPlayerAdd(p) {
+            const t = p.data, isYou = !!p.isYou;
+            if (!Array.isArray(t)) return;
+            let e = jg(t[0]);
+            const fresh = !e;
+            if (!e) {
+                if (t[1] === z.sid || isYou) e = z;
+                else {
+                    e = MooMoo.players.get(t[1]);
+                    if (!e) { e = { sid: t[1] }; MooMoo.players.set(t[1], e); }   // one object shared with the runtime
+                }
+                if (J.indexOf(e) < 0) J.push(e);
+                e.id = t[0];
+                e.tmpScore = 0; e.team = e.team ?? null; e.skinIndex = e.skinIndex || 0; e.tailIndex = e.tailIndex || 0;
+                e.hitTime = 0; e.points = e.points || 0; e.dt = 0; e.hidden = false; e.itemCounts = e.itemCounts || {};
+                e.isPlayer = true; e.pps = 0; e.moveDir = undefined; e.skinRot = 0; e.lastPing = 0; e.iconIndex = 0;
+                e.deaths = 0; e.skinColor = 0;
+            }
+            spawnFields(e);
+            e.visible = false;
+            e.x2 = undefined; e.y2 = undefined;
+            // setData (bundle-modified)
+            e.id = t[0]; e.sid = t[1]; e.name = t[2]; e.x = t[3]; e.y = t[4]; e.dir = t[5]; e.bot = false;
+            e.health = t[6]; e.maxHealth = t[7]; e.scale = t[8]; e.skinColor = t[9];
+            e.__hp = t[6];
+            e.rx = t[3]; e.ry = t[4]; e.rdir = t[5];
+            e.pr = 1; e.sr = 1; e.tr = 1; e.hitProjs = 0; e.primary = undefined; e.secondary = undefined;
+            e.shameCount = 0; e.primaryVar = 3; e.secondaryVar = 3; e.lastx = 0; e.tick = v; e.lasty = 0;
+            e.aura = !!t[10]; e.bossMode = !!t[11]; e.clan = t[12] || null;
+            if (isYou) { e.weapons = [0]; e.items = [0, 3, 6, 10]; }
+            // the bundle's own per-player state (addPlayer, ~line 15555)
+            rn[t[1]] = 1; an[t[1]] = 1; e.pr = 1; e.sr = 1;
+            !e.seenCount ? e.seenCount = 1 : e.seenCount++;
+            e.primary = null; e.secondary = null;
+            e.samRP = 1; e.didDeath = false; e.samRS = 1;
+            e.noAntiList = e.noAntiList ?? new Array(10).fill(0);
+            e.healArr = [];
+            e.loadout = { spike: x.list[9], spawnpad: false, utility: undefined, windmill: undefined, trap: true, wall: x.list[3], food: x.list[0] };
+            ln[t[1]] = 1;
+            e.deathDmgs = []; e.dmgsNow = [];
+            !e.trackLeak && (e.trackLeak = []);
+            !e.trackGain && (e.trackGain = []);
+            e.tr = 1; e.shameCount = 0; e.healTrack = []; e.Alive = true;
+            if (isYou) { e.loadout = loadout; }
+            runHooks(hooks.playerAdded, e, { fresh, isYou, seenCount: e.seenCount });
+        }
+        // ---- playerRemove ("E" -> ug): forget the player and their projectiles ----
+        function onPlayerRemove(p) {
+            const sid = p.sid;
+            for (let i = Ln.length - 1; i >= 0; i--) if (Ln[i].owner.sid == sid) Ln.splice(i, 1);
+            for (let e = 0; e < J.length; e++) {
+                if (J[e].sid == sid && J[e] !== z) { const gone = J[e]; J.splice(e, 1); runHooks(hooks.playerLeft, gone); break; }
+            }
+        }
+
+        // ---- health ("O" -> updateHealth): record only; l5 runs in the next frame ----
+        function onHealth(p) {
+            const q = Hg(p.sid);
+            if (!q) return;
+            const n = Date.now();
+            // the runtime already wrote the new value into q.health; the bundle's
+            // delta is against the value it held before this packet
+            const prevHealth = q.__hp != null ? q.__hp : q.health;
+            const i = p.value - prevHealth;
+            q.isPlayer && q.healArr && q.healArr.push([i, p.value, n]);
+            q.lastHealth = prevHealth;
+            q.animatedHealth = Date.now();
+            q.health = p.value;
+            q.__hp = p.value;
+        }
+
+        // ---- l5: health-change analysis (shame count, bull cadence, spike hits) ----
+        function l5(e, t, n, i) {
+            let r;
+            const o = Hg(e);
+            if (!o) return;
+            if (o.health <= 0 && o.vis2 && !o.visible && !o.didDeath) { runHooks(hooks.framePlayer, o, "deathAnim"); o.deaths++; o.didDeath = true; }
+            if (!z.healths) z.healths = [];
+            if (o.sid == z.sid) {
+                if (z.healths.length >= 8) z.healths.pop();
+                if (o.sid == z.sid) z.healths.push({ hp: o.health, tick: v });
+            }
+            if (t == -5 * (o.skinIndex == 6 ? 0.75 : 1) && o.poison) o.lastBull = v - 1;
+            if (o.health <= 0) { o.Alive = false; o.Alive2 = false; }
+            if (t < 0) {
+                if (o.sid != z.sid && o.dmgs == "XD") o.dmgs = 0;
+                if (o.sid != z.sid) o.dmgs += S(t);
+                if (o == z) z.lastDamage3 = i;
+            }
+            o.dmgsNow.unshift(H(t * 100) / 100);
+            if (t > 0) {
+                if (o.skinIndex == 13) {
+                    if (o.tailIndex == 13) { t == 6 && (o.lastBull = v - 1); z == o && (et = 0); return; }
+                    else { t == 3 && (o.lastBull = v - 1); z == o && (et = 0); return; }
+                }
+                if (!isNaN(o.shameCount) && o.lastDamage) {
+                    if (i - o.lastDamage <= 120) {
+                        o.healTime = i - o.lastDamage2;
+                        o.shameCount >= 8 && o.assumeAge >= 7 && S(tn - i) <= 2 && t <= 10 && o.loadout.utility == undefined && (o.loadout.utility = x.list[2]);
+                        r = o.assumeAge >= 7 && o.loadout?.utility?.name == "cheese" && S(tn - i) <= 2 && t <= 10 ? true : false;
+                        if (!r) {
+                            o.noAntiList = o.noAntiList.map((x2) => x2 * 0.95);
+                            !o.shameUp && (o.shameUp = []);
+                            o.shameUp.length >= 5 && o.shameUp.shift();
+                            o.shameUp.push(o.healTime);
+                            o.gainSpeed = o.shameUp.reduce((a, b) => a + b, 0) / o.shameUp.length;
+                            o.prevShameUp = o.shameCount;
+                            if (o.lowHealth <= 40) o.noAntiList[o.shameCount]--;
+                            o.shameCount = j(8, o.shameCount + 1);
+                        }
+                    } else {
+                        r = o.assumeAge >= 7 && o.loadout?.utility?.name == "cheese" && S(tn - i) <= 2 && t <= 10 ? true : false;
+                        if (!r) {
+                            o.healTime = i - o.lastDamage2;
+                            !o.shameDown && (o.shameDown = []);
+                            o.shameDown.length >= 5 && o.shameDown.shift();
+                            o.shameDown.push(o.healTime);
+                            o.leakSpeed = o.shameDown.reduce((a, b) => a + b, 0) / o.shameDown.length;
+                            o.prevShameDown = o.shameCount;
+                            if (o.lowHealth <= 60) {
+                                o.noAntiList[o.shameCount]++;
+                                const tt = o.noAntiList.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+                                if (tt >= 3) {
+                                    const ix = o.noAntiList.indexOf(Math.max(...o.noAntiList));
+                                    if (o.noAntiList[ix] * 2 > tt) o.noAnti = ix;
+                                }
+                            }
+                            o.shameCount = oe(0, o.shameCount - 2);
+                        }
+                    }
+                    o.lastDamage = 0; o.lastDamage2 = 0; o.thisHealth = undefined;
+                }
+            } else {
+                o.lowHealth = n;
+                o.lastDamage = i;
+                o.lastDamage2 = i;
+                o.dmgDate = i;
+                o.thisHealth = o.health;
+                if (!te(o.sid) && Y?.inTrap) {
+                    const ee = Xt.filter((e2) => se(Y.inTrap, e2) <= 50 + e2.scale + 35 && (te(e2?.owner?.sid) && e2?.group?.name == "spikes" || Y && !Y.team && e2?.group?.name == "spikes" && e2?.owner?.sid != Y.sid || e2?.type == 1 && e2.y >= 12e3));
+                    if (ee.length && t == -(ee[0]?.type != 1 ? ee[0]?.dmg : 35) * (o.skinIndex == 6 ? 0.75 : 1)) o.hitSpike = true;
+                }
+                if (o.sid === z.sid) {
+                    const ee = Xt.filter((e2) => se(z, e2) <= e2.scale + 35 && (!te(e2?.owner?.sid) && e2?.group?.name == "spikes" || e2?.type == 1 && e2.y >= 12e3));
+                    if (ee.length && t == -(ee[0]?.type != 1 ? ee[0]?.dmg : 35) * (o.skinIndex == 6 ? 0.75 : 1)) o.hitSpike = ee[0];
+                }
+                if (o.skinIndex == 7) {
+                    if (o.tailIndex == 13) {
+                        if (t == -2) { o.lastBull = v - 1; o.lastBull2 = Date.now(); o.bTT = 1e3; return; }
+                    } else if (t == -5) {
+                        if (o == z) et = 0;
+                        o.lastBull2 = Date.now(); o.bTT = 1e3; o.lastBull = v - 1;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // ---- swing ("K" -> gatherAnimation): reload reset deferred to next tick ----
+        function k2(e, n, t, i, s, o) {
+            if (!i) return pn.push({ id: k2, data: [e, t, n, true] });
+            o = Hg(e);
+            if (o === null) return;
+            n > 9 ? o.sr = 0 : o.pr = 0;
+            o.slowMult -= weapon(n)?.hitSlow || 0.3;
+            if (o.slowMult < 0) o.slowMult = 0;
+            o.sid == z.sid && (z.invisTime = 1e3);
+            o.skinIndex == 20 && n > 9 ? o.samRS = 0.78 : o.samRS = 1;
+            o.skinIndex == 20 && n < 9 ? o.samRP = 0.78 : o.samRP = 1;
+            s = Hg(e);
+            const r = J.concat(bh);
+            r.filter((e2) => {
+                const tt = e2.sid != s.sid && se(s, e2, "player") <= weapon(n).range && (s.team && s.team != e2.team || !s.team) && getAngleDist(B(s, e2), s.d2) <= h ? true : false;
+                if (!e2.isAI && tt) {
+                    if (n >= 9 && (s.secondaryVar === 3 || s.skinIndex == 21) || n < 9 && (s.primaryVar === 3 || s.skinIndex == 21)) e2.poison = 5;
+                }
+                if (tt) {
+                    if (s.skinIndex == 58 || s.skinIndex == 55 || s.tailIndex == 18) s.gatherHeal = { dmg: weapon(n).dmg, tick: v };
+                }
+                return false;
+            });
+        }
+        async function onGather(p) {
+            const a = p && p.args; if (!a) return;
+            const e = a[0], t = a[1], n = a[2];
+            let s = Hg(e);
+            if (s) {
+                s.lastSwing = { didHit: t, weaponIndex: n, at: Date.now() };    // for the swing animation visuals
+                k2(e, t, n, false);
+                s.hitBuild = t;
+            }
+            await A4();
+            if (t) {
+                s = Hg(e);
+                if (s) ft.slice().forEach((r) => r.attemptResolve(s, s.skinIndex, v));
+            }
+        }
+
+        // ---- building damage inference (O3): match a wiggle to the hit behind it ----
+        class O3 {
+            constructor(e, t) {
+                this.dir = e;
+                this.building = t;
+                this.building.players = [];
+                const n = this;
+                new Promise(function (res, rej) {
+                    n.resolve = res;
+                    setTimeout(function () { rej(); }, 111);
+                }).then(function (dmg) {
+                    n.building.health -= dmg;
+                    n.remove();
+                }).catch(function () { n.remove(); });
+            }
+            remove() { const i = ft.indexOf(this); if (i >= 0) ft.splice(i, 1); }
+            attemptResolve(s, o, r, e, t) {
+                if (e && this.building.sid == e.building.sid && r === this.building.tick) {
+                    this.resolve(this.building.projDmg ? e.dmg : 0);
+                } else if (t && !e && r === this.building.tick) {
+                    this.resolve(200);
+                    runHooks(hooks.buildingDamage, this.building, 200, null);
+                } else if (!e && this.building.owner != null && this.building.name != "mine" && this.building.name != "sapling") {
+                    const ang = P(this.building.y - s.y2, this.building.x - s.x2);
+                    const tt = B(s, this.building);
+                    if ((H(ang * 10) / 10 == this.dir || Ay(H(ang * 10) / 10, this.dir) <= 0.1005) && r == this.building.tick && se(s, this.building, "object") <= weapon(s.weaponIndex).range && getAngleDist(tt, s.d2) <= h && !this.building.players.includes(s.sid)) {
+                        const dmg = EN[s.weaponVariant] * (o == 40 ? 3.3 : 1) * weapon(s.weaponIndex).dmg * (s.weaponIndex == 10 ? 7.5 : 1);
+                        this.resolve(dmg);
+                        this.building.players.push(s.sid);
+                        runHooks(hooks.buildingDamage, this.building, dmg, s);
+                    }
+                }
+            }
+        }
+        async function onWiggle(p) {
+            const a = p && p.args; if (!a) return;
+            const e = a[0], t = a[1];
+            await A4();
+            const q = objects && objects.get(t);
+            if (q) {
+                q.tick = v;
+                ft.push(new O3(e, q));
+                q.lastHealth = q.health;
+                q.animatedHealth = Date.now();
+            }
+        }
+        function onTurretShoot(p) {
+            const a = p && p.args; if (!a) return;
+            const q = objects && objects.get(a[0]);
+            if (q) { q.xWiggle += K.gatherWiggle * U(a[1] + W); q.yWiggle += K.gatherWiggle * V(a[1] + W); }
+        }
+
+        // ---- animals ("I" -> og) + animal attack ("J" -> sg) ----
+        function onAnimals(p) {
+            const args = (p && p.args) || [];
+            const n = args[0] || [];
+            const hidden = args[1] || [];
+            bosses = { Xi: null, Ji: null, qi: null };
+            for (let e = bh.length; e--;) { bh[e].forcePos = !bh[e].visible; bh[e].visible = false; }
+            for (let e = 0, t = Date.now(); e < n.length; e += 8) {
+                let q = Wg(n[e]);
+                const dir = n[e + 4] / 100;
+                if (q) {
+                    q.index = n[e + 1];
+                    q.t1 = q.t2 === undefined ? t : q.t2; q.t2 = t;
+                    q.x1 = q.x; q.y1 = q.y;
+                    q.x2 = n[e + 2]; q.y2 = n[e + 3];
+                    q.d1 = q.d2 === undefined ? dir : q.d2; q.d2 = dir;
+                    q.health = n[e + 5];
+                    q.dt = 0; q.visible = true;
+                } else {
+                    const type = data.animal(n[e + 1]) || {};
+                    q = {
+                        sid: n[e], index: n[e + 1], isAI: true, active: true, src: type.src, name: type.name || "",
+                        scale: type.scale, maxHealth: type.health, killScore: type.killScore, hostile: !!type.hostile,
+                        weightM: type.weightM || 1, spriteMlt: type.spriteMlt, nameScale: type.nameScale,
+                        x: n[e + 2], y: n[e + 3], dir, startX: n[e + 2], startY: n[e + 3], xVel: 0, yVel: 0, zIndex: 0
+                    };
+                    bh.push(q);
+                    q.x2 = q.x; q.y2 = q.y; q.d2 = q.dir;
+                    q.health = n[e + 5];
+                    if (!type.name) q.name = ["Steph", "Bessie", "Wilfred", "Emily", "Hugo", "Sue", "Tim", "Zeus", "Mira", "Frank"][n[e + 6]] || q.name;
+                    q.forcePos = true; q.visible = true;
+                }
+                q.state = n[e + 7];
+                if (q.index < 6) continue;
+                if (q.name === "MOOSTAFA") bosses.Xi = q;
+                else if (q.name === "MOOFIE") bosses.Ji = q;
+                else if (q.name === "Treasure") bosses.qi = q;
+            }
+            for (const sid of hidden) { const q = Wg(sid); if (q) q.visible = false; }
+        }
+        async function onAnimalAttack(p) {
+            const q = Wg(p && p.args && p.args[0]);
+            if (q) {
+                q.lastAttack = Date.now();
+                await A4();
+                ft.slice().forEach((r) => r.attemptResolve(1, 1, v, 0, q));
+            }
+        }
+
+        // ---- projectiles ("X" -> addProjectile -> tg, deferred one tick) ----
+        function eg(t) {
+            const n = Xt.filter((e) => e.name == "platform");
+            for (let e = 0; e < n.length; e++) if (S4(n[e], t) <= 35 + n[e].scale) return 1;
+            return 0;
+        }
+        function v4(t, n) {
+            const e = objects && objects._list.find((o) => o.name == "turret" && o.x == t && o.y == n);
+            if (e) { e.time = 2200; e.NOW = false; e.shot = Date.now(); return e; }
+            return false;
+        }
+        function tg(i, s, o, e, t, n, r, a, l, c) {
+            if (!r && !a && !l) return pn.push({ id: tg, data: [i, s, o, e, t, n, false, true] });
+            if (n == 1) {
+                const tur = v4(i, s);
+                if (l && tur) return tur;
+                if (tur) return;
+            }
+            let f = null;
+            const hp = P3(i, s, o + W, 70);
+            for (let k = 0; k < J.length; k++) {
+                c = J[k];
+                if (t == 1.5 && n == 1) {
+                    if (c.visible && c.skinIndex == 53 && se({ x: i, y: s }, c) <= 2) { f = c; break; }
+                }
+                if (!(t == 1.5 && n == 1)) {
+                    if (c.visible && c?.weaponIndex == c?.secondary && c.d2 === o && weapon(c.weaponIndex)?.projectile == n && S4(hp, c) <= 20) { f = c; break; }
+                }
+            }
+            if (l) return f;
+            if (f) {
+                Ln.push({
+                    x: f.x2, y: f.y2, dir: o, spd: t * (f.skinIndex === 1 ? 1.3 : 1),
+                    avoid: t == 1.5 || eg(f) ? 1 : 0, max: x.projectiles[n].range, dmg: x.projectiles[n].dmg,
+                    traveled: 0, owner: f, building: null, hit: null, info: x.projectiles[n]
+                });
+                const vol = ng.find((g) => g.player.sid === f.sid);
+                if (!vol) ng.push({ player: f, projs: [n], amt: 1, tick: v });
+                else { if (!vol.projs.includes(n)) vol.amt++; vol.projs.push(n); vol.tick = v; }
+            }
+            let turretGearShot = false;
+            if (t == 1.5 && n == 1 && f) {
+                if (rn[f.sid] === 1 && !te(f.sid) && se(f, z) <= 300 && (f.primary === 5 && f.primaryVar >= 2 || f.primary === undefined)) turretGearShot = true;
+                f.tr = 0;
+            }
+            if (t != 1.5 && n != 1 && f) { f.skinIndex == 20 ? f.samRS = 0.78 : f.samRS = 1; f.sr = 0; }
+            runHooks(hooks.projectile, { x: i, y: s, dir: o, range: e, speed: t, index: n, owner: f, turretGearShot, volley: f ? ng.find((g) => g.player?.sid == f.sid) : null });
+        }
+        function onProjectileAdd(p) {
+            const a = p && p.args; if (!a) return;
+            // server "X": [x, y, dir, range, speed, index, layer, sid]
+            tg(a[0], a[1], a[2], a[3], a[4], a[5]);
+        }
+        // Rg (engine part): step every tracked projectile one tick and predict who
+        // it hits next tick (feeds hitProjs into the damage potentials).
+        function stepProjectiles(onFutureHit) {
+            const nAnimals = bh.filter((e) => e.visible);
+            for (let c = 0; c < Ln.length; c++) {
+                let s = Infinity, o2 = Infinity;
+                const rr = [];
+                const a = Ln[c];
+                const owner = Hg(a.owner.sid);
+                if (!owner) { Ln.splice(c, 1); continue; }        // (the bundle skips the next one too)
+                const e = J.filter((e2) => e2.visible && !(typeof owner.team == "string" && e2.team == owner.team) && e2.sid != owner.sid);
+                const l = Xt.filter((e2) => !e2.ignoreCollision && e2.elevation > a.avoid).concat(nAnimals, e);
+                for (let i = 0; i < l.length; i++) {
+                    const q = l[i];
+                    const sc = q.realScale ? q.realScale : q.scale;
+                    const dd = S4(a, q);
+                    rr[0] = lineInRect((q.x2 || q.x) - sc, (q.y2 || q.y) - sc, (q.x2 || q.x) + sc, (q.y2 || q.y) + sc, a.owner.x2, a.owner.y2, a.x + a.spd * ce * U(a.dir), a.y + a.spd * ce * V(a.dir));
+                    rr[1] = lineInRect((q.x2 || q.x) - sc, (q.y2 || q.y) - sc, (q.x2 || q.x) + sc, (q.y2 || q.y) + sc, a.owner.x2, a.owner.y2, a.x + a.spd * u * U(a.dir), a.y + a.spd * u * V(a.dir));
+                    if (rr[0] && dd < s) { s = dd; Ln[c].hit = q; Ln[c].building = q.realScale ? q : null; }
+                    if (rr[1] && dd < o2) { o2 = dd; Ln[c].futureHit = q; }
+                }
+                if (Ln[c].futureHit && !Ln[c].hit) {
+                    if (Ln[c].futureHit.isPlayer) {
+                        const fh = Hg(Ln[c].futureHit.sid);
+                        if (fh) fh.hitProjs += Ln[c].dmg;
+                        if (onFutureHit) onFutureHit(Ln[c]);
+                    }
+                }
+                Ln[c].x += a.spd * ce * U(a.dir);
+                Ln[c].y += a.spd * ce * V(a.dir);
+                Ln[c].traveled += a.spd * ce;
+                if (Ln[c].hit && onFutureHit) onFutureHit(Ln[c], true);
+            }
+            Ln.forEach((t) => {
+                if (t.building) setTimeout(() => { ft.slice().forEach((r) => r.attemptResolve(1, 1, v, t)); }, 10);
+            });
+            for (let i = Ln.length - 1; i >= 0; i--) {
+                const e = Ln[i];
+                if (e.hit || e.traveled >= e.max) Ln.splice(i, 1);
+            }
+        }
+        // UTILS.lineInRect (client)
+        function lineInRect(recX, recY, recX2, recY2, x1, y1, x2, y2) {
+            let minX = x1, maxX = x2;
+            if (x1 > x2) { minX = x2; maxX = x1; }
+            if (maxX > recX2) maxX = recX2;
+            if (minX < recX) minX = recX;
+            if (minX > maxX) return false;
+            let minY = y1, maxY = y2;
+            const dx = x2 - x1;
+            if (Math.abs(dx) > 0.0000001) {
+                const a = (y2 - y1) / dx, b = y1 - a * x1;
+                minY = a * minX + b; maxY = a * maxX + b;
+            }
+            if (minY > maxY) { const tmp = maxY; maxY = minY; minY = tmp; }
+            if (maxY > recY2) maxY = recY2;
+            if (minY < recY) minY = recY;
+            if (minY > maxY) return false;
+            return true;
+        }
+
+        // ---- player values ("N"): resources + the weapon-XP the bundle tracked ----
+        const lastRes = {};
+        async function onPlayerValue(p) {
+            const e = p.key, t = p.value;
+            if (["food", "stone", "wood"].includes(String(e))) {
+                const prevV = lastRes[e] != null ? lastRes[e] : 0;
+                lastRes[e] = t;
+                const s = t - prevV;
+                await A4();
+                if (s > 0) {
+                    if (!z.weaponXP) z.weaponXP = [];
+                    if (!z.weaponXP[z.weaponIndex]) z.weaponXP[z.weaponIndex] = 0;
+                    z.weaponXP[z.weaponIndex] += s;
+                }
+            }
+        }
+        // ---- objects ("H" -> J2): learn a visible owner's loadout from what they built ----
+        function onObjectsLoad(p) {
+            const e = (p && p.args && p.args[0]) || [];
+            for (let n = 0; n + 7 < e.length; n += 8) {
+                const t = Hg(e[n + 7]);
+                if (e[n + 7] !== null && t != null && L3(z, t)) b4(t.loadout, e[n + 6]);
+            }
+        }
+        function onItemCount(p) {
+            const a = p && p.args; if (!a) return;
+            if (!z.itemCounts) z.itemCounts = {};
+            z.itemCounts[a[0]] = a[1];
+        }
+        function onInventory(p) {
+            if (p.isWeapon) z.weapons = p.list || [];
+            else z.items = p.list || [];
+            yy();
+        }
+        function onTribeMembers(p) {
+            const a = p && p.args; if (!a) return;
+            py = Array.isArray(a[0]) ? a[0].slice() : [];
+        }
+        function onTribeSet(p) {
+            const a = p && p.args;
+            if (a && (a[0] == null || a[0] === "")) py = [];
+        }
+
+        // ---- the bundle's own canBuild / hasRes for self (Player.canBuild) ----
+        let sandbox = !!env.sandbox;
+        function hasRes(t, n) {
+            for (let e = 0; e < t.req.length;) { if ((z[t.req[e]] || 0) < H(t.req[e + 1] * (n || 1))) return false; e += 2; }
+            return true;
+        }
+        function canBuild(e) {
+            if (!e) return false;
+            const t = sandbox ? e.group.sandboxLimit || oe(e.group.limit * 3, 99) : e.group.limit;
+            return t && (z.itemCounts || {})[e.group.id] >= t ? false : sandbox ? true : hasRes(e);
+        }
+        z.canBuild = canBuild;
+        z.hasRes = hasRes;
+
+        // ---- rendered position (the bundle's render-loop interpolation) ----
+        let lastFrame = 0, rafId = null;
+        function interpolate(now) {
+            const mh = lastFrame ? now - lastFrame : 16;
+            lastFrame = now;
+            const xT = Date.now() - ce;
+            const list = J.concat(bh);
+            for (let s = 0; s < list.length; s++) {
+                const q = list[s];
+                if (!q || !q.visible || q.x2 == null) continue;
+                if (q.forcePos) { q.x = q.x2; q.y = q.y2; q.dir = q.d2; q.rx = q.x; q.ry = q.y; q.rdir = q.dir; continue; }
+                const rr = q.t2 - q.t1, a = (xT - q.t1) / rr, l = 170;
+                q.dt = (q.dt || 0) + mh;
+                const c = j(1.7, q.dt / l);
+                if (q.x1 == null) { q.x1 = q.x2; q.y1 = q.y2; }
+                q.x = q.x1 + (q.x2 - q.x1) * c; q.y = q.y1 + (q.y2 - q.y1) * c;
+                q.lastx = q.x; q.lasty = q.y;
+                if (q.d1 != null && q.d2 != null && rr > 0) q.dir = lerpAngle(q.d2, q.d1, j(1.2, a));
+                q.rx = q.x; q.ry = q.y; q.rdir = q.dir;
+            }
+        }
+        function frameLoop() {
+            if (!win || typeof win.requestAnimationFrame !== "function") return;
+            const step = (t) => { try { interpolate(Date.now()); } catch (e) { /* ignore */ } rafId = win.requestAnimationFrame(step); };
+            rafId = win.requestAnimationFrame(step);
+        }
+
+        // ---- shared per-tick state the bundle's features read/write ----
+        // (exposed so a feature layer can drive it exactly like the bundle)
+        const state = {
+            Nt: false,              // standing in an enemy pit trap (bundle Nt), recomputed each frame
+            ns: [], is: [], ss: [], // nearby damaging objects / traps / enemies <= 275
+            spikeTrap: null
+        };
+
+        // ---- the tick ("a") ----
+        async function updatePlayers(payload) {
+            runHooks(hooks.preTick, payload);
+            tn = Date.now();
             v++;
-            if (v % 9 === 0) { /* packet-count bucket upkeep (visual only) */ }
-
-            // self is tracked as MooMoo.self; ensure it has combat fields.
-            initPlayerState(z);
-            resolveLoadout();
-
-            // snapshot which players came in this tick's position list
+            runHooks(hooks.tickStart, payload);
+            state.ss.length = state.ns.length = state.is.length = vn.length = Sn.length = 0;
+            vn = []; Sn = [];
+            for (let e = J.length; e--;) {
+                const q = J[e];
+                q.vis2 = !!q.visible;
+                q.forcePos = !q.visible;
+                q.visible = false;
+            }
             const positions = (payload && payload.positions) || [];
-            const freshSids = new Set();
-
-            // everyone starts invisible this tick (bundle sets visible=false then true)
-            for (const p of MooMoo.players.values()) { initPlayerState(p); p.vis2 = p.visible; p.visible = false; }
-            z.vis2 = z.visible; z.visible = false;
-
+            const t = Date.now();
             for (const pos of positions) {
-                const q = (pos.sid === z.sid) ? z : MooMoo.players.get(pos.sid);
+                const q = Hg(pos.sid);
                 if (!q) continue;
-                initPlayerState(q);
-                freshSids.add(pos.sid);
-                const pv = prev.get(pos.sid) || {};
-                // shift prediction window
-                q.x1 = q.x; q.y1 = q.y;
-                q.preX = q.x2 != null ? q.x2 : pos.x;
-                q.preY = q.y2 != null ? q.y2 : pos.y;
+                q.t1 = void 0 === q.t2 ? t : q.t2; Xe[q.sid] = q; q.t2 = t;
+                // x/y were just overwritten with the server position by the runtime;
+                // the bundle's x1 is the RENDERED position at this moment.
+                q.x1 = q.rx != null ? q.rx : q.x; q.y1 = q.ry != null ? q.ry : q.y;
+                q.preX = q.x2; q.preY = q.y2;
                 q.pmovDir = q.movDir;
                 q.x2 = pos.x; q.y2 = pos.y;
-                q.x = pos.x; q.y = pos.y; q.dir = pos.dir;
-                q.delta = dt;
-                // Normalise the runtime's attribute names (variant/skin/tail, and
-                // self's hat/accessory/weaponVariant) onto the bundle's names so every
-                // feature reads q.skinIndex / q.tailIndex / q.weaponVariant uniformly.
-                q.weaponVariant = (q === z) ? (z.weaponVariant || 0) : (q.variant || 0);
-                q.skinIndex = (q === z) ? (z.hat || 0) : (q.skin || 0);
-                q.tailIndex = (q === z) ? (z.accessory || 0) : (q.tail || 0);
-                q.loadout = (q === z) ? loadout : (q.loadout || {});
-                // attributes (weaponIndex/buildIndex/variant/team/skin/tail/zIndex) are
-                // kept current on the player object by the runtime; read them back.
-                q.xVel = q.x2 - q.preX; q.yVel = q.y2 - q.preY;
-                q.movSpd = D(q.preY - q.y2, q.preX - q.x2);
-                q.movSpd2 = D(q.y1 - q.y2, q.x1 - q.x2);
+                q.d1 = void 0 === q.d2 ? pos.dir : q.d2; q.d2 = pos.dir;
+                q.delta = q.dt; q.dt = 0;
+                if (q.delta == null || isNaN(q.delta)) q.delta = ce;
+                // attributes: the runtime keeps the last ones the server sent
+                const isSelf = q === z;
+                q.buildIndex = isSelf ? z.buildIndex : q.buildIndex;
+                q.weaponIndex = isSelf ? z.weaponIndex : q.weaponIndex;
+                q.weaponVariant = isSelf ? (z.weaponVariant || 0) : (q.variant || 0);
+                q.isLeader = !!q.isLeader;
+                q.skinIndex = isSelf ? (z.hat || 0) : (q.skin || 0);
+                if (q.skinIndex != 45) { q.shameTimer = 30; q.clowned = false; }
+                q.skinIndex == 45 && q.shameTimer == 30 && x5(q);
+                q.tailIndex = isSelf ? (z.accessory || 0) : (q.tail || 0);
+                q.iconIndex = q.icon != null ? q.icon : q.iconIndex;
+                q.visible = true;
+                if (q.x1 == null || isNaN(q.x1)) { q.x1 = q.x2; q.y1 = q.y2; }
+                if (q.preX == null) { q.preX = q.x2; q.preY = q.y2; }
+                q.xVel = q.x2 - q.preX; q.xVel2 = q.x2 - q.x1; q.yVel = q.y2 - q.preY; q.yVel2 = q.x2 - q.x1;
+                q.slowMult = oe(1, (q.slowMult || 1) + 8e-4 * ce);
+                q.movSpd = D((q.preY - q.y2) ** 2 + (q.preX - q.x2) ** 2);
+                q.movSpd2 = D((q.y1 - q.y2) ** 2 + (q.x1 - q.x2) ** 2);
                 q.movDir = P(q.y2 - q.preY, q.x2 - q.preX);
-                if ((q.movDir === 0 && q.movSpd === 0) || (q.preX === q.x2 && q.preY === q.y2)) q.movDir = undefined;
-                // weapon / variant
-                if (q.weaponIndex >= 9) q.secondary = q.weaponIndex; else q.primary = q.weaponIndex;
-                const wvar = q.weaponVariant != null ? q.weaponVariant : 3;
-                if (q.weaponIndex === q.primary) q.primaryVar = wvar;
-                if (q.weaponIndex === q.secondary) q.secondaryVar = wvar;
-                // shame/samurai reset for visibility
+                (q.movDir == 0 && q.movSpd == 0 || q.preX == q.x2 && q.preY == q.y2) && (q.movDir = undefined);
+                q.weaponIndex >= 9 ? q.secondary = q.weaponIndex : q.primary = q.weaponIndex;
+                q.weaponIndex == q.primary && (q.primaryVar = q.weaponVariant);
+                q.weaponIndex == q.secondary && (q.secondaryVar = q.weaponVariant);
                 q.lastpr = q.pr; q.lastsr = q.sr; q.lasttr = q.tr;
                 q.tick = v;
-                q.visible = true;
                 xy(q);
-                q.weaponR = (q.weaponIndex === q.secondary) ? q.sr : q.pr;
+                q.weaponE = q.weaponIndex == q.secondary ? q.sr : q.pr;
+                q.multpr = q.lastpr == q.pr && q.pr == 0 ? (q.multpr = 0.015, q.lastpr = 0.015) : q.pr;
+                q.multsr = q.lastsr == q.sr && q.sr == 0 ? (q.multsr = 0.015, q.lastsr = 0.015) : q.sr;
                 q.hitProjs = 0; q.hitSpike = false;
                 q.np = l4(q);
                 q.inWater = q.y2 >= K.mapScale / 2 - K.riverWidth / 2 && q.y2 <= K.mapScale / 2 + K.riverWidth / 2;
+                q.buildIndex != -1 && q.loadout && b4(q.loadout, q.buildIndex);
                 q.assumeAge = g4(q);
-                // bleed (bull-cycle phase)
-                q.bleed = q.lastBull ? ((v - q.lastBull + (q.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
-                prev.set(pos.sid, { x2: q.x2, y2: q.y2, movDir: q.movDir, np: q.np });
-                pv.seen = v;
+                // the runtime set x/y to the server position; the bundle's x/y is the
+                // rendered position, which the frame loop keeps updating from x1.
+                q.x = q.x1; q.y = q.y1; q.dir = q.rdir != null ? q.rdir : q.d2;
+                if (te(q.sid)) Sn.push(q); else vn.push(q);
             }
-            // players still invisible: keep their reload filling (by)
-            for (const p of MooMoo.players.values()) { if (!p.visible && p.sid !== z.sid) by(p); }
-
-            // target selection: manual target, else nearest visible enemy (vn[0])
-            vn = visibleEnemies();
-            for (const e of vn) e.distance = S4(z, e);
-            vn.sort((a, b) => a.distance - b.distance);
-            if (manualTargetSid != null) {
-                const t = vn.find((e) => e.sid === manualTargetSid);
-                Y = t || vn[0] || null;
-            } else Y = vn[0] || null;
-        }
-
-        // ---- g4: assumeAge (highest age gear a player reveals) ----
-        function g4(e) {
-            let t = 0; const n = e.loadout || {};
-            if (n.spawnpad || (weapon(e.secondary) && weapon(e.secondary).age === 9) || (n.spike && n.spike.age === 9)) return 9;
-            if (n.utility) t = 7;
-            const sa = weapon(e.secondary), pa = weapon(e.primary);
-            if (sa && t < sa.age) t = sa.age;
-            if (pa && t < pa.age) t = pa.age;
-            if (n.spike && t < n.spike.age) t = n.spike.age;
-            if (n.food && t < n.food.age) t = n.food.age;
-            if (n.windmill && t < n.windmill.age) t = n.windmill.age;
-            if (n.wall && t < n.wall.age) t = n.wall.age;
-            if (e.weaponIndex === 0) t = 1;
-            if (e.primary === 0 && t > 1) e.primary = undefined;
-            return t;
-        }
-
-        // ---- K (gatherAnimation): a swing resets the swung weapon's reload ----
-        function onGather(p) {
-            const a = p && p.args; if (!a) return;
-            const sid = a[0], weaponIndex = a[2];
-            if (typeof weaponIndex !== "number") return;
-            const o = (sid === z.sid) ? z : MooMoo.players.get(sid);
-            if (!o) return;
-            initPlayerState(o);
-            if (weaponIndex > 9) o.sr = 0; else o.pr = 0;
-            const w = weapon(weaponIndex);
-            o.slowMult -= (w && w.hitSlow) || 0.3;
-            if (o.slowMult < 0) o.slowMult = 0;
-            o.samRS = (o.skinIndex === 20 && weaponIndex > 9) ? 0.78 : 1;
-            o.samRP = (o.skinIndex === 20 && weaponIndex < 9) ? 0.78 : 1;
-        }
-
-        // ---- health: track damage + the 9-tick bull cadence (lastBull/bleed) ----
-        const lastHealth = new Map();
-        function onHealth(p) {
-            const sid = p.sid, value = p.value;
-            const o = (sid === z.sid) ? z : MooMoo.players.get(sid);
-            if (!o) { lastHealth.set(sid, value); return; }
-            initPlayerState(o);
-            const prevH = lastHealth.has(sid) ? lastHealth.get(sid) : value;
-            const t = value - prevH;             // damage (<0) or heal (>0)
-            lastHealth.set(sid, value);
-            // bull-helmet reflect cadence: a bull (skin 7) dealing its periodic hit
-            // marks the cycle. poison tick (-5) also marks it.
-            if (t === -5 * (o.skinIndex === 6 ? 0.75 : 1) && o.poison) o.lastBull = v - 1;
-            if (t > 0) {
-                if (o.skinIndex === 13) {
-                    if (o.tailIndex === 13) { if (t === 6) { o.lastBull = v - 1; if (o === z) et = 0; } }
-                    else { if (t === 3) { o.lastBull = v - 1; if (o === z) et = 0; } }
-                }
-            } else if (t < 0) {
-                if (o.skinIndex === 7) {
-                    if (o.tailIndex === 13) { if (t === -2) { o.lastBull = v - 1; o.lastBull2 = Date.now(); } }
-                    else { if (t === -5) { o.lastBull = v - 1; o.lastBull2 = Date.now(); if (o === z) et = 0; } }
-                }
+            yy();
+            runHooks(hooks.postReconstruct, payload);
+            await sleep(1);                                   // wx(1)
+            // ---- object windows ----
+            if (objects) {
+                const list = objects._list;
+                Xt = list.filter((e) => (e.distance = X5(e.x - z.x2, e.y - z.y2)) <= 2e3);
+                Q = Xt.filter((e) => e.distance <= 800);
             }
-            o.bleed = o.lastBull ? ((v - o.lastBull + (o.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
+            runHooks(hooks.afterSleep, payload);
+            // ---- A4 + deferred handlers ----
+            const ve = Ve; Ve = [];
+            ve.forEach((e) => e());
+            const pq = pn; pn = [];
+            pq.forEach((e) => e.id(...e.data));
+            runHooks(hooks.deferredFlushed, payload);
+            // ---- per-player frame upkeep (bundle ~16037-16073) ----
+            for (let e = J.length; e--;) {
+                const i = J[e];
+                if (!i) continue;
+                i.visible && (i.weaponR = i.weaponIndex == i.secondary ? i.sr : i.pr);
+                if (isNaN(i.poison)) i.poison = 0;
+                i.poison > 0 && (i.poison = oe(0, i.poison - (i.delta || ce) / 1e3));
+                if (!i?.Alive2 && !i?.Alive) { runHooks(hooks.framePlayer, i, "died"); i.deaths++; }
+                i.Alive2 = true;
+                runHooks(hooks.framePlayer, i, "damage");     // stacked damages (visual) reads i.dmgs here
+                i.dmgs = "XD";
+                if (i.vis2 == false && i.visible && i.buildIndex == -1) {
+                    if (i.weaponIndex != i?.primary && i.primaryVar <= 2) i.primaryVar = 3;
+                    else if (i.weaponIndex != i?.secondary && i.secondaryVar <= 2 && (i.secondary == 10 || i.secondary == 14)) i.secondaryVar = 3;
+                }
+                if (i.healArr && i.healArr.length) { i.healArr.forEach((h2) => l5(i.sid, h2[0], h2[1], h2[2])); i.healArr = []; }
+                if (!i.deathDmgs) i.deathDmgs = [];
+                if (!i.dmgsNow) i.dmgsNow = [];
+                if (i.dmgsNow.length) i.deathDmgs.push(i.dmgsNow);
+                i.dmgsNow = [];
+                if (i.health === 100) i.deathDmgs = [];
+                i.bleed = i.lastBull ? ((v - i.lastBull + (i.sid === z.sid ? et : 0)) % 9 + 9) % 9 : undefined;
+            }
+            runHooks(hooks.afterPlayers, payload);
+            // ---- target ----
+            for (let e = vn.length; e--;) vn[e].distance = D((vn[e].x2 - z.x2) ** 2 + (vn[e].y2 - z.y2) ** 2);
+            vn = vn.sort((a, b) => a.distance - b.distance);
+            Y = vn[0] || null;
+            xi.player = J.find((e) => e.sid === xi.ID && e.visible) || null;
+            if (xi.player) xi.player.positions = a4(xi.player, 6);
+            else if (Y) { xi.player = Y; xi.player.positions = a4(xi.player, 6); }
+            if (objects) objects.update(z.delta);          // k4(): turret reload timers
+            runHooks(hooks.frame, payload);
+            by();
+            runHooks(hooks.frameLate, payload);
         }
 
-        function onDied() { v = 0; et = 0; Y = null; vn = []; prev.clear(); lastHealth.clear(); }
-        function onSetup() { onDied(); }
-
-        // ---- targeting ----
-        function visiblePlayers() {
-            const out = [];
-            for (const p of MooMoo.players.values()) if (p.sid !== z.sid && p.visible) out.push(p);
-            return out;
-        }
-        function visibleEnemies() {
-            return visiblePlayers().filter((p) => !(z.team != null && p.team != null && p.team === z.team));
+        // ---- x5: a clowned player's shame timer, counted down once per tick ----
+        async function x5(e, t = Hg(e.sid)) {
+            if (e.shameTimer <= 0 || e.skinIndex != 45 || t == null || t == undefined) return;
+            t.shameCount = 0;
+            t.clowned = true;
+            t.shameTimer -= e.delta / 1e3;
+            await A4();
+            x5(t);
         }
 
-        // ---- combat predicates ported 1-1 ----
-        // _y: a player's reload readiness after `t` ms (default 111). ==1 means ready.
-        function _y(e, t) {
-            if (!e) return;
-            if (!t) t = 111;
-            return j(1, e.weaponR + t / weaponSpeed(e.weaponIndex));
+        // ---- lifecycle ----
+        function onSetup(p) {
+            en = true;
+            // (you join J in addPlayer, like the bundle; setupGame only flags the game on)
+            z.sid = p.sid;
+            // the bundle's _n ("https://sandbox..." in the URL). This server tells its
+            // own client through the client's config (window.config.inSandbox).
+            try { if (win && win.config && "inSandbox" in win.config) sandbox = !!win.config.inSandbox; } catch (e) { /* keep */ }
         }
-        // Vy: is t within range n of e (now or on predicted-real positions)?
-        function Vy(e, t, n, i) {
-            return se(e, t, "player") <= n || (i && se(e.np && e.np.real, t.np && t.np.real, "player") <= n);
-        }
-        // o4: not shielded against us (weapon 11 = shield; must hit their back).
-        function o4(e, t) {
-            if (t.weaponIndex !== 11) return true;
-            const n = B(e, t);
-            return getAngleDist(n + W, t.dir) > W / 3;
+        function onDied() {
+            en = false;
+            runHooks(hooks.died);
         }
 
-        MooMoo.on("playersUpdate", updatePlayers);
-        MooMoo.on("gatherAnimation", onGather);
-        MooMoo.on("health", onHealth);
-        MooMoo.on("died", onDied);
         MooMoo.on("setup", onSetup);
+        MooMoo.on("playerAdd", onPlayerAdd);
+        MooMoo.on("playerRemove", onPlayerRemove);
+        MooMoo.on("playersUpdate", (p) => { updatePlayers(p).catch((e) => console.error("[moomoo.js] tick threw", e)); });
+        MooMoo.on("gatherAnimation", (p) => { onGather(p); });
+        MooMoo.on("health", onHealth);
+        MooMoo.on("wiggle", (p) => { onWiggle(p); });
+        MooMoo.on("turretShoot", onTurretShoot);
+        MooMoo.on("animalsUpdate", onAnimals);
+        MooMoo.on("animalAttack", (p) => { onAnimalAttack(p); });
+        MooMoo.on("projectileAdd", onProjectileAdd);
+        MooMoo.on("playerValue", (p) => { onPlayerValue(p); });
+        MooMoo.on("itemCount", onItemCount);
+        MooMoo.on("objectsLoad", onObjectsLoad);
+        MooMoo.on("inventory", onInventory);
+        MooMoo.on("tribeMembers", onTribeMembers);
+        MooMoo.on("tribeSet", onTribeSet);
+        MooMoo.on("died", onDied);
+        frameLoop();
+
+        function hookAdder(name) { return (fn) => { hooks[name].add(fn); return () => hooks[name].delete(fn); }; }
 
         return {
             // state
             get z() { return z; }, get self() { return z; },
-            get tick() { return v; }, get et() { return et; },
-            get target() { return Y; }, set target(sid) { manualTargetSid = sid; },
-            get visibleEnemies() { return vn; },
+            get tick() { return v; }, get v() { return v; },
+            get et() { return et; }, set et(n) { et = n; },
+            get tn() { return tn; }, get en() { return en; }, set en(b) { en = b; },
+            get target() { return Y; }, set target(t) { Y = t; },
+            get Y() { return Y; }, set Y(t) { Y = t; },
+            xi,
+            get visibleEnemies() { return vn; }, get vn() { return vn; }, set vn(a) { vn = a; },
+            get visibleFriends() { return Sn; }, get Sn() { return Sn; },
+            get players() { return J; }, get J() { return J; },
+            get animals() { return bh; }, get bh() { return bh; }, get bosses() { return bosses; },
+            get projectiles() { return Ln; }, get Ln() { return Ln; },
+            get volleys() { return ng; }, set volleys(a) { ng = a; }, get ng() { return ng; }, set ng(a) { ng = a; },
+            get ft() { return ft; },
+            get Xt() { return Xt; }, get Q() { return Q; },
+            get py() { return py; },
             get loadout() { return loadout; },
-            setSelfInSpike(b) { selfInSpike = b; },
-            get selfInSpike() { return selfInSpike; },
+            rn, an, ln, Xe, state,
+            get sandbox() { return sandbox; }, set sandbox(b) { sandbox = !!b; },
+            selfInput,
+            // timing
+            A4, nextTick: A4, defer: (fn, ...args) => pn.push({ id: fn, data: args }),
             // geometry + predicates
-            se, B, S4, angleDist: getAngleDist, getDirection,
-            _y, Vy, o4, l4, x4,
+            se, B, S4, Dy, P3, L3, X5, Ne, Ay, angleDist: getAngleDist, getDirection, getDistance, lerpAngle, lineInRect,
+            _y, Vy, o4, l4, a4, x4, w4, b4, g4, xy, l5, te, Hg, jg, Wg, yy, canBuild, hasRes,
+            stepProjectiles,
             variantVal, weaponSpeed, weaponRange,
-            visiblePlayers, visibleEnemies,
-            K, ce, EN,
+            visiblePlayers: () => J.filter((p) => p !== z && p.visible),
+            K, ce, u, EN, h, O3,
+            // hooks (feature layers run here, in the bundle's order)
+            onPreTick: hookAdder("preTick"),
+            onTickStart: hookAdder("tickStart"),
+            onPostReconstruct: hookAdder("postReconstruct"),
+            onAfterSleep: hookAdder("afterSleep"),
+            onDeferredFlushed: hookAdder("deferredFlushed"),
+            onAfterPlayers: hookAdder("afterPlayers"),
+            onFrame: hookAdder("frame"),
+            onFrameLate: hookAdder("frameLate"),
+            onFramePlayer: hookAdder("framePlayer"),
+            onProjectile: hookAdder("projectile"),
+            onPlayerAdded: hookAdder("playerAdded"),
+            onPlayerLeft: hookAdder("playerLeft"),
+            onBuildingDamage: hookAdder("buildingDamage"),
+            onDied: hookAdder("died"),
             // for tests / advanced
-            _updatePlayers: updatePlayers, _prev: prev
+            _updatePlayers: updatePlayers, _interpolate: interpolate,
+            get _pn() { return pn; }, get _Ve() { return Ve; }
         };
+
+        // ---- combat predicates ported 1-1 ----
+        function _y(e, t) {
+            if (!e) return;
+            !t && (t = 111);
+            return j(1, e.weaponR + t / weapon(e.weaponIndex)?.speed);
+        }
+        function Vy(e, t, n, i) {
+            return se(e, t, "player") <= n || i && se(e?.np?.real, t?.np?.real, "player") <= n;
+        }
+        function o4(e, t, n) {
+            if (t.weaponIndex != 11) return true;
+            n = B(e, t);
+            return getAngleDist(n + W, t.dir) > W / 3;
+        }
     }
 
     return { createCombat, K, ce, EN, r3 };
@@ -2632,6 +3560,8 @@
         const input = env.input;
         const objects = env.objects || null;
         const combatEngine = env.combat || null;
+        const net = env.net || null;
+        const store = env.store || null;
         const S = () => MooMoo.self;
 
         // ---- combat state: weapon reload + variants (reconstructed from packets) ----
@@ -2807,6 +3737,10 @@
                 visiblePlayers, enemies, nearestEnemy, predictedDamage,
                 // world objects (buildings / resources / turrets / traps)
                 objects,
+                // outgoing: rate governor, packet counts, ping (see outgoing.js)
+                net,
+                // owned/equipped hats + accessories, bundle equip() semantics (store.js)
+                store,
                 // combat state: the full engine (per-player prediction/reload/bull)
                 // when present; a minimal reload shim otherwise (headless tests).
                 combat: combatEngine || {
@@ -3312,22 +4246,199 @@
 
         overlay.addEventListener("click", hide);
         fab.addEventListener("click", toggle);
-        // hotkey + escape
-        if (input) {
-            input.onKey(toggleKey, () => toggle(), { preventDefault: true });
-        } else {
-            win.addEventListener("keydown", (e) => { if (e.isTrusted === false) return; const k = e.key === " " ? "space" : e.key; if (k === toggleKey) { e.preventDefault(); toggle(); } }, true);
-        }
-        win.addEventListener("keydown", (e) => { if (open && e.key === "Escape") hide(); }, true);
+        // hotkey + escape. The toggle key is read on every press so a mod can
+        // change it (the bundle's menu opened and closed on Escape). When the
+        // toggle key isn't Escape, Escape still closes an open menu.
+        win.addEventListener("keydown", (e) => {
+            if (e.isTrusted === false) return;
+            const k = e.key === " " ? "space" : e.key;
+            if (k === toggleKey) { e.preventDefault(); toggle(); }
+            else if (open && e.key === "Escape") hide();
+        }, true);
 
         // Re-render on registry changes (new mod, external toggle), but not for our
         // own edits (so a slider drag isn't interrupted).
         MooMoo.onModsChanged(() => { if (open && !suppressRerender) render(); });
 
-        return { show, hide, toggle, render, setToggleKey: (k) => { toggleKey = k; }, isOpen: () => open };
+        return {
+            show, hide, toggle, render, isOpen: () => open,
+            get toggleKey() { return toggleKey; },
+            setToggleKey: (k) => { toggleKey = k; fab.title = "moomoo.js config (" + toggleKey + ")"; }
+        };
     }
 
     return { installConfigMenu };
+});
+
+
+/* ===== module: outgoing (loader/src/outgoing.js) ===== */
+/*
+ * moomoo.js loader — OUTGOING  (rate governor + packet accounting + ping)
+ * ======================================================================
+ * Every frame that leaves the socket — the official client's own frames AND
+ * frames mods inject — passes through here first.
+ *
+ *  1. GOVERNOR. The server keeps a token bucket per packet type plus a global
+ *     one (server/src/anticheat/config.js, mirrored in binding.rateLimits).
+ *     Going over a bucket costs a strike and 40 strikes is a kick. The official
+ *     client is tuned to stay under them on its own, but client + mod together
+ *     can exceed a bucket (e.g. both selecting items in one tick). The governor
+ *     mirrors the buckets with a safety margin and refuses a frame that would
+ *     overflow, so the server never sees a burst it would strike. It is the same
+ *     idea as the bundle's own packet limiter (packet.send refused to send past
+ *     120 packets per 9 ticks), just keyed to this server's real limits.
+ *
+ *  2. ACCOUNTING. Counts sent frames per second / per minute / per type, and
+ *     what the governor refused, for the "packet count" visual and diagnostics.
+ *
+ *  3. PING. The official client pings every 2.5s on its own; timing those
+ *     round trips gives the mod a ping without sending a single extra packet
+ *     (the bundle pinged every 400ms, which this server's "0" bucket [2/s]
+ *     would strike).
+ *
+ * Part of the LOADER (volatile).
+ */
+(function (root, factory) {
+    const value = factory();
+    if (typeof module === "object" && module.exports) module.exports = value;
+    if (typeof root !== "undefined") root.MooMooOutgoing = value;
+    if (typeof globalThis !== "undefined") globalThis.MooMooOutgoing = value;
+})(typeof self !== "undefined" ? self : this, function () {
+    "use strict";
+
+    // Margin against network jitter bunching packets together on the way to the
+    // server: refill a little slower and keep a couple of tokens in reserve.
+    const RATE_MARGIN = 0.9;
+    const BURST_RESERVE = 2;
+    // Never refused: telemetry (a missing heartbeat is itself a kick) and spawn.
+    const NEVER_DROP = new Set(["T", "M"]);
+
+    class Bucket {
+        constructor(spec, now) {
+            const [perSecond, burst] = spec;
+            this.rate = (perSecond * RATE_MARGIN) / 1000;
+            this.capacity = Math.max(1, burst - BURST_RESERVE);
+            this.tokens = this.capacity;
+            this.updated = now;
+        }
+        refill(now) {
+            this.tokens = Math.min(this.capacity, this.tokens + (now - this.updated) * this.rate);
+            this.updated = now;
+        }
+        canTake(now) { this.refill(now); return this.tokens >= 1; }
+        take() { this.tokens -= 1; }
+    }
+
+    function createOutgoing(opts) {
+        opts = opts || {};
+        const limits = opts.rateLimits || { global: [150, 300], packets: {} };
+        const clock = opts.now || (() => Date.now());
+
+        let enabled = opts.enabled !== false;
+        let global = new Bucket(limits.global, clock());
+        let buckets = Object.create(null);
+        const bucketFor = (wire, now) => {
+            const spec = limits.packets[wire];
+            if (!spec) return null;
+            return buckets[wire] || (buckets[wire] = new Bucket(spec, now));
+        };
+
+        // ---- governor ----
+        // allow(wire) checks AND consumes; a refused frame consumes nothing.
+        function allow(wire) {
+            const now = clock();
+            if (!enabled || NEVER_DROP.has(wire)) {
+                const b = bucketFor(wire, now);
+                global.refill(now); if (global.tokens >= 1) global.take();
+                if (b) { b.refill(now); if (b.tokens >= 1) b.take(); }
+                return true;
+            }
+            const b = bucketFor(wire, now);
+            if (!global.canTake(now) || (b && !b.canTake(now))) {
+                stats.refused++;
+                stats.refusedByType[wire] = (stats.refusedByType[wire] || 0) + 1;
+                for (const fn of refusedTaps) { try { fn(wire); } catch (e) { /* ignore */ } }
+                return false;
+            }
+            global.take();
+            if (b) b.take();
+            return true;
+        }
+        // Would a frame of this type be accepted right now? (does not consume)
+        function wouldAllow(wire) {
+            const now = clock();
+            if (!enabled || NEVER_DROP.has(wire)) return true;
+            const b = bucketFor(wire, now);
+            return global.canTake(now) && (!b || b.canTake(now));
+        }
+        function tokens(wire) {
+            const now = clock();
+            const b = bucketFor(wire, now);
+            if (!b) return Infinity;
+            b.refill(now);
+            return b.tokens;
+        }
+
+        // ---- accounting ----
+        const stats = { sent: 0, refused: 0, refusedByType: Object.create(null), byType: Object.create(null) };
+        const secondWindow = [];       // timestamps of frames sent in the last 1s
+        const minuteWindow = [];       // ... last 60s
+        const refusedTaps = new Set();
+        function record(wire) {
+            const now = clock();
+            stats.sent++;
+            stats.byType[wire] = (stats.byType[wire] || 0) + 1;
+            secondWindow.push(now);
+            minuteWindow.push(now);
+            prune(now);
+        }
+        function prune(now) {
+            while (secondWindow.length && now - secondWindow[0] > 1000) secondWindow.shift();
+            while (minuteWindow.length && now - minuteWindow[0] > 60000) minuteWindow.shift();
+        }
+        function perSecond() { prune(clock()); return secondWindow.length; }
+        function perMinute() { prune(clock()); return minuteWindow.length; }
+
+        // ---- ping (timed off the client's own "0" -> pong round trips) ----
+        const pingSamples = [];
+        let pingSentAt = 0;
+        let lastPing = 0;
+        function onPingSent() { pingSentAt = clock(); }
+        function onPong() {
+            if (!pingSentAt) return null;
+            lastPing = clock() - pingSentAt;
+            pingSentAt = 0;
+            pingSamples.push(lastPing);
+            if (pingSamples.length >= 4) pingSamples.shift();   // bundle keeps the last 3 (yt)
+            return lastPing;
+        }
+        function avgPing() {
+            if (!pingSamples.length) return 0;
+            return pingSamples.reduce((a, b) => a + b, 0) / pingSamples.length;
+        }
+
+        function reset() {
+            const now = clock();
+            global = new Bucket(limits.global, now);
+            buckets = Object.create(null);
+            pingSentAt = 0;
+        }
+
+        return {
+            allow, wouldAllow, tokens, record,
+            perSecond, perMinute, stats,
+            onRefused: (fn) => { refusedTaps.add(fn); return () => refusedTaps.delete(fn); },
+            onPingSent, onPong,
+            get ping() { return lastPing; },
+            avgPing,
+            setEnabled: (b) => { enabled = !!b; },
+            get enabled() { return enabled; },
+            reset,
+            RATE_MARGIN, BURST_RESERVE
+        };
+    }
+
+    return { createOutgoing, Bucket };
 });
 
 
@@ -3364,7 +4475,9 @@
             ObjectManager: require("./objectmanager.js"),
             Combat: require("./combat.js"),
             Helpers: require("./helpers.js"),
-            ConfigMenu: require("./configmenu.js")
+            ConfigMenu: require("./configmenu.js"),
+            Outgoing: require("./outgoing.js"),
+            Store: require("./store.js")
         }
         : null;
     const value = factory(deps);
@@ -3374,7 +4487,7 @@
 })(typeof self !== "undefined" ? self : this, function (nodeDeps) {
     "use strict";
 
-    const VERSION = "1.0.0";
+    const VERSION = "1.1.0";
 
     // Resolve dependencies either from Node require (tests) or page globals (bundle).
     function resolveDeps(win) {
@@ -3392,7 +4505,9 @@
             ObjectManager: g.MooMooObjectManager,
             Combat: g.MooMooCombat,
             Helpers: g.MooMooHelpers,
-            ConfigMenu: g.MooMooConfigMenu
+            ConfigMenu: g.MooMooConfigMenu,
+            Outgoing: g.MooMooOutgoing,
+            Store: g.MooMooStore
         };
     }
 
@@ -3472,6 +4587,9 @@
 
         let active = null; // the adopted game socket's state
 
+        // Rate governor + packet accounting + ping (see outgoing.js).
+        const out = D.Outgoing ? D.Outgoing.createOutgoing({ rateLimits: binding.rateLimits }) : null;
+
         // ---- runtime + sink ----
         // Self input mirror: the combat engine needs the player's own current move
         // direction (the bundle's `Dn`) and aim to predict self position. We capture
@@ -3508,6 +4626,12 @@
             try { objects = D.ObjectManager.createObjectManager({ MooMoo, data: D.GameData }); }
             catch (e) { errorSink(e); }
         }
+        // Owned / equipped hats + accessories (the bundle's Nn/On/$t/Zt + equip()).
+        let store = null;
+        if (D.Store && D.GameData) {
+            try { store = D.Store.createStore({ MooMoo, data: D.GameData }); }
+            catch (e) { errorSink(e); }
+        }
         // The combat engine reconstructs per-player prediction/reload/bull state on
         // every server tick (the bundle's updatePlayers). Features read it as ctx.combat.
         let combat = null;
@@ -3518,7 +4642,7 @@
         // Inject the combat/placement/targeting verbs into every mod's ctx.
         if (D.Helpers && D.GameData) {
             try {
-                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat });
+                const ext = D.Helpers.createHelpers({ MooMoo, input, data: D.GameData, objects, combat, net: out, store });
                 MooMoo._setCtxExtensions(ext);
             } catch (e) { errorSink(e); }
         }
@@ -3529,12 +4653,28 @@
         }
 
         // ---- outgoing (client -> server), loader-owned ----
+        // Every frame that actually leaves: count it (governor stats, ping timing)
+        // and tell mods (MooMoo.onSent).
+        function noteSent(wire, args, source) {
+            if (out) {
+                out.record(wire);
+                if (wire === "0") out.onPingSent();
+            }
+            const pb = binding.outgoingParse && binding.outgoingParse[wire];
+            if (pb && MooMoo._notifySent) {
+                let payload; try { payload = pb.parse(args || []); } catch (e) { payload = { args }; }
+                MooMoo._notifySent(pb.action, payload, source);
+            }
+        }
+
         function sendWire(st, wire, args) {
             if (!st || st.ignore) { console.warn("%c[moomoo.js]", "color:#e66", "no active game socket to send on"); return false; }
             if (st.ready) {
+                if (out && !out.allow(wire)) return false;             // would overflow a server bucket
                 const bytes = st.session.encodeC2S(wire, args);
                 tapRaw("out", wire, args);
                 st.nativeSend(bytes);
+                noteSent(wire, args, "mod");
                 return true;
             }
             if (st.failed) { console.warn("%c[moomoo.js]", "color:#e66", "cannot inject packets without the protocol key"); return false; }
@@ -3552,16 +4692,35 @@
             };
         }
 
+        // Returns the bytes to send, or undefined to drop the frame entirely. A
+        // dropped frame never consumes a sequence number, so the stream stays
+        // gap-free.
         function reencodeClientFrame(st, bytes) {
+            let dec;
+            try { dec = st.session.decodeC2S(bytes); }
+            catch (e) { errorSink(e); return bytes; } // fail open
             try {
-                const dec = st.session.decodeC2S(bytes);
                 let name = dec.name, args = dec.args;
                 if (name === telemetry.wire) args = telemetry.scrub(args); // ANTI-CHEAT BYPASS
+                // Let mods inspect / rewrite / drop what the official client sends.
+                const pb = binding.outgoingParse && binding.outgoingParse[name];
+                if (pb && MooMoo._filterOutgoing && name !== telemetry.wire) {
+                    const payload = pb.parse(args);
+                    const res = MooMoo._filterOutgoing(pb.action, payload, { source: "client", wire: name, args: args.slice() });
+                    if (res === null) return undefined;                    // a mod dropped it
+                    if (res !== payload) {
+                        const ob = binding.outgoing[pb.action];
+                        if (ob) args = ob.build(res);
+                    }
+                }
+                if (out && !out.allow(name)) return undefined;          // would overflow a server bucket
                 tapRaw("out", name, args);
-                return st.session.encodeC2S(name, args);               // our own gap-free seq
+                const enc = st.session.encodeC2S(name, args);          // our own gap-free seq
+                noteSent(name, args, "client");
+                return enc;
             } catch (e) {
                 errorSink(e);
-                return bytes; // fail open
+                return st.session.encodeC2S(dec.name, dec.name === telemetry.wire ? telemetry.scrub(dec.args) : dec.args);
             }
         }
 
@@ -3592,6 +4751,10 @@
             let payload;
             try { payload = bind.parse(dec.args); }
             catch (e) { errorSink(e); return; }
+            if (bind.event === "pong" && out) {
+                const ms = out.onPong();
+                if (ms != null) payload.ms = ms;
+            }
             MooMoo._dispatch(bind.event, payload);
         }
 
@@ -3599,6 +4762,8 @@
         function adopt(st, payload) {
             active = st;
             if (MooMoo._reset) MooMoo._reset();
+            if (out) out.reset();
+            if (store) store.reset();
             getProtocolModule().then((mod) => {
                 try {
                     st.session = new D.Protocol.ClientSession(payload, mod);
@@ -3615,7 +4780,13 @@
                 const outq = st.outQueue; st.outQueue = [];
                 for (const item of outq) {
                     if (item.kind === "client") { const b = reencodeClientFrame(st, item.data); if (b !== undefined) st.nativeSend(b); }
-                    else { try { st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args); } catch (e) { errorSink(e); } }
+                    else {
+                        try {
+                            if (out && !out.allow(item.wire)) continue;
+                            st.nativeSend(st.session.encodeC2S(item.wire, item.args)); tapRaw("out", item.wire, item.args);
+                            noteSent(item.wire, item.args, "mod");
+                        } catch (e) { errorSink(e); }
+                    }
                 }
                 MooMoo._setReady(true);
                 try { win.dispatchEvent(new win.Event("moomoo:ready")); } catch (e) { /* non-DOM env */ }
@@ -3669,6 +4840,8 @@
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;
+        MooMooLoader.net = out;
+        MooMooLoader.store = store;
         MooMooLoader.combat = combat;
 
         // In-game Mods menu (only in a real page; skipped in headless tests).
