@@ -88,9 +88,9 @@
             s2cUnknown: {},     // numeric id -> times seen (a packet with no name in our table)
             s2cErrors: 0
         };
-        let joinShown = false;    // the one-per-session card has been shown
+        let welcomeShown = false; // the one-per-page-load welcome card has been shown
         let refused = false;      // the hard refusal has fired
-        let joinTimer = null;
+        let menuTimer = null;     // the main-menu poll
 
         // ---- recording (called by the loader as frames flow) ----
         function recordIoInit(len) { if (obs.ioInitFields == null) obs.ioInitFields = len | 0; }
@@ -200,19 +200,40 @@
             return lines.join("\n");
         }
 
-        // ---- join trigger ----
-        function onJoined() {
-            if (!doc || joinShown || refused || joinTimer) return;
-            // small settle so the io-init + first server packets are in before we decide
-            joinTimer = win.setTimeout(function () {
-                joinTimer = null;
-                if (refused) return;
-                const v = evaluate();
-                if (v.verdict === "refuse") { doRefuse(v); return; }
-                if (joinShown) return;
-                joinShown = true;
-                if (v.verdict === "warn") showWarn(v); else showThanks();
-            }, 650);
+        // ---- welcome trigger (main menu, NOT in-game) ----
+        // Is the game sitting on its loaded main menu? (mainMenu shown, loading text gone.)
+        function menuVisible() {
+            try {
+                const m = doc.getElementById("mainMenu");
+                if (!m || win.getComputedStyle(m).display === "none") return false;
+                const lt = doc.getElementById("loadingText");
+                if (lt && win.getComputedStyle(lt).display !== "none") return false;  // still loading
+                return m.getClientRects().length > 0;
+            } catch (e) { return false; }
+        }
+
+        // Watch for the main menu and show the welcome card the moment it's ready — a
+        // welcome / loading screen before the player enters a game, never mid-game.
+        function watchMenu() {
+            if (!doc || welcomeShown || menuTimer) return;
+            // If it's already up (loader installed late), show at once.
+            if (menuVisible()) { showMenuWelcome(); return; }
+            let tries = 0;
+            menuTimer = win.setInterval(function () {
+                if (welcomeShown || refused) { win.clearInterval(menuTimer); menuTimer = null; return; }
+                if (menuVisible()) { win.clearInterval(menuTimer); menuTimer = null; showMenuWelcome(); return; }
+                if (++tries > 480) { win.clearInterval(menuTimer); menuTimer = null; }  // give up after ~2 min
+            }, 250);
+        }
+
+        function showMenuWelcome() {
+            if (refused || welcomeShown) return;
+            // On the menu there's no game connection yet, so this is normally a clean "ok";
+            // a mismatch only becomes known once connected (then the refusal below can fire).
+            const v = evaluate();
+            if (v.verdict === "refuse") { doRefuse(v); return; }
+            welcomeShown = true;
+            if (v.verdict === "warn") showWarn(v); else showThanks();
         }
 
         function doRefuse(v) {
@@ -360,7 +381,7 @@
 
         return {
             recordIoInit, recordS2C, recordS2CError, recordClientTelemetry,
-            onJoined, evaluate,
+            watchMenu, evaluate,
             // handy for diagnostics / the test harness
             _report: () => reportText(evaluate()),
             _obs: obs

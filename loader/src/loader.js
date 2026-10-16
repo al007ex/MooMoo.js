@@ -262,8 +262,8 @@
                     // Hard mismatch -> cut the connection so the player can't get flagged/banned.
                     onRefuse: () => { try { if (active && active.ws) active.ws.close(4999, "moomoo.js loader out of date"); } catch (e) { /* ignore */ } }
                 });
-                // "setup" (the C packet) fires every time the player joins a world.
-                MooMoo.on("setup", () => { try { notice.onJoined(); } catch (e) { /* ignore */ } });
+                // Show the welcome card on the MAIN MENU (a loading/welcome screen), not in-game.
+                notice.watchMenu();
             } catch (e) { errorSink(e); notice = null; }
         }
 
