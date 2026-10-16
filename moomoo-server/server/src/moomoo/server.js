@@ -12,7 +12,7 @@ import { Projectile } from "./modules/projectile.js";
 import { ObjectManager } from "./modules/objectManager.js";
 import { GameObject } from "./modules/gameObject.js";
 import { items } from "./modules/items.js";
-import { AiManager } from "./modules/aiManager.js";
+import { AiManager, AI_TYPES } from "./modules/aiManager.js";
 import { accessories, hats } from "./modules/store.js";
 import { ClanManager } from "./modules/clanManager.js";
 import { HAT, TAIL, EFFECT, hasTail, secretDistance } from "./modules/effects.js";
@@ -23,6 +23,19 @@ const CRABLING = 14;
 const COW = 0;
 const ROLE_NUMBER = { mod: 1, admin: 2 };
 
+// "A" now carries the animal types: the client no longer ships its own table, it draws
+// whatever the server describes (sprite, name, size, health bar, boss / diver).
+const CLIENT_KIND_FIELDS = ["id", "name", "src", "scale", "spriteMlt", "nameScale", "health", "boss", "diver"];
+const ANIMAL_KINDS = AI_TYPES.map(type => {
+    const kind = {};
+    for (const field of CLIENT_KIND_FIELDS) if (type[field] !== undefined) kind[field] = type[field];
+    return kind;
+});
+
+// Player icons ("a" attribute 8): 1 kill leader's skull, 2-4 this week's top three
+// (gold, silver, bronze crown), 5-7 the same crowns with the skull.
+const iconFor = (killLeader, crown) => crown ? (killLeader ? 4 : 1) + crown : killLeader ? 1 : 0;
+
 export class Game {
 
     players = [];
@@ -30,12 +43,17 @@ export class Game {
     projectiles = [];
     game_objects = [];
 
-    constructor({ key, name, capacity, membersOnly, accounts, log }) {
+    // hooks: { presence(account, serverKey | ""), count(serverKey, n), event(data) }
+    constructor({ key, name, capacity, membersOnly, accounts, log, hooks }) {
         this.key = key;
         this.name = name;
         this.capacity = capacity;
         this.membersOnly = membersOnly;
         this.accounts = accounts;
+        this.hooks = hooks || {};
+        this.restartAt = 0;
+        this.crowns = {};
+        this.crownsAt = 0;
         this.log = log || ((msg) => console.log(`[${key}] ${msg}`));
         this.playersById = new Map();
         this.sids = new Array(config.maxPlayersHard).fill(true);
@@ -192,7 +210,9 @@ export class Game {
                     player.send("5", 0, HAT.CRAB_SHELL, 0);
                 }
             }
-            this.server.broadcast("6", -1, `${doer.name} defeated the Crab King!`);
+            this.server.broadcast("6", -1, `${doer.shownName(null)} defeated the Crab King!`);
+            // other servers hear about it too ("The Crab King has fallen on <server> to <name>")
+            if (this.hooks.event) this.hooks.event({ kind: "boss", server: this.key, by: doer.shownName(null) });
         }
     }
 
@@ -221,7 +241,9 @@ export class Game {
         }
         this.players.push(player);
         this.playersById.set(id, player);
-        player.send("A", { teams: this.clan_manager.list() });
+        player.send("A", { teams: this.clan_manager.list(), animals: ANIMAL_KINDS });
+        if (account && this.hooks.presence) this.hooks.presence(account, this.key);
+        if (this.hooks.count) this.hooks.count(this.key, this.players.length);
         return player;
     }
 
@@ -235,6 +257,8 @@ export class Game {
         this.players.splice(index, 1);
         this.playersById.delete(player.id);
         this.sids[player.sid] = true;
+        if (player.account && this.hooks.presence && !this.players.some(p => p.account === player.account)) this.hooks.presence(player.account, "");
+        if (this.hooks.count) this.hooks.count(this.key, this.players.length);
         this.crabKillers.delete(player.sid);
         this.server.broadcast("E", player.id);
     }
@@ -252,10 +276,37 @@ export class Game {
         const life = player.lifeStats;
         life.died = died;
         life.playtime = Date.now() - player.spawnedAt;
+        life.look = { hat: player.skinIndex || 0, acc: player.tailIndex || 0, weapon: player.weaponIndex || 0, variant: player.variant().id, color: player.skinColor || 0 };
         player.lifeStats = null;
         if (!this.accounts.data.accounts[player.account.id]) return;
+        this.recordUnlocks(player);
         if (player.account.verdict === "shadow") return;
+        const topBefore = this.accounts.weeklyTopClan();
         this.accounts.recordLife(player.account, life);
+        const topAfter = this.accounts.weeklyTopClan();
+        // "[CLAN] has taken the top on <server>"
+        if (topAfter && topAfter !== topBefore && this.hooks.event) this.hooks.event({ kind: "clan_top", server: this.key, clan: topAfter });
+    }
+
+    // What the look editor offers: hats / accessories this account has had, and the best
+    // variant reached with each weapon.
+    recordUnlocks(player) {
+        if (!player.account || !this.accounts) return;
+        for (const [id, owned] of Object.entries(player.skins)) {
+            const hat = hats.find(h => h.id === Number(id));
+            if (owned && hat && hat.price > 0) this.accounts.recordUnlocks(player.account, { hat: hat.id });
+        }
+        for (const [id, owned] of Object.entries(player.tails)) {
+            const acc = accessories.find(a => a.id === Number(id));
+            if (owned && acc && acc.price > 0) this.accounts.recordUnlocks(player.account, { acc: acc.id });
+        }
+        for (const weapon of player.weapons) {
+            if (weapon == null) continue;
+            const xp = player.weaponXP[weapon] || 0;
+            let variant = 0;
+            for (const v of config.weaponVariants) if (xp >= v.xp && (!v.membersOnly || player.isMember)) variant = v.id;
+            this.accounts.recordUnlocks(player.account, { weapon, variant });
+        }
     }
 
     playerCount() {
@@ -352,7 +403,19 @@ export class Game {
             if (player.kills > 0 && (!killLeader || player.kills > killLeader.kills)) killLeader = player;
         }
         if (pointsLeader) pointsLeader.isLeader = true;
-        if (killLeader) killLeader.iconIndex = 1;
+        for (const player of this.players) {
+            if (player.alive) player.iconIndex = iconFor(player === killLeader, this.crownOf(player));
+        }
+    }
+
+    // 1 / 2 / 3 for this week's top three (refreshed every minute); anonymous players hide it.
+    crownOf(player) {
+        if (!player.account || player.anon || !this.accounts) return 0;
+        if (Date.now() - this.crownsAt > 60 * 1000) {
+            this.crowns = this.accounts.weeklyCrowns();
+            this.crownsAt = Date.now();
+        }
+        return this.crowns[player.account.id] || 0;
     }
 
     // "a": [sid, x, y, dir*100] positions, [sid, buildIndex, weaponIndex, variant, team,
@@ -368,7 +431,7 @@ export class Game {
             if (!other.sentTo[viewer.id]) {
                 other.sentTo[viewer.id] = true;
                 viewer.attrCache.delete(other.sid);
-                viewer.send("D", other.getData(), viewer === other);
+                viewer.send("D", other.getData(viewer), viewer === other);
                 // SANDBOX_UNLIMITED: the client starts every life at zero, and only takes resource
                 // updates once it knows its own player, so the full stock follows right here.
                 if (viewer === other && config.unlimitedResources) {
@@ -443,18 +506,45 @@ export class Game {
             const crab = [];
             const clans = [];
             const tribes = [];
+            const crowns = [];
             for (const p of list) {
-                entries.push(p.sid, p.name, Math.round(p.points));
-                if (p.account) roles.push(p.sid, ROLE_NUMBER[p.role] || 0);
+                const anon = p.anon && p !== viewer;
+                entries.push(p.sid, p.shownName(viewer), Math.round(p.points));
+                if (p.account) roles.push(p.sid, anon ? 0 : ROLE_NUMBER[p.role] || 0);
                 if (!p.alive) dead.push(p.sid);
                 if (this.crabKillers.has(p.sid)) crab.push(p.sid);
-                if (p.clanTag) {
+                if (p.clanTag && !anon) {
                     clans.push(p.sid, p.clanTag);
                     tribes.push(p.sid, p.team || "");
                 }
+                const crown = this.crownOf(p);
+                if (crown) crowns.push(p.sid, crown);
             }
-            viewer.send("G", entries, roles, dead, crab, clans, tribes);
+            viewer.send("G", entries, roles, dead, crab, clans, tribes, crowns);
         }
+    }
+
+    // "p": the profile card of a player in this game, as JSON. Anonymous players show only
+    // "Anon#<sid>" and this life's stats; guests only this life's stats.
+    sendProfile(viewer, sid) {
+        const target = this.players.find(p => p.sid === sid);
+        if (!target) return;
+        let profile;
+        if (target.anon && target !== viewer) profile = { name: target.shownName(viewer), anon: true, guest: true };
+        else if (target.account && target.account.name && this.accounts) profile = Object.assign(this.accounts.profile(target.account), { online: { server: this.key }, anon: target.anon || undefined });
+        else profile = { name: target.name, guest: true };
+        viewer.send("p", sid, JSON.stringify(profile));
+    }
+
+    // "m": a player dives (drawn under water) or comes back up: 1 diving, 2 under, 3 coming up, 0 up.
+    setDive(player, state, ms) {
+        player.dive = state;
+        this.server.broadcast("m", player.sid, state, ms || 0);
+    }
+
+    // "r": "Game updated - reloading in m:ss" (0 = after this life).
+    announceUpdate(seconds) {
+        this.server.broadcast("r", Math.max(0, Math.round(seconds)));
     }
 
     // "F": live stats of one player for the profile card ("V" selects whom).
@@ -520,8 +610,11 @@ export class Game {
         return best;
     }
 
-    // Graceful shutdown countdown ("Z": "Server restarting in m:ss").
+    // Graceful shutdown countdown ("Z": "Server restarting in m:ss", or in N minutes / hours
+    // above a minute; -1 cancels). The server list marks the server with restartAt meanwhile,
+    // so the client stops picking it.
     announceShutdown(seconds) {
+        this.restartAt = seconds >= 0 ? Date.now() + seconds * 1000 : 0;
         this.server.broadcast("Z", seconds);
     }
 

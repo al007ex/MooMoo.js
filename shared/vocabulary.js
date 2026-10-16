@@ -1,7 +1,7 @@
 /*
  * moomoo.js — PACKET VOCABULARY  (the stable contract)
  * ====================================================
- * This file is the "language" half of the extension: it names every semantic
+ * This file names every semantic
  * packet the game has (a health update, a chat message, a spawn, ...) and the
  * shape of its payload. It knows NOTHING about the wire: no packet letters, no
  * crypto, no argument order on the socket.
@@ -30,8 +30,7 @@
 
     /*
      * INCOMING packets (server -> client). Mods subscribe to these with
-     *   on <event>(<params...>) { ... }        // moomoo.js language
-     *   MooMoo.on("<event>", handler)           // hand-written JS
+     *   MooMoo.on("<event>", handler)    (or ctx.on inside a registered mod)
      *
      * `normalized: true`  -> the loader hands you tidy named fields; the loader
      *                        insulates you from wire changes. Safe to rely on.
@@ -171,13 +170,16 @@
         minimap: { summary: "Minimap dots for your tribe.", normalized: false, params: [p("args", "array", "raw arguments")] },
         pong: { summary: "Reply to your ping (latency probe).", normalized: true, params: [] },
         effect: { summary: "A visual effect was triggered.", normalized: false, params: [p("args", "array", "raw arguments")] },
-        stats: { summary: "Live stats card for a watched player.", normalized: false, params: [p("args", "array", "raw arguments")] }
+        stats: { summary: "Live stats card for a watched player.", normalized: false, params: [p("args", "array", "raw arguments")] },
+        profile: { summary: "A player's profile card (reply to watchStats).", normalized: false, params: [p("args", "array", "raw arguments")] },
+        probes: { summary: "Server integrity probes; the client answers with telemetry. The loader handles this.", normalized: true, params: [p("salt", "number", "this round's salt"), p("probes", "array", "the probe checks")] },
+        updateCountdown: { summary: "A new build is out; countdown to the forced reload.", normalized: false, params: [p("args", "array", "raw arguments")] },
+        dive: { summary: "A player dived under / surfaced (water).", normalized: true, params: [p("sid", "number", "player sid"), p("state", "number", "0 surface, 1 diving, 2 under, 3 surfacing")] }
     };
 
     /*
      * OUTGOING packets (client -> server). Mods trigger these with
-     *   send <action>(<params...>)              // moomoo.js language
-     *   MooMoo.send.<action>(<params...>)        // hand-written JS
+     *   MooMoo.send.<action>(<params...>)
      */
     const ACTIONS = {
         spawn: {
@@ -215,14 +217,15 @@
         ping: { summary: "Latency probe; replies with `pong`.", params: [] },
         watchStats: { summary: "Watch another player's live stats card (-1 = none).", params: [p("sid", "number", "player to watch, or -1")] },
         report: { summary: "Report / staff action (advanced).", params: [p("args", "array", "raw report arguments")], advanced: true },
-        admin: { summary: "Admin command (requires admin role).", params: [p("args", "array", "raw admin arguments")], advanced: true }
+        admin: { summary: "Admin command (requires admin role).", params: [p("args", "array", "raw admin arguments")], advanced: true },
+        anon: { summary: "Turn anonymous mode on/off (signed-in players).", params: [p("on", "boolean", "true = anonymous")] }
     };
 
     return {
         version: 1,
         events: EVENTS,
         actions: ACTIONS,
-        // Convenience lists used by the compiler + website palette.
+        // Convenience lists for tooling that enumerates the vocabulary.
         eventNames: Object.keys(EVENTS).filter((k) => !EVENTS[k].hidden),
         actionNames: Object.keys(ACTIONS),
         isEvent: (name) => Object.prototype.hasOwnProperty.call(EVENTS, name) && !EVENTS[name].hidden,

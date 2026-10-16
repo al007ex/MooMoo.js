@@ -69,7 +69,8 @@ console.log("\n== assembled bundle in a sandbox ==");
 await ok("window.MooMoo exists after the bundle runs", () => {
     assert.ok(win.MooMoo, "window.MooMoo should be defined");
     assert.ok(win.MooMooLoader, "window.MooMooLoader should be defined");
-    assert.strictEqual(win.__MOOMOO_LOADER__, "1.0.0");
+    const LOADER_VERSION = /const VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(here, "..", "loader", "src", "loader.js"), "utf8"))[1];
+    assert.strictEqual(win.__MOOMOO_LOADER__, LOADER_VERSION);
 });
 
 await ok("end-to-end: health event + telemetry scrub + injection", async () => {
@@ -90,13 +91,14 @@ await ok("end-to-end: health event + telemetry scrub + injection", async () => {
     assert.strictEqual(win.MooMoo.self.health, 55);
     assert.deepStrictEqual(health.map((e) => [e.sid, e.value]), [[9, 55]]);
 
-    // telemetry scrub (simulate the client sending dirty flags)
-    const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0];
+    // telemetry scrub (simulate the client sending dirty flags). Seal mode 0 here, so the
+    // last two fields (seal, salt) stay 0; the three self-reporting fields must be zeroed.
+    const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0, server.sealMode | 0];
     const Protocol = win.MooMooProtocol;
     const client = new Protocol.ClientSession(payload, mod);
-    clientSocket.send(client.encodeC2S("T", [2, 30]));
+    clientSocket.send(client.encodeC2S("T", [2, 30, 4, 0, 0]));
     const t = accepted.find((d) => d.name === "T");
-    assert.deepStrictEqual(t.args, [0, 0], "telemetry scrubbed");
+    assert.deepStrictEqual(t.args.slice(0, 3), [0, 0, 0], "telemetry scrubbed");
 
     // injection
     win.MooMoo.send.chat("from the bundle");

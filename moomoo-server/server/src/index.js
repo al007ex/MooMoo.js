@@ -18,9 +18,12 @@ import { fileURLToPath } from "node:url";
 import { config } from "./moomoo/config.js";
 import { Game } from "./moomoo/server.js";
 import { createProtocolBuild } from "./protocol/build.js";
+import { ClientBundle } from "./protocol/bundle.js";
 import { AccountStore } from "./api/store.js";
 import { createApiRouter } from "./api/routes.js";
 import { SocialHub } from "./api/social.js";
+import { PageStream } from "./api/pageStream.js";
+import { Chat } from "./api/chat.js";
 import { ModerationStore } from "./anticheat/index.js";
 import { createConnectionHandler } from "./network/connection.js";
 import { AdminConsole } from "./admin/console.js";
@@ -30,7 +33,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
 const OFFICIAL_DIR = path.join(ROOT, "dist/official");
 const PUBLIC_DIR = path.join(ROOT, "client/public");
-const DATA_DIR = path.join(ROOT, "server/data");
+// DATA_DIR: run a second copy (tests, a staging copy) without sharing accounts / bans with this one
+const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, "server/data");
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? "127.0.0.1";
 
@@ -58,6 +62,29 @@ moderation.migrateIds(accounts.migratedIds);
 if (Object.keys(accounts.migratedIds).length) log(`accounts: moved ${Object.keys(accounts.migratedIds).length} account id(s) to the FRVR id format`);
 const social = new SocialHub({ store: accounts, log });
 
+// IS_SANDBOX=1: the official client reads its sandbox flag from its own build ({}.IS_SANDBOX),
+// so the bundle is served with that flag switched on. Its build limits and free placing then
+// agree with the server's.
+const SANDBOX_FLAG = /([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*&&\{\}\.IS_SANDBOX/g;
+const sandboxTransform = (source, name) => {
+    if ((source.match(SANDBOX_FLAG) || []).length !== 1) {
+        log(`sandbox: could not find the client's sandbox flag in ${name}; the client will show normal limits`);
+        return source;
+    }
+    log(`sandbox: client bundle ${name} served with its sandbox flag on`);
+    return source.replace(SANDBOX_FLAG, "$1=!0");
+};
+const bundle = new ClientBundle(path.join(OFFICIAL_DIR, "assets"), { transform: process.env.IS_SANDBOX ? sandboxTransform : null });
+
+// Page stream (bundle updates, notices, live counts, news, presence, chat) and chat.
+const stream = new PageStream({ store: accounts, bundle, log });
+let chat = null;
+const gameHooks = {
+    presence: (account, server) => chat && chat.presence(account, server),
+    count: (server, n) => stream.broadcast("count", { server, n }),
+    event: (data) => stream.broadcast("event", data)
+};
+
 // Owner convenience: OWNER_EMAIL=<email> makes that account an admin.
 if (process.env.OWNER_EMAIL) {
     const owner = accounts.accountForEmail(process.env.OWNER_EMAIL);
@@ -67,7 +94,7 @@ if (process.env.OWNER_EMAIL) {
 
 const games = new Map();
 for (const def of GAME_SERVERS) {
-    games.set(def.key, new Game({ key: def.key, name: def.key, capacity: def.capacity, membersOnly: def.membersOnly, accounts, log }));
+    games.set(def.key, new Game({ key: def.key, name: def.key, capacity: def.capacity, membersOnly: def.membersOnly, accounts, log, hooks: gameHooks }));
 }
 
 const gameApi = {
@@ -92,8 +119,19 @@ const gameApi = {
             if (g.players.includes(player)) return g.sessionOf(player);
         }
         return null;
+    },
+    // {server, player} when the account is connected to a game
+    whereIs: (accountId) => {
+        for (const g of games.values()) {
+            const player = g.players.find(p => p.account && p.account.id === accountId);
+            if (player) return { server: g.key, player };
+        }
+        return null;
     }
 };
+
+chat = new Chat({ dataDir: DATA_DIR, store: accounts, stream, game: gameApi, log });
+accounts.onClanEvent = (clan, text) => chat.clanSystem(clan, text);
 
 const servers = {
     list: () => [...games.values()].map(g => ({
@@ -103,7 +141,9 @@ const servers = {
         key: g.key,
         playerCount: g.playerCount(),
         playerCapacity: g.capacity,
-        auth: g.membersOnly
+        auth: g.membersOnly,
+        // set while a restart is announced: the client stops choosing this server
+        restartAt: g.restartAt > Date.now() ? g.restartAt : undefined
     }))
 };
 
@@ -111,7 +151,7 @@ const servers = {
 const tokenFile = path.join(DATA_DIR, "admin.token");
 if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, randomBytes(24).toString("hex"));
 const ADMIN_TOKEN = Buffer.from(fs.readFileSync(tokenFile, "utf8").trim());
-const adminConsole = new AdminConsole({ games, accounts, moderation, build, dataDir: DATA_DIR, log, social, baseUrl: `http://${["0.0.0.0", "127.0.0.1", "::1", "::"].includes(HOST) ? "localhost" : HOST}:${PORT}` });
+const adminConsole = new AdminConsole({ games, accounts, moderation, build, dataDir: DATA_DIR, log, social, stream, chat, baseUrl: `http://${["0.0.0.0", "127.0.0.1", "::1", "::"].includes(HOST) ? "localhost" : HOST}:${PORT}` });
 
 // ---------------------------------------------------------------- http
 const app = express();
@@ -135,7 +175,9 @@ const sendIndex = (_req, res) => {
         res.status(503).type("text").send("Official client not built. Run: npm run build");
         return;
     }
-    const html = fs.readFileSync(indexFile, "utf8").replace("__PROTOCOL_MODULE__", build.publicPath);
+    const html = fs.readFileSync(indexFile, "utf8")
+        .replace("__PROTOCOL_MODULE__", build.publicPath)
+        .replace("__SEAL_MODULE__", build.sealPath);
     res.set("Cache-Control", "no-cache, no-store, must-revalidate");
     res.type("html").send(html);
 };
@@ -146,28 +188,21 @@ app.get(build.publicPath, (_req, res) => {
     res.type("application/javascript").send(build.source);
 });
 
-// IS_SANDBOX=1: the official client reads its sandbox flag from its own build ({}.IS_SANDBOX),
-// so the bundle is served with that flag switched on. Its build limits and free placing then
-// agree with the server's.
-if (process.env.IS_SANDBOX) {
-    const assetsDir = path.join(OFFICIAL_DIR, "assets");
-    const bundle = fs.existsSync(assetsDir) && fs.readdirSync(assetsDir).find(f => /^index-[0-9a-f]+\.js$/.test(f));
-    const source = bundle ? fs.readFileSync(path.join(assetsDir, bundle), "utf8") : "";
-    const flag = /([A-Za-z_$][\w$]*)=[A-Za-z_$][\w$]*&&\{\}\.IS_SANDBOX/g;
-    if ((source.match(flag) || []).length === 1) {
-        const sandboxed = source.replace(flag, "$1=!0");
-        app.get(`/assets/${bundle}`, (_req, res) => {
-            res.set("Cache-Control", "no-cache");
-            res.type("application/javascript").send(sandboxed);
-        });
-        log(`sandbox: client bundle ${bundle} served with its sandbox flag on`);
-    } else {
-        log("sandbox: could not find the client's sandbox flag; the client will show normal limits");
-    }
-}
+// "moomoo-seal": the client only reads this module's file name (the seal, in hex).
+app.get(build.sealPath, (_req, res) => {
+    res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.type("application/javascript").send(build.sealSource);
+});
 
+// The client bundle comes from ClientBundle, so the bytes sent are the ones the seal is built from.
+app.get(/^\/assets\/index-[\w-]+\.js$/, (req, res, next) => {
+    const current = bundle.current();
+    if (!current || req.path !== current.url) return next();
+    res.set("Cache-Control", "no-cache");
+    res.type("application/javascript").send(current.bytes);
+});
 app.use("/assets", express.static(path.join(OFFICIAL_DIR, "assets"), { fallthrough: false }));
-app.use("/api", createApiRouter({ store: accounts, moderation, servers, game: gameApi, social }));
+app.use("/api", createApiRouter({ store: accounts, moderation, servers, game: gameApi, social, stream, chat }));
 
 // Links from "Copy link" on profiles and clans open the game with that card.
 app.get("/player/:name", (req, res) => res.redirect(302, "/?profile=" + encodeURIComponent(req.params.name)));
@@ -192,7 +227,7 @@ app.use(express.static(PUBLIC_DIR));
 // ---------------------------------------------------------------- websocket
 const server = createServer(app);
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
-const onConnection = createConnectionHandler({ build, accounts, moderation, log });
+const onConnection = createConnectionHandler({ build, bundle, accounts, moderation, log, chat });
 
 server.on("upgrade", (req, socket, head) => {
     const pathname = new URL(req.url, "http://localhost").pathname;

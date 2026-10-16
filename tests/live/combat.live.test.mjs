@@ -14,7 +14,7 @@ if (!available) { console.log("SKIP combat.live: server not found"); process.exi
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "..", "..");
 const LOADER = fs.readFileSync(path.join(ROOT, "loader", "dist", "moomoo-loader.user.js"), "utf8");
-const MOD = fs.readFileSync(path.join(ROOT, "mods", "examplescript.js"), "utf8");
+const MOD = fs.readFileSync(path.join(ROOT, "mods", "moomooplus.js"), "utf8");
 const ATTACKER = { email: "live-attacker@moomoojs.test", password: "x" };
 const PLAYER = { email: "live-player@moomoojs.test", password: "x" };
 
@@ -48,9 +48,9 @@ try {
     // turn ON autohat + auto-attack + auto-heal
     await page.evaluate(() => {
         const M = window.MooMoo;
-        M.setSetting("examplescript","autoHeal",true);
-        M.setSetting("examplescript","autohat",true);
-        M.setSetting("examplescript","autoAttack",true);
+        M.setSetting("moomooplus","autoHeal",true);
+        M.setSetting("moomooplus","autohat",true);
+        M.setSetting("moomooplus","autoAttack",true);
         window.__c = 0; window.MooMooLoader.onRaw((d,n)=>{ if(d==="out"&&n==="c") window.__c++; });
     });
     note(`player sid ${vsid}; autohat+autoAttack+autoHeal ON`);

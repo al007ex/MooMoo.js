@@ -6,7 +6,7 @@
  *    loader's constructor Proxy can hook it exactly like it hooks Chrome's.
  *
  *  - createVictim(): a fake page window running the REAL loader core and the REAL
- *    mods/examplescript.js, plus an emulation of the official client's own
+ *    mods/moomooplus.js, plus an emulation of the official client's own
  *    traffic (its own ClientSession + seq, spawn, telemetry, ping, aim). That's
  *    the important part: in the real game, client frames and mod-injected frames
  *    interleave on one socket, and the loader has to re-sequence both.
@@ -17,12 +17,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { loadSeal } from "./live-server.mjs";
 
 const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "..", "..");
-const Protocol = require(path.join(ROOT, "loader", "src", "protocol.js"));
-const Binding = require(path.join(ROOT, "loader", "src", "binding.js"));
+const Protocol = require(path.join(ROOT, "loader", "src", "net", "protocol.js"));
+const Binding = require(path.join(ROOT, "loader", "src", "net", "binding.js"));
 
 export function makeBrowserWebSocket(WS, origin) {
     class WebSocket {
@@ -55,14 +56,14 @@ export function makeBrowserWebSocket(WS, origin) {
 
 // Minimal official-client emulation: owns its own session + seq, decodes every
 // s2c frame (keeps the mask counter in step), and exposes send(name, args).
-function emulateClient(ws, mod, hooks) {
+function emulateClient(ws, mod, hooks, seal) {
     const st = { session: null, sid: -1, alive: false, closed: null, disconnectReason: null, players: new Map(), health: 100 };
     ws.addEventListener("message", (ev) => {
         const bytes = new Uint8Array(ev.data);
         if (!st.session) {
             const hs = Protocol.isHandshake(bytes);
             if (!hs) return;
-            st.session = new Protocol.ClientSession(hs[1], mod);
+            st.session = new Protocol.ClientSession(hs[1], mod, { seal });
             hooks.onHandshake && hooks.onHandshake();
             return;
         }
@@ -76,6 +77,9 @@ function emulateClient(ws, mod, hooks) {
         if (event === "disconnect") st.disconnectReason = payload.reason;
         if (event === "health" && payload.sid === st.sid) st.health = payload.value;
         if (event === "playersUpdate") for (const p of payload.positions) { const o = st.players.get(p.sid) || {}; Object.assign(o, p); st.players.set(p.sid, o); }
+        // The current server asks for telemetry with "q" and expects a "T" in answer, with the
+        // round's salt and the right seal. A clean client reports no flags / no matched probes.
+        if (event === "probes") { try { st.send("T", [0, 0, 0, (st.session && st.session.sealReport) || 0, payload.salt]); } catch (_) {} }
         hooks.onPacket && hooks.onPacket(event, payload);
     });
     ws.addEventListener("close", (ev) => { st.closed = { code: ev.code, reason: ev.reason, at: Date.now() }; hooks.onClose && hooks.onClose(ev); });
@@ -94,13 +98,25 @@ async function waitFor(fn, ms, label) {
 }
 
 /*
- * The victim: real loader + real examplescript in a fake page.
+ * The victim: real loader + real moomooplus in a fake page.
  *   opts: { WS, srv, mod, url, name, configure(MooMoo) }
  */
 export async function createVictim(opts) {
+    // The seal for this deploy. We give the fake window the same DOM facts and a fetch the real
+    // page has, so the loader computes the seal itself (bind mode) exactly as it does in Chrome.
+    const sealInfo = opts.seal ? { seal: opts.seal } : await loadSeal(opts.srv);
     const listeners = new Map();
+    const importMapNode = sealInfo.importMap ? [{ textContent: sealInfo.importMap }] : [];
+    const bundleNode = sealInfo.bundleUrl ? [{ getAttribute: (a) => (a === "src" ? sealInfo.bundlePath : null), src: sealInfo.bundleUrl }] : [];
     const win = {
-        document: { baseURI: opts.srv.base + "/", querySelectorAll: () => [] },
+        document: {
+            baseURI: opts.srv.base + "/",
+            querySelectorAll: (sel) => (sel === 'script[type="importmap"]' ? importMapNode : sel === 'script[type="module"][src]' ? bundleNode : [])
+        },
+        fetch: (u, o) => fetch(u, o),
+        // a minimal localStorage so mods behave as in a real page (and the debug view,
+        // gated on mmj_debug, is reachable as window.__mmp). opts.storage seeds it.
+        localStorage: (() => { const s = Object.assign({ mmj_debug: "1" }, opts.storage || {}); return { getItem: (k) => (k in s ? s[k] : null), setItem: (k, v) => { s[k] = String(v); }, removeItem: (k) => { delete s[k]; } }; })(),
         Event: class { constructor(type) { this.type = type; } },
         addEventListener: (t, f) => { (listeners.get(t) || listeners.set(t, new Set()).get(t)).add(f); },
         removeEventListener: (t, f) => { const s = listeners.get(t); if (s) s.delete(f); },
@@ -114,10 +130,10 @@ export async function createVictim(opts) {
     const LoaderCore = require(path.join(ROOT, "loader", "src", "loader.js"));
     const { MooMoo, MooMooLoader } = LoaderCore.createLoader(win, { resolveProtocol: () => opts.mod });
 
-    // Run the real examplescript exactly as Tampermonkey would (it reads `window`).
-    const code = fs.readFileSync(path.join(ROOT, "mods", "examplescript.js"), "utf8");
+    // Run the real moomooplus exactly as Tampermonkey would (it reads `window`).
+    const code = fs.readFileSync(path.join(ROOT, "mods", "moomooplus.js"), "utf8");
     new Function("window", "unsafeWindow", code)(win, undefined);
-    await waitFor(() => MooMoo.getMods().some((m) => m.id === "examplescript"), 3000, "examplescript to register");
+    await waitFor(() => MooMoo.getMods().some((m) => m.id === "moomooplus"), 3000, "moomooplus to register");
     if (opts.configure) opts.configure(MooMoo);
 
     // Record every frame that actually leaves the socket (after the loader).
@@ -131,18 +147,16 @@ export async function createVictim(opts) {
     const client = emulateClient(ws, opts.mod, {
         name: opts.name || "victim", autoRespawn: opts.autoRespawn !== false,
         onHandshake: () => setTimeout(() => client.send("M", [{ name: opts.name || "victim", moofoll: 1, skin: 0 }]), 50)
-    });
+    }, sealInfo.seal);
     await waitFor(() => client.sid >= 0 || client.closed, 8000, "victim spawn");
     if (client.closed) throw new Error("victim closed before spawn: " + JSON.stringify(client.closed));
 
-    // Background traffic like the real client: aim updates, pings, telemetry.
+    // Background traffic like the real client: aim updates and pings. Telemetry is sent only in
+    // answer to the server's probe round ("q"), by emulateClient; the loader scrubs it.
     const timers = [];
     let aim = 0;
     timers.push(setInterval(() => { aim += 0.05; client.send("D", [aim]); }, 250));
     timers.push(setInterval(() => client.send("0", []), 3000));
-    // Telemetry 5s after joining, flags 3 = USERSCRIPT_MANAGER|SOCKET_HOOKED: the
-    // loader must scrub it to [0,0] or the server kicks us for SOCKET_HOOKED.
-    timers.push(setTimeout(() => client.send("T", [3, 0]), 5000));
 
     return {
         win, MooMoo, MooMooLoader, client, outLog, loaderErrors,
@@ -155,14 +169,16 @@ export async function createVictim(opts) {
  * goto/give. opts: { WS, srv, mod, url, name }
  */
 export async function createBot(opts) {
+    const sealInfo = opts.seal ? { seal: opts.seal } : await loadSeal(opts.srv);
     const WebSocket = makeBrowserWebSocket(opts.WS, opts.srv.origin);
     const ws = new WebSocket(opts.url);
     const client = emulateClient(ws, opts.mod, {
         onHandshake: () => setTimeout(() => client.send("M", [{ name: opts.name || "bot", moofoll: 1, skin: 0 }]), 50)
-    });
+    }, sealInfo.seal);
     await waitFor(() => client.sid >= 0 || client.closed, 8000, "bot spawn");
     if (client.closed) throw new Error("bot closed before spawn: " + JSON.stringify(client.closed));
-    const timers = [setTimeout(() => client.send("T", [0, 0]), 5000)];
+    // Telemetry is answered on "q" (emulateClient); no unsolicited "T" (the server strikes that).
+    const timers = [];
     return {
         client,
         admin: (...args) => client.send("A", args),

@@ -15,7 +15,8 @@ const NAME_MIN = 3;                        // "Names are 3-15 letters, numbers a
 const NAME_MAX = 15;
 const SOCIAL_FIELDS = ["youtube", "twitch", "tiktok", "x", "discord"];   // [hi]
 const HANDLE_RE = /^[A-Za-z0-9._-]{1,32}$/;
-export const DEFAULT_PREFS = { friendNotifs: true, friendRequests: true, clanInvites: true };
+export const DEFAULT_PREFS = { friendNotifs: true, friendRequests: true, clanInvites: true, clanChat: true, whispers: true };
+const DEVICE_REJOIN_MS = 15 * 60 * 1000;   // guests may rejoin without a captcha this long after their last ticket
 const DISCORD_CODE_MS = 10 * 60 * 1000;
 
 // FRVR IDs look like MongoDB ObjectIds: 24 hex characters, starting with the creation time.
@@ -63,8 +64,10 @@ export class AccountStore {
         this.data.social = Object.assign({ friends: {}, requests: [] }, this.data.social);
         this.data.legacyIds = this.data.legacyIds || {};
         this.tickets = new Map();
+        this.devices = new Map();      // device id -> last ticket time (captcha-free rejoin)
         this.loginFlows = new Map();
         this.discordCodes = new Map();
+        this.onClanEvent = null;       // (clanName, text) -> clan chat system line
         this.saveTimer = null;
         this.migratedIds = this.migrateIds();
     }
@@ -220,6 +223,53 @@ export class AccountStore {
         return prefs;
     }
 
+    // LOOK (Settings -> Look): how the player is drawn on their profile page and share card,
+    // picked from what they have earned in game.
+    //   POST /account/look {auth}        -> {options: {hats, accs, weapons: {id: maxVariant}}, look, best}
+    //   POST /account/look {auth, look}  -> saves it; 400 when it uses something not earned
+    lookOptions(account) {
+        const u = account.unlocks || {};
+        const weapons = Object.assign({ 0: 0 }, u.weapons || {});
+        return { hats: [0].concat(u.hats || []), accs: [0].concat(u.accs || []), weapons };
+    }
+
+    // Called from the game: hats / accessories bought, weapon variants reached.
+    recordUnlocks(account, { hat, acc, weapon, variant }) {
+        const u = account.unlocks = account.unlocks || { hats: [], accs: [], weapons: {} };
+        let changed = false;
+        if (hat && !u.hats.includes(hat)) (u.hats.push(hat), changed = true);
+        if (acc && !u.accs.includes(acc)) (u.accs.push(acc), changed = true);
+        if (Number.isInteger(weapon) && Number.isInteger(variant) && (u.weapons[weapon] === undefined || u.weapons[weapon] < variant)) {
+            u.weapons[weapon] = variant;
+            changed = true;
+        }
+        if (changed) this.save();
+    }
+
+    lookInfo(account) {
+        const options = this.lookOptions(account);
+        const best = account.bestLook || null;
+        return { options, look: account.look || null, best };
+    }
+
+    setLook(account, look) {
+        const options = this.lookOptions(account);
+        const pick = {
+            hat: Number(look && look.hat) || 0,
+            acc: Number(look && look.acc) || 0,
+            weapon: Number(look && look.weapon) || 0,
+            variant: Number(look && look.variant) || 0,
+            color: Number(look && look.color) || 0
+        };
+        const ok = options.hats.includes(pick.hat) && options.accs.includes(pick.acc) &&
+            options.weapons[pick.weapon] !== undefined && pick.variant >= 0 && pick.variant <= options.weapons[pick.weapon] &&
+            Number.isInteger(pick.color) && pick.color >= 0 && pick.color < 10;
+        if (!ok) return { status: 400, body: { error: "not yours" } };
+        account.look = pick;
+        this.save();
+        return { status: 200, body: this.lookInfo(account) };
+    }
+
     // SOCIAL HANDLES (profile card). 400 {field, why: "format" | "rude"}.
     setSocials(account, socials) {
         const out = {};
@@ -255,7 +305,15 @@ export class AccountStore {
         const ticket = randomBytes(18).toString("hex");
         const deviceId = did && /^[a-f0-9]{16,64}$/.test(did) ? did : randomBytes(12).toString("hex");
         this.tickets.set(ticket, { accountId: account ? account.id : null, did: deviceId, server: server || null, at: Date.now() });
+        this.devices.set(deviceId, Date.now());
         return { ticket, did: deviceId };
+    }
+
+    // After a server restart the client lets guests rejoin without the captcha for a few
+    // minutes, sending only their device id; that works if the device played recently.
+    recentDevice(did) {
+        const at = this.devices.get(String(did || ""));
+        return !!at && Date.now() - at < DEVICE_REJOIN_MS;
     }
 
     consumeTicket(ticket, maxAgeMs) {
@@ -280,6 +338,8 @@ export class AccountStore {
         s.gold += life.gold;
         s.animalDamage += life.animalDamage;
         s.playtime += life.playtime;
+        // the look editor suggests the outfit of the best life until a look is picked
+        if (life.look && life.score >= s.bestScore) account.bestLook = life.look;
         s.bestScore = Math.max(s.bestScore, life.score);
         s.maxKills = Math.max(s.maxKills, life.kills);
         for (const [key, count] of Object.entries(life.animalKills)) {
@@ -372,6 +432,34 @@ export class AccountStore {
         return { players, clans };
     }
 
+    // CROWNS: the top three players on this week's board wear gold / silver / bronze crowns
+    // in game and on the leaderboard. accountId -> 1 | 2 | 3
+    weeklyCrowns() {
+        const key = PERIOD_SPANS.week();
+        const ranked = Object.values(this.data.accounts)
+            .filter(a => a.name && a.verdict !== "shadow")
+            .map(a => ({ id: a.id, kills: a.stats.periods.week && a.stats.periods.week.key === key ? a.stats.periods.week.kills : 0 }))
+            .filter(a => a.kills > 0)
+            .sort((a, b) => b.kills - a.kills)
+            .slice(0, 3);
+        const out = {};
+        ranked.forEach((a, i) => out[a.id] = i + 1);
+        return out;
+    }
+
+    // The clan on top of this week's clan board (for "[CLAN] has taken the top on ...").
+    weeklyTopClan() {
+        const key = PERIOD_SPANS.week();
+        let top = null;
+        for (const clan of Object.values(this.data.clans)) {
+            if (clan.shadowed) continue;
+            const p = clan.stats.periods.week;
+            const kills = p && p.key === key ? p.kills : 0;
+            if (kills > 0 && (!top || kills > top.kills)) top = { name: clan.name, kills };
+        }
+        return top ? top.name : null;
+    }
+
     // CLANS
     clanView(clan) {
         const nameOf = (id) => (this.data.accounts[id] || {}).name || "unknown";
@@ -403,7 +491,8 @@ export class AccountStore {
         return {
             clan: this.clanView(clan),
             role,
-            requests: role !== "member" ? clan.requests.map(id => (this.data.accounts[id] || {}).name || "unknown") : []
+            requests: role !== "member" ? clan.requests.map(id => (this.data.accounts[id] || {}).name || "unknown") : [],
+            invited: role !== "member" ? (clan.invites || []).map(i => (this.data.accounts[i.id] || {}).name).filter(Boolean) : []
         };
     }
 
@@ -424,6 +513,8 @@ export class AccountStore {
             clan.past = clan.past || [];
             clan.past.push({ id, stint: m.stint || 1, left: Date.now(), kicked, kills: m.kills || 0 });
             if (this.data.accounts[id]) this.data.accounts[id].clan = null;
+            const who = (this.data.accounts[id] || {}).name || "Someone";
+            if (this.onClanEvent && clan.members.length) this.onClanEvent(clan.name, who + (kicked ? " was removed from the clan" : " left the clan"));
         };
         const join = (clan, id) => {
             const prev = (clan.past || []).filter(p => p.id === id).length;
@@ -431,6 +522,7 @@ export class AccountStore {
             clan.requests = clan.requests.filter(r => r !== id);
             clan.invites = (clan.invites || []).filter(i => i.id !== id);
             this.data.accounts[id].clan = clan.name;
+            if (this.onClanEvent && clan.members.length > 1) this.onClanEvent(clan.name, this.data.accounts[id].name + " joined the clan");
         };
 
         switch (action) {
@@ -456,7 +548,15 @@ export class AccountStore {
                 if (mine) return err("in a clan");
                 if (clan.closed) return err("closed", 403);
                 if (clan.members.length >= CLAN_MAX_MEMBERS) return err("full");
-                if (!clan.requests.includes(account.id)) clan.requests.push(account.id);
+                if (clan.requests.includes(account.id)) return err("asked", 409);
+                clan.requests.push(account.id);
+                break;
+            }
+            case "uninvite": {
+                if (rank < 1) return err("rank", 403);
+                const before = (mine.invites || []).length;
+                mine.invites = (mine.invites || []).filter(i => !target || i.id !== target.id);
+                if (mine.invites.length === before) return err("no player", 404);
                 break;
             }
             case "requests": {
@@ -485,7 +585,8 @@ export class AccountStore {
                 if (!target) return err("no player", 404);
                 if (target.clan) return err("in a clan");
                 if (!this.prefsOf(target).clanInvites) return err("no invites", 403);
-                mine.invites = (mine.invites || []).filter(i => i.id !== target.id);
+                if ((mine.invites || []).some(i => i.id === target.id)) return err("invited", 409);
+                mine.invites = mine.invites || [];
                 mine.invites.push({ id: target.id, by: account.id });
                 break;
             }

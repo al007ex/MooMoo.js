@@ -6,6 +6,14 @@
 
 import express from "express";
 import { createSocialRouter } from "./social.js";
+import { ANTICHEAT_CONFIG } from "../anticheat/config.js";
+
+const clientIp = (req) => (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket.remoteAddress;
+// Timed bans from the console / staff tools: {minutes} or {days}.
+const banUntil = (body) => {
+    const minutes = Number(body.minutes) || (Number(body.days) || 0) * 24 * 60;
+    return minutes > 0 ? Date.now() + minutes * 60 * 1000 : 0;
+};
 
 // Sliding-window counter per key (friend requests: "Too many friend requests").
 function rateLimiter(max, windowMs) {
@@ -23,9 +31,10 @@ function rateLimiter(max, windowMs) {
     };
 }
 
-export function createApiRouter({ store, moderation, servers, game, social }) {
+export function createApiRouter({ store, moderation, servers, game, social, stream, chat }) {
     const router = express.Router();
     router.use("/social", createSocialRouter({ store, hub: social }));
+    if (stream) router.use(stream.router());
     router.use(express.json({ limit: "32kb" }));
     const friendRequestRate = rateLimiter(20, 60 * 60 * 1000);
 
@@ -44,6 +53,9 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
         }
         return account;
     };
+
+    // Chat, invites and online lists (before /clan/:action, which would take /clan/online).
+    if (chat) router.use(chat.router({ requireAuth, requireStaff }));
 
     // ---------- FRVR auth emulation (used by shim.js) ----------
     // Email + code: any 6 digits work. Email + password: any password works.
@@ -80,13 +92,22 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
 
     // The client sends the address of the server it is about to open ("host"); the ticket
     // is only good for that server. Local servers are addressed as <host>/s/<key>.
+    // Errors the client explains: auth, captcha, banned {until}, locked {seconds}
+    // (also vpn / hosting on moomoo.io, which has no counterpart here).
     router.post("/join", (req, res) => {
         const body = req.body || {};
         const account = body.auth ? store.verifyToken(body.auth) : null;
         if (body.auth && !account) return res.status(403).json({ error: "auth" });
-        if (!account && !body.captcha) return res.status(403).json({ error: "captcha" });
+        const ip = clientIp(req);
+        const did = typeof body.did === "string" ? body.did : null;
+        const ban = moderation.banEntry(ip, account && account.id, did) || (account && account.verdict === "ban" ? {} : null);
+        if (ban) return res.status(403).json({ error: "banned", until: ban.until || 0 });
+        const seconds = moderation.lockedFor(ip, account && account.id, did);
+        if (seconds) return res.status(403).json({ error: "locked", seconds });
+        // guests need the captcha, except right after a restart from a device that just played
+        if (!account && !body.captcha && !store.recentDevice(did)) return res.status(403).json({ error: "captcha" });
         const match = /\/s\/([A-Za-z0-9]+)$/.exec(String(body.host || ""));
-        res.json(store.issueTicket({ account, did: body.did, server: match ? match[1] : null }));
+        res.json(store.issueTicket({ account, did, server: match ? match[1] : null }));
     });
 
     // ---------- account / names ----------
@@ -100,6 +121,15 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
         if (account) res.json({ prefs: store.setPrefs(account, req.body.prefs) });
     });
 
+    // Settings -> Look
+    router.post("/account/look", (req, res) => {
+        const account = requireAuth(req, res);
+        if (!account) return;
+        if (req.body.look === undefined) return res.json(store.lookInfo(account));
+        const result = store.setLook(account, req.body.look);
+        res.status(result.status).json(result.body);
+    });
+
     router.post("/name", (req, res) => {
         const account = requireAuth(req, res);
         if (!account) return;
@@ -111,9 +141,10 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
         res.json({ reserved: Boolean(store.nameOwner(req.query.name)) });
     });
 
+    // Also used for tribe names: clan names (and "solo", the tag of clanless players) are reserved.
     router.get("/clan-check", (req, res) => {
         const name = String(req.query.name || "").trim().toLowerCase();
-        res.json({ reserved: Object.keys(store.data.clans).some(c => c.toLowerCase() === name) });
+        res.json({ reserved: name === "solo" || Object.keys(store.data.clans).some(c => c.toLowerCase() === name) });
     });
 
     router.post("/account/socials", (req, res) => {
@@ -209,7 +240,7 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
             const guest = game.playerBySession(String(req.body.id));
             if (!guest) return res.status(404).json({ error: "no player" });
             if (level === "ban") {
-                moderation.ban({ ip: guest.ip, did: guest.did, name: guest.name, reason }, staff);
+                moderation.ban({ ip: guest.ip, did: guest.did, name: guest.name, reason, until: banUntil(req.body) }, staff);
                 if (guest.kick) guest.kick("kicked");
             } else if (level === "shadow") {
                 guest.shadowed = true;
@@ -220,28 +251,42 @@ export function createApiRouter({ store, moderation, servers, game, social }) {
         }
         const target = store.nameOwner(req.body.name);
         if (!target) return res.status(404).json({ error: "no player" });
-        store.setVerdict(target.name, level);
-        moderation.recordVerdict(target, level, reason, staff);
+        const until = level === "ban" ? banUntil(req.body) : 0;
+        if (until) {
+            // a timed ban lives in the ban list only, so it lifts by itself
+            moderation.ban({ accountId: target.id, name: target.name, reason, until }, staff);
+            moderation.recordVerdict(target, "ban", reason + " (until " + new Date(until).toISOString().slice(0, 16).replace("T", " ") + ")", staff, { keepBans: true });
+        } else {
+            store.setVerdict(target.name, level);
+            moderation.recordVerdict(target, level, reason, staff);
+        }
         const last = target.lastSeen || {};
-        if (level === "ban" && req.body.ip && last.ip) moderation.ban({ ip: last.ip, did: last.did, name: target.name, reason }, staff);
+        if (level === "ban" && req.body.ip && last.ip) moderation.ban({ ip: last.ip, did: last.did, name: target.name, reason, until }, staff);
         if (level === "clear" && req.body.ip && last.ip) moderation.unbanIp(last.ip, last.did);
         if (level === "ban") game.kickAccount(target.id, "kicked");
         game.setShadow(target.id, level === "shadow");
         res.json({});
     });
 
+    // Kicked players can't rejoin for kickLock.staffSeconds ("try again in 2 minutes").
     router.post("/mod/kick", (req, res) => {
         if (!requireStaff(req, res)) return;
+        const lockSeconds = ANTICHEAT_CONFIG.kickLock.staffSeconds;
         let kicked = 0;
         if (req.body.id && !req.body.name) {
             const guest = game.playerBySession(String(req.body.id));
             if (guest && guest.kick) {
+                moderation.lock({ ip: guest.ip, did: guest.did }, lockSeconds);
                 guest.kick("kicked");
                 kicked++;
             }
         } else {
             const target = store.nameOwner(req.body.name);
-            if (target) kicked = game.kickAccount(target.id, "kicked");
+            if (target) {
+                const last = target.lastSeen || {};
+                moderation.lock({ accountId: target.id, ip: last.ip, did: last.did }, lockSeconds);
+                kicked = game.kickAccount(target.id, "kicked");
+            }
         }
         if (!kicked) return res.status(404).json({ error: "not online" });
         res.json({});

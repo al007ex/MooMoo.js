@@ -251,9 +251,9 @@ module.exports.hats = [{
     price: 0,
     scale: 120,
     desc: "dropped by the Crab King. reflects damage and reduces damage taken",
-    dmg: 0.3,
-    dmgMult: 0.85,
-    spdMult: 0.92
+    dmg: 0.375,
+    dmgMult: 0.8,
+    spdMult: 0.93
 }, {
     id: 21,
     name: "Plague Mask",

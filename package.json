@@ -1,18 +1,26 @@
 {
   "name": "moomoo.js",
-  "version": "1.0.0",
-  "description": "A modding framework for MooMoo.io-style private servers: an undetectable WebSocket loader, a stable mod runtime with an in-game Mods menu, and the moomoo.js language + compiler.",
+  "version": "1.3.0",
+  "description": "A modding framework for MooMoo.io-style private servers: an undetectable WebSocket loader and a stable mod runtime with an in-game Mods menu.",
   "license": "MIT",
   "author": "",
-  "keywords": ["moomoo", "modding", "userscript", "tampermonkey", "websocket", "loader", "compiler"],
+  "keywords": [
+    "moomoo",
+    "modding",
+    "userscript",
+    "tampermonkey",
+    "websocket",
+    "loader"
+  ],
   "scripts": {
     "build": "node loader/build.mjs",
-    "test": "node tests/run-all.mjs",
-    "compile": "node compiler/cli.mjs"
+    "build:mod": "node mods/build-moomooplus.mjs",
+    "build:lite": "node mods/build-lite.mjs",
+    "test": "node tests/run-all.mjs"
   },
-  "bin": {
-    "moomoo-compile": "compiler/cli.mjs"
-  },
-  "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jquery": "^3.7.1",
+    "jquery-confirm": "^3.3.0"
+  }
 }

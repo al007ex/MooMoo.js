@@ -40,9 +40,10 @@ var weaponVariants = [{
 }, {
     id: 4,
     src: "_e",
+    poison: true,
     lifesteal: 0.15,
     membersOnly: true,
-    xp: 20000,
+    xp: 30000,
     val: 1.18
 }];
 
@@ -78,9 +79,9 @@ var config = {
     chatCooldown: 500,                      // [Md]
 
     // SANDBOX:
-    inSandbox: Boolean(env.IS_SANDBOX),     // [Id]  ({}.IS_SANDBOX in the client build)
+    inSandbox: true,     // [Id]  ({}.IS_SANDBOX in the client build)
     // SERVER: SANDBOX_UNLIMITED=1 keeps every resource and gold topped up, so nothing costs anything.
-    unlimitedResources: Boolean(env.SANDBOX_UNLIMITED),
+    unlimitedResources: true,
     unlimitedAmount: 1000000,
 
     // PLAYER:
@@ -98,7 +99,7 @@ var config = {
     skinColors: ["#bf8f54", "#cbb091", "#896c4b", "#fadadc", "#ececec", "#c37373", "#4c4c4c", "#ecaff7", "#738cc3", "#8bc373"], // [Nd]
 
     // ANIMALS:
-    animalCount: 7,                         // [Gd]
+    animalCount: 8,                         // [Xh]
     aiTurnRandom: 0.06,                     // [Hd]
     cowNames: ["Sid", "Steph", "Bmoe", "Romn", "Jononthecool", "Fiona", "Vince", "Nathan", "Nick", "Flappy", "Ronald", "Otis", "Pepe", "Mc Donald", "Theo", "Fabz", "Oliver", "Jeff", "Jimmy", "Helena", "Reaper", "Ben", "Alan", "Naomi", "XYZ", "Clever", "Jeremy", "Mike", "Destined", "Stallion", "Allison", "Meaty", "Sophia", "Vaja", "Joey", "Pendy", "Murdoch", "Theo", "Jared", "July", "Sonia", "Mel", "Dexter", "Quinn", "Milky"], // [Fd]
 

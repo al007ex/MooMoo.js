@@ -1,8 +1,0 @@
-{"at":"2026-10-06T17:57:12.674Z","target":{"name":"unknown","account":null,"flags":{"flags":0,"flagNames":[],"untrustedEvents":0,"strikes":0}},"reporter":{"name":"unknown","account":null}}
-{"at":"2026-10-06T17:57:12.959Z","target":{"name":"unknown","account":null,"flags":{"flags":0,"flagNames":[],"untrustedEvents":0,"strikes":0}},"reporter":{"name":"unknown","account":null}}
-{"at":"2026-10-08T16:21:12.770Z","target":{"name":"TargetBot","account":null,"flags":{"flags":0,"flagNames":[],"untrustedEvents":0,"strikes":0}},"reporter":{"name":"Reporter","account":null}}
-{"at":"2026-10-08T16:21:13.071Z","reason":"Hack","target":{"name":"TargetBot","account":null},"reporter":{"name":"Reporter","account":null}}
-{"at":"2026-10-08T16:21:36.637Z","target":{"name":"GuestBot","account":null,"flags":{"flags":0,"flagNames":[],"untrustedEvents":0,"strikes":0}},"reporter":{"name":"StaffBot","account":"6ac7c30de6d4bcf679536c95"}}
-{"at":"2026-10-08T16:21:36.938Z","reason":"Autoheal","target":{"name":"GuestBot","account":null},"reporter":{"name":"StaffBot","account":"6ac7c30de6d4bcf679536c95"}}
-{"at":"2026-10-08T16:25:18.671Z","target":{"name":"StaffBot","account":"6ac7c30de6d4bcf679536c95","flags":{"flags":0,"flagNames":[],"untrustedEvents":0,"strikes":0}},"reporter":{"name":"UiTester","account":"6ac7c33885422be9ec46a1ea"}}
-{"at":"2026-10-08T16:25:25.727Z","reason":"Bot","target":{"name":"StaffBot","account":"6ac7c30de6d4bcf679536c95"},"reporter":{"name":"UiTester","account":"6ac7c33885422be9ec46a1ea"}}

@@ -1,6 +1,6 @@
 /*
  * LIVE (REAL CLIENT): the official game client in headless Chrome, with the
- * built loader userscript + mods/examplescript.js injected at document-start
+ * built loader userscript + mods/moomooplus.js injected at document-start
  * (exactly what Tampermonkey does), against an isolated copy of the server.
  * An admin bot walks up and hits the player. We record:
  *   - every WebSocket frame the browser actually sends + the close code (CDP)
@@ -22,7 +22,7 @@ if (!available) { console.log("SKIP realclient.live: server not found"); process
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "..", "..");
 const LOADER = fs.readFileSync(path.join(ROOT, "loader", "dist", "moomoo-loader.user.js"), "utf8");
-const MOD = fs.readFileSync(path.join(ROOT, "mods", "examplescript.js"), "utf8");
+const MOD = fs.readFileSync(path.join(ROOT, "mods", "moomooplus.js"), "utf8");
 
 const ATTACKER = { email: "live-attacker@moomoojs.test", password: "local-test" };
 const PLAYER = { email: "live-player@moomoojs.test", password: "local-test" };
@@ -69,8 +69,8 @@ try {
     note("clicked Enter Game");
     await page.waitForFunction(() => window.MooMoo && window.MooMoo.self && window.MooMoo.self.sid >= 0 && window.MooMoo.self.alive, { timeout: 25000 });
     const vsid = await page.evaluate(() => window.MooMoo.self.sid);
-    const modState = await page.evaluate(() => (window.MooMoo.getMods().find((m) => m.id === "examplescript") || {}).enabled);
-    note(`player spawned sid ${vsid}, examplescript enabled=${modState}`);
+    const modState = await page.evaluate(() => (window.MooMoo.getMods().find((m) => m.id === "moomooplus") || {}).enabled);
+    note(`player spawned sid ${vsid}, moomooplus enabled=${modState}`);
     await page.evaluate(() => {
         window.__out = [];
         window.MooMooLoader.onRaw((d, n, a) => { if (d === "out" && n !== "D") window.__out.push([Date.now(), n, JSON.stringify(a).slice(0, 80)]); });
@@ -100,14 +100,12 @@ try {
     note("frames the page sent (excluding aim): " + out.slice(-30).map((f) => `${((f[0] - T0) / 1000).toFixed(2)}:${f[1]}${f[2]}`).join("  "));
     const health = await page.evaluate(() => window.MooMoo.self.health).catch(() => "n/a");
     note(`final player health ${health}`);
-    const menuOk = await page.evaluate(() => ({ fab: !!document.getElementById("mmj-cfg-fab"), card: !!document.getElementById("mmj-cfg"), style: !!document.getElementById("mmj-cfg-style") }));
-    note("config menu mounted: " + JSON.stringify(menuOk));
-    const cfgErr = log.some((l) => /appendChild|installConfigMenu/.test(l));
+    const menuOk = await page.evaluate(() => ({ modsTab: !!document.getElementById("gameModsBody"), modMenu: !!document.getElementById("mmjp-gui") }));
+    note("menus mounted: " + JSON.stringify(menuOk));
     const inc = srv.incidents().filter((l) => /player/.test(l) && !/leave sid/.test(l));
     if (wsClosed || inc.length) throw new Error("player was disconnected / acted on. incidents: " + JSON.stringify(inc));
-    if (cfgErr) throw new Error("config menu threw at document-start");
-    if (!menuOk.fab || !menuOk.card || !menuOk.style) throw new Error("config menu did not fully mount: " + JSON.stringify(menuOk));
-    console.log("  ✓ real client survived 8 hits with examplescript, no anti-cheat action");
+    if (!menuOk.modsTab || !menuOk.modMenu) throw new Error("menus did not fully mount: " + JSON.stringify(menuOk));
+    console.log("  ✓ real client survived 8 hits with moomooplus, no anti-cheat action");
 } catch (e) {
     failed = true;
     console.log("  ✗ " + (e && e.message));

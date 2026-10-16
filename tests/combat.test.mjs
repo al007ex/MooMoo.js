@@ -13,9 +13,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 require(path.join(here, "..", "shared", "vocabulary.js"));
 const data = require(path.join(here, "..", "shared", "gamedata.js"));
-const Runtime = require(path.join(here, "..", "loader", "src", "runtime.js"));
-const OM = require(path.join(here, "..", "loader", "src", "objectmanager.js"));
-const Combat = require(path.join(here, "..", "loader", "src", "combat.js"));
+const Runtime = require(path.join(here, "..", "loader", "src", "core", "runtime.js"));
+const OM = require(path.join(here, "..", "loader", "src", "game", "objects.js"));
+const Combat = require(path.join(here, "..", "loader", "src", "game", "combat.js"));
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

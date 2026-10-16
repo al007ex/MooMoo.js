@@ -60,6 +60,12 @@ export class Player {
         this.watchStats = -1;
         this.joinRequests = new Set();
         this.powers = { god: 0, aura: 0, godlike: 0, boss: 0, invisible: 0, size: 1, power: 1, speed: 1, health: 1 };
+        // SERVER: drawn as an animal (aiTypes index, -1 = no), dive state (0 surface,
+        // 1 diving, 2 under, 3 coming up), shown with their clan as tribe tag, anonymous mode.
+        this.morph = -1;
+        this.dive = 0;
+        this.disguised = false;
+        this.anon = false;
         this.tribeCooldown = 0;
         this.chatCooldown = 0;
         this.pingCooldown = 0;
@@ -186,18 +192,28 @@ export class Player {
                 if (name.length > 0 && !isProfane) this.name = name;
                 this.skinColor = 0;
                 if (config.skinColors[data.skin]) this.skinColor = data.skin;
+                // SERVER: anonymous mode is for signed-in players with a name.
+                this.anon = !!(data.anon && this.account && this.account.name);
             }
             // SERVER: signed-in players always play under their permanent account name.
             if (this.account && this.account.name) this.name = this.account.name;
         };
 
+        // SERVER: what other players see. Anonymous players are "Anon#<sid>" to everyone else.
+        this.shownName = function (viewer) {
+            return this.anon && viewer !== this ? "Anon#" + this.sid : this.name;
+        };
+
         // GET DATA TO SEND ("D"): client setData reads [id, sid, name, x, y, dir, health,
-        // maxHealth, scale, skinColor, aura, bossMode, clan].
-        this.getData = function () {
+        // maxHealth, scale, skinColor, aura, bossMode, clan, morph, dive, invisible, disguised].
+        // SERVER: per viewer, so anonymous players keep their name and clan to themselves.
+        this.getData = function (viewer) {
+            const hidden = this.anon && viewer !== this;
             return [
-                this.id, this.sid, this.name, UTILS.fixTo(this.x, 2), UTILS.fixTo(this.y, 2), UTILS.fixTo(this.dir, 3),
+                this.id, this.sid, this.shownName(viewer), UTILS.fixTo(this.x, 2), UTILS.fixTo(this.y, 2), UTILS.fixTo(this.dir, 3),
                 this.health, this.maxHealth, this.scale, this.skinColor,
-                this.powers.aura ? 1 : 0, this.powers.boss ? 1 : 0, this.clanTag || null
+                this.powers.aura ? 1 : 0, this.powers.boss ? 1 : 0, hidden ? null : this.clanTag || null,
+                this.morph, this.dive, this.powers.invisible ? 1 : 0, this.disguised && !hidden ? 1 : 0
             ];
         };
 

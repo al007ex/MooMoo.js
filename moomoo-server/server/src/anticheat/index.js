@@ -4,8 +4,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { ANTICHEAT_CONFIG as CONFIG } from "./config.js";
-import { CLOSE } from "../protocol/constants.js";
+import { CLOSE, SEAL_OFF } from "../protocol/constants.js";
+import { saltedHash } from "../protocol/crypto.js";
 
 const SHAME_HAT = 45;
 
@@ -85,12 +87,33 @@ export class ModerationStore {
         return this.records[accountId] || (this.records[accountId] = { reports: [], flags: [], verdict: null });
     }
 
-    isBanned(ip, accountId, did) {
-        return Boolean(this.bans.ips[ip] || (accountId && this.bans.accounts[accountId]) || (did && this.bans.devices[did]));
+    // The ban that applies (expired timed bans are dropped), or null.
+    banEntry(ip, accountId, did) {
+        const now = Date.now();
+        const candidates = [["ips", ip], ["accounts", accountId], ["devices", did]];
+        let changed = false;
+        let found = null;
+        for (const [kind, key] of candidates) {
+            const entry = key && this.bans[kind][key];
+            if (!entry) continue;
+            if (entry.until && entry.until <= now) {
+                delete this.bans[kind][key];
+                changed = true;
+                continue;
+            }
+            if (!found || (found.until && (!entry.until || entry.until > found.until))) found = entry;
+        }
+        if (changed) this.saveBans();
+        return found;
     }
 
-    ban({ ip, did, accountId, name, reason }, by) {
-        const entry = { name, by: by ? by.name : "system", reason: reason || undefined, at: new Date().toISOString() };
+    isBanned(ip, accountId, did) {
+        return Boolean(this.banEntry(ip, accountId, did));
+    }
+
+    // until: ms timestamp for a timed ban, 0 / undefined = permanent.
+    ban({ ip, did, accountId, name, reason, until }, by) {
+        const entry = { name, by: by ? by.name : "system", reason: reason || undefined, until: until || undefined, at: new Date().toISOString() };
         if (ip) this.bans.ips[ip] = entry;
         if (did) this.bans.devices[did] = entry;
         if (accountId) this.bans.accounts[accountId] = entry;
@@ -106,6 +129,34 @@ export class ModerationStore {
         if (ip) delete this.bans.ips[ip];
         if (did) delete this.bans.devices[did];
         this.saveBans();
+    }
+
+    // KICK COOLDOWN: after a kick the same account / device / ip can't rejoin for a while
+    // (/join answers {error: "locked", seconds}).
+    lock({ ip, did, accountId }, seconds) {
+        this.locks = this.locks || new Map();
+        const until = Date.now() + seconds * 1000;
+        for (const key of [ip && "ip:" + ip, did && "did:" + did, accountId && "acc:" + accountId]) {
+            if (key) this.locks.set(key, Math.max(until, this.locks.get(key) || 0));
+        }
+    }
+
+    unlock({ ip, did, accountId }) {
+        if (!this.locks) return;
+        for (const key of [ip && "ip:" + ip, did && "did:" + did, accountId && "acc:" + accountId]) {
+            if (key) this.locks.delete(key);
+        }
+    }
+
+    lockedFor(ip, accountId, did) {
+        if (!this.locks) return 0;
+        const now = Date.now();
+        let until = 0;
+        for (const key of [ip && "ip:" + ip, did && "did:" + did, accountId && "acc:" + accountId]) {
+            const t = key && this.locks.get(key);
+            if (t && t > now) until = Math.max(until, t);
+        }
+        return until ? Math.ceil((until - now) / 1000) : 0;
     }
 
     // In-game "Report" button (packet R). The reason ("What for?") arrives as a second
@@ -148,10 +199,11 @@ export class ModerationStore {
         this.saveRecords();
     }
 
-    recordVerdict(account, level, reason, staff) {
+    // keepBans: the ban entry was already written (timed bans).
+    recordVerdict(account, level, reason, staff, { keepBans = false } = {}) {
         const rec = this.record(account.id);
         rec.verdict = level === "clear" ? null : { level, reason, by: staff.name, at: Date.now() };
-        if (level === "ban") this.ban({ accountId: account.id, name: account.name }, staff);
+        if (level === "ban" && !keepBans) this.ban({ accountId: account.id, name: account.name, reason }, staff);
         if (level === "clear") this.unbanAccount(account.id);
         this.saveRecords();
     }
@@ -196,14 +248,32 @@ export class ModerationStore {
     }
 }
 
+// One round of integrity probes: a fresh salt and up to `perRound` probes in a shuffled
+// order, as sent in "q". `rules[i]` is the config entry behind bit i of the answer.
+function probeRound() {
+    const salt = randomBytes(4).readUInt32LE(0);
+    const pool = CONFIG.probes.list.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+        const j = randomBytes(1)[0] % (i + 1);
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const rules = pool.slice(0, CONFIG.probes.perRound);
+    const probes = rules.map(rule => [rule.kind, rule.path || "", rule.value === undefined ? 0 : saltedHash(String(rule.value), salt)]);
+    return { salt, probes, rules };
+}
+
 export class AntiCheat {
 
-    constructor({ player, log, kick, close, store }) {
+    // session: the connection's ProtocolSession (seal mode / expected seal report);
+    // sendProbes(salt, probes) sends "q".
+    constructor({ player, log, kick, close, store, session, sendProbes }) {
         this.player = player;
         this.log = log;
         this.kickFn = kick;
         this.closeFn = close;
         this.store = store;
+        this.session = session || null;
+        this.sendProbes = sendProbes || null;
         this.global = new Bucket(CONFIG.rateLimits.global);
         this.buckets = {};
         this.strikes = 0;
@@ -213,6 +283,10 @@ export class AntiCheat {
         this.untrustedEvents = 0;
         this.lastTelemetry = 0;
         this.joinedAt = 0;
+        this.nextProbeAt = 0;
+        this.pending = null;      // the "q" round waiting for its "T"
+        this.rounds = 0;
+        this.answered = 0;
         this.closed = false;
     }
 
@@ -228,6 +302,7 @@ export class AntiCheat {
             case "kick":
                 this.log(`kick (${reason})`);
                 this.closed = true;
+                if (this.store) this.store.lock({ ip: this.player.ip, did: this.player.did, accountId: this.player.account && this.player.account.id }, CONFIG.kickLock.anticheatSeconds);
                 this.kickFn("kicked");
                 break;
             case "shame":
@@ -297,17 +372,31 @@ export class AntiCheat {
         this.strike(CONFIG.validation.strikesPerInvalid, `invalid "${name}": ${why}`);
     }
 
-    // TELEMETRY ("T" packet):
+    // TELEMETRY: the server asks ("q"), the client answers ("T").
     onGameStart() {
-        if (!this.joinedAt) this.joinedAt = Date.now();
+        if (this.joinedAt) return;
+        this.joinedAt = Date.now();
+        this.nextProbeAt = this.joinedAt + CONFIG.telemetry.firstProbeMs;
     }
 
-    onTelemetry(flags, untrusted) {
+    // "T" = [flags, untrustedEvents, probeResult, seal, probeSalt]
+    onTelemetry(args) {
+        const [flags, untrusted, result, seal, salt] = args;
         if (!Number.isInteger(flags) || flags < 0 || flags > 255 || !Number.isInteger(untrusted) || untrusted < 0) {
             this.invalid("T", "bad telemetry values");
             return;
         }
+        if (!this.pending || (salt >>> 0) !== this.pending.salt) {
+            // only ever sent in answer to "q", with that round's salt
+            this.invalid("T", "telemetry without a probe round");
+            return;
+        }
+        const round = this.pending;
+        this.pending = null;
+        this.answered++;
         this.lastTelemetry = Date.now();
+        this.nextProbeAt = this.lastTelemetry + CONFIG.telemetry.intervalMs;
+
         this.flags |= flags;
         for (const [bit, rule] of Object.entries(CONFIG.telemetry.flags)) {
             if (flags & Number(bit)) this.apply(rule.action, `client reported ${rule.name}`);
@@ -316,18 +405,42 @@ export class AntiCheat {
         if (untrusted >= CONFIG.telemetry.untrustedEvents.threshold) {
             this.apply(CONFIG.telemetry.untrustedEvents.action, `${untrusted} untrusted input events`);
         }
+        if (Number.isInteger(result) && result > 0) {
+            round.rules.forEach((rule, i) => {
+                if (result & (1 << i)) this.apply(rule.action, `client reported ${rule.name} (probe ${rule.kind} ${rule.path || ""}${rule.value !== undefined ? " " + rule.value : ""})`);
+            });
+        }
+        if (this.session && this.session.sealMode !== SEAL_OFF && seal !== this.session.sealReport) {
+            this.apply(CONFIG.seal.mismatchAction, `client reported SEAL_MISMATCH (${seal == null ? "no seal" : "modified bundle"})`);
+        }
+        // Frame ledger: "T" also reports [seq, ledger] as they were just before this frame
+        // (the client captures them before sending "T"). They must match the server's own
+        // running hash of the c2s frame stream, so a forged / replayed / injected frame shows.
+        const reportedSeq = args[5], reportedLedger = args[6];
+        if (this.session && this.session.pinned && reportedSeq !== undefined) {
+            const okSeq = Number.isInteger(reportedSeq) && reportedSeq === this.session.lastSeq - 1;
+            const okLedger = Number.isInteger(reportedLedger) && (reportedLedger >>> 0) === (this.session.ledgerBefore >>> 0);
+            if (!okSeq || !okLedger) {
+                this.apply(CONFIG.telemetry.ledger.mismatchAction, `client reported LEDGER_MISMATCH (seq ${reportedSeq}/${this.session.lastSeq - 1}, hash ${reportedLedger >>> 0}/${this.session.ledgerBefore >>> 0})`);
+            }
+        }
     }
 
     // Called every server tick.
     tick(now) {
-        if (this.closed || !CONFIG.telemetry.required || !this.joinedAt) return;
+        if (this.closed || !CONFIG.telemetry.required || !this.joinedAt || !this.sendProbes) return;
         const t = CONFIG.telemetry;
-        if (!this.lastTelemetry) {
-            if (now - this.joinedAt > t.firstReportMs + t.graceMs) {
-                this.apply(t.missingAction, "telemetry never arrived");
+        if (this.pending) {
+            if (now - this.pending.sentAt > t.answerMs) {
+                this.apply(t.missingAction, this.rounds > 1 ? "telemetry stopped answering probes" : "telemetry never answered");
             }
-        } else if (now - this.lastTelemetry > t.intervalMs + t.graceMs) {
-            this.apply(t.missingAction, "telemetry heartbeat stopped");
+            return;
+        }
+        if (now >= this.nextProbeAt) {
+            const round = probeRound();
+            this.pending = { salt: round.salt, rules: round.rules, sentAt: now };
+            this.rounds++;
+            this.sendProbes(round.salt, round.probes);
         }
     }
 
@@ -336,7 +449,8 @@ export class AntiCheat {
             flags: this.flags,
             flagNames: [...this.flagNames],
             untrustedEvents: this.untrustedEvents,
-            strikes: this.strikes
+            strikes: this.strikes,
+            probes: { sent: this.rounds, answered: this.answered, lastAnswer: this.lastTelemetry }
         };
     }
 }

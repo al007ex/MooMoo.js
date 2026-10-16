@@ -1,20 +1,21 @@
 // CONNECTION
 // Lifecycle of one WebSocket:
-//   1. gate      origin, build id (?b=), join ticket (?token=tk:...), bans, members-only
-//   2. io-init   protocol handshake (session seed, key, keyed + pinned mode)
+//   1. gate      origin, build id (?b=), bundle (?u=), join ticket (?token=tk:...), bans, members-only
+//   2. io-init   protocol handshake (session seed, key, keyed + pinned mode, seal mode)
 //   3. frames    decode (tag / sequence / table) -> anticheat rate limit -> packet handler
 //   4. close     cleanup
 
 import { randomBytes } from "node:crypto";
 import { ProtocolSession } from "../protocol/session.js";
 import { CLOSE } from "../protocol/constants.js";
+import { sealValue } from "../protocol/crypto.js";
 import { AntiCheat, ANTICHEAT_CONFIG } from "../anticheat/index.js";
 import { ConnectionLimit } from "../moomoo/libs/limit.js";
 import { handlePacket } from "./packets.js";
 
 const DEBUG_PACKETS = Boolean(process.env.DEBUG_PACKETS);
 
-export function createConnectionHandler({ build, accounts, moderation, log }) {
+export function createConnectionHandler({ build, bundle, accounts, moderation, log, chat }) {
     const limiter = new ConnectionLimit(ANTICHEAT_CONFIG.connection.maxConnectionsPerIp);
     const rules = ANTICHEAT_CONFIG.connection;
 
@@ -39,6 +40,12 @@ export function createConnectionHandler({ build, accounts, moderation, log }) {
         if (rules.enforceBuild && url.searchParams.get("b") !== build.BUILD_ID) {
             return reject(CLOSE.GAME_UPDATED, `build ${url.searchParams.get("b")} != ${build.BUILD_ID}`);
         }
+        // ?u= is the bundle file the page is running ([Lx]).
+        const served = bundle ? bundle.current() : null;
+        const stem = url.searchParams.get("u") || "";
+        if (rules.enforceBundle && served && stem !== served.stem) {
+            return reject(CLOSE.GAME_UPDATED, `bundle ${stem || "?"} != ${served.stem}`);
+        }
         if (limiter.check(ip)) return reject(CLOSE.INVALID_CONNECTION, "too many connections from this ip");
 
         let account = null;
@@ -60,7 +67,8 @@ export function createConnectionHandler({ build, accounts, moderation, log }) {
 
         // ---- 2. handshake ----
         const socketId = randomBytes(8).toString("hex");
-        const session = new ProtocolSession(build, socketId);
+        const seal = served && stem === served.stem ? { mode: ANTICHEAT_CONFIG.seal.mode, value: sealValue(build.sealBytes, served.digest) } : null;
+        const session = new ProtocolSession(build, socketId, { seal });
         ws.send(session.handshakeFrame());
 
         let closed = false;
@@ -98,12 +106,14 @@ export function createConnectionHandler({ build, accounts, moderation, log }) {
         player.anticheat = new AntiCheat({
             player,
             store: moderation,
+            session,
+            sendProbes: (salt, probes) => send("q", salt, probes),
             log: (msg) => log(`[${game.key}] ${player.name}#${player.sid} (${ip}): ${msg}`),
             kick: (reason) => player.kick(reason),
             close: (code) => ws.close(code)
         });
 
-        const ctx = { game, accounts, moderation, log };
+        const ctx = { game, accounts, moderation, log, chat };
         log(`[${game.key}] join sid ${player.sid} (${account ? "account " + (account.name || account.email) : "guest"}, ${ip})`);
 
         // ---- 3. frames ----
@@ -112,7 +122,9 @@ export function createConnectionHandler({ build, accounts, moderation, log }) {
             const frame = data instanceof Buffer ? data : Buffer.from(data);
             const msg = session.decode(frame);
             if (msg.error) {
-                player.anticheat.onTransportError(msg.error, msg.detail);
+                // In seal "bind" mode a modified client fails right here, on its first frame.
+                const sealHint = msg.error === "bad tag" && session.lastSeq === 0 && session.sealMode === 2 ? "seal mismatch: modified client or bundle" : msg.detail;
+                player.anticheat.onTransportError(msg.error, sealHint);
                 return;
             }
             if (DEBUG_PACKETS && msg.name !== "0") log(`[${game.key}] <- ${msg.name} ${JSON.stringify(msg.args).slice(0, 120)}`);

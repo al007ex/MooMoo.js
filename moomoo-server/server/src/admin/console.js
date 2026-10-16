@@ -10,6 +10,7 @@ import { items } from "../moomoo/modules/items.js";
 import { hats, accessories } from "../moomoo/modules/store.js";
 import { AI_TYPES } from "../moomoo/modules/aiManager.js";
 import { secretDistance, inSecretPool } from "../moomoo/modules/effects.js";
+import { ANTICHEAT_CONFIG } from "../anticheat/config.js";
 
 const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 const MID = config.mapScale / 2;
@@ -69,13 +70,15 @@ const label = (index) => DISPLAY[index] || (AI_TYPES[index] && (label(index))) |
 
 export class AdminConsole {
 
-    constructor({ games, accounts, moderation, build, dataDir, log, social, baseUrl }) {
+    constructor({ games, accounts, moderation, build, dataDir, log, social, stream, chat, baseUrl }) {
         this.games = games;
         this.accounts = accounts;
         this.moderation = moderation;
         this.build = build;
         this.log = log;
         this.social = social;
+        this.stream = stream;
+        this.chat = chat;
         this.baseUrl = baseUrl;
         this.stateFile = path.join(dataDir, "console.json");
         this.state = { me: null };
@@ -412,6 +415,53 @@ export class AdminConsole {
         add("aura", "aura <player> [on|off]", "glowing aura (hidden client feature)", power("aura", "aura"));
         add("invisible", "invisible <player> [on|off]", "hidden from non-staff players", power("invisible", "invisibility"), ["invis"]);
 
+        // ---------------- v1.9.1 looks: morph, dive, disguise
+        add("morph", "morph <player> <animal | off>", "draw a player as an animal (try: morph me crab king)", (a) => {
+            const { game, player } = this.findPlayer(a[0]);
+            const what = a.slice(1).join(" ");
+            if (!what || norm(what) === "off") {
+                player.morph = -1;
+                this.resend(game, player);
+                return [`${player.name} looks like a player again`];
+            }
+            const index = this.animalIndex(what);
+            player.morph = index;
+            this.resend(game, player);
+            return [`${player.name} now looks like ${label(index)}`];
+        });
+
+        add("dive", "dive <player> [seconds]", "dive under like the Crab King (can't be hurt meanwhile)", (a) => {
+            const { game, player } = this.findPlayer(a[0]);
+            const seconds = Math.min(30, Math.max(1, Number(a[1]) || 4));
+            const godBefore = player.powers.god;
+            const steps = [[1, 700, 0], [2, 0, 700], [3, 1650, 700 + seconds * 1000], [0, 0, 2350 + seconds * 1000]];
+            for (const [state, ms, at] of steps) {
+                setTimeout(() => {
+                    if (!game.players.includes(player)) return;
+                    game.setDive(player, state, ms);
+                    if (state === 1) player.powers.god = 1;
+                    if (state === 0) player.powers.god = godBefore;
+                }, at);
+            }
+            return [`${player.name} dives for ${seconds}s`];
+        });
+
+        add("disguise", "disguise <player> [on|off]", "show the player's clan as their tribe tag", (a) => {
+            const { game, player } = this.findPlayer(a[0]);
+            player.disguised = norm(a[1] || "on") !== "off";
+            this.resend(game, player);
+            return [`${player.name} is ${player.disguised ? "disguised" : "no longer disguised"}`];
+        });
+
+        add("anon", "anon <player> [on|off]", "anonymous mode (\"Anon#<sid>\" to everyone else)", (a) => {
+            const { game, player } = this.findPlayer(a[0]);
+            if (!player.account || !player.account.name) throw new Error(`${player.name} isn't signed in`);
+            player.anon = norm(a[1] || "on") !== "off";
+            this.resend(game, player);
+            game.leaderboardTimer = 0;
+            return [`${player.name} is ${player.anon ? "anonymous" : "shown by name"} (their own Settings switch can change it back)`];
+        });
+
         const mult = (key, allowed) => (a) => {
             const { game, player } = this.findPlayer(a[0]);
             const value = Number(a[1] || 1);
@@ -517,33 +567,67 @@ export class AdminConsole {
             return [`announced: ${text}`];
         }, ["say"]);
 
-        add("restart", "restart <seconds>", "show the \"Server restarting in m:ss\" banner (no real restart)", (a) => {
+        add("restart", "restart <seconds | cancel>", "\"Server restarting in ...\" banner (no real restart); over 60 s it reads minutes / hours", (a) => {
+            if (norm(a[0]) === "cancel") {
+                for (const game of this.games.values()) game.announceShutdown(-1);
+                return ["restart banner cancelled"];
+            }
             const seconds = Number(a[0] || 60);
             for (const game of this.games.values()) game.announceShutdown(seconds);
-            return [`restart banner set to ${seconds}s`];
+            return [`restart banner set to ${seconds}s (the server list marks the servers as restarting)`];
         });
 
-        add("kick", "kick <player>", "remove a player", (a) => {
+        add("update", "update [seconds]", "\"Game updated - reloading in m:ss\" (0 = after this life); open pages reload", (a) => {
+            const seconds = Math.max(0, Number(a[0] || 60));
+            for (const game of this.games.values()) game.announceUpdate(seconds);
+            if (this.stream) this.stream.announceBundle();
+            return [seconds ? `players reload in ${seconds}s` : "players reload after their current life"];
+        });
+
+        add("notice", "notice <text> [minutes] | notice off", "site notice under the menu (all open pages)", (a) => {
+            if (!this.stream) throw new Error("no page stream");
+            if (norm(a[0]) === "off") {
+                this.stream.setNotice(null);
+                return ["notice removed"];
+            }
+            const last = a[a.length - 1];
+            const minutes = a.length > 1 && /^\d+$/.test(last) ? Number(last) : 60;
+            const text = (a.length > 1 && /^\d+$/.test(last) ? a.slice(0, -1) : a).join(" ");
+            this.stream.setNotice(text, minutes);
+            return [`notice for ${minutes} min: ${text}`];
+        });
+
+        add("kick", "kick <player> [seconds]", "remove a player; they can't rejoin for a while (default 2 min)", (a) => {
+            const seconds = a.length > 1 && /^\d+$/.test(a[a.length - 1]) ? Number(a.pop()) : ANTICHEAT_CONFIG.kickLock.staffSeconds;
             const { player } = this.findPlayer(a.join(" "), { needAlive: false });
+            if (seconds) this.moderation.lock({ ip: player.ip, did: player.did, accountId: player.account && player.account.id }, seconds);
             if (player.kick) player.kick("kicked");
-            return [`kicked ${player.name}`];
+            return [`kicked ${player.name}${seconds ? ` (can rejoin in ${seconds}s)` : ""}`];
         });
 
-        add("ban", "ban <player>", "ban ip + account", (a) => {
+        add("ban", "ban <player> [30m | 12h | 7d]", "ban ip + device + account, for good or for a while", (a) => {
+            const duration = a.length > 1 && /^\d+[mhd]$/.test(a[a.length - 1]) ? a.pop() : null;
             const { player } = this.findPlayer(a.join(" "), { needAlive: false });
-            this.moderation.ban({ ip: player.ip, did: player.did, accountId: player.account && player.account.id, name: player.name }, { name: "console" });
-            if (player.account) this.accounts.setVerdict(player.account.name, "ban");
+            const until = duration ? Date.now() + Number(duration.slice(0, -1)) * { m: 60e3, h: 3600e3, d: 86400e3 }[duration.slice(-1)] : 0;
+            this.moderation.ban({ ip: player.ip, did: player.did, accountId: player.account && player.account.id, name: player.name, until }, { name: "console" });
+            if (player.account && !until) this.accounts.setVerdict(player.account.name, "ban");
             if (player.kick) player.kick("kicked");
-            return [`banned ${player.name}`];
+            return [`banned ${player.name}${until ? " until " + new Date(until).toLocaleString() : ""}`];
         });
 
-        add("unban", "unban <account name | ip>", "lift a ban", (a) => {
+        add("unban", "unban <account name | ip>", "lift a ban or a kick's rejoin lock", (a) => {
             const key = a.join(" ");
             const account = this.accounts.nameOwner(key);
             if (account) {
                 this.accounts.setVerdict(account.name, "clear");
                 this.moderation.unbanAccount(account.id);
             }
+            if (account) {
+                const last = account.lastSeen || {};
+                this.moderation.unbanIp(last.ip, last.did);
+                this.moderation.unlock({ ip: last.ip, did: last.did, accountId: account.id });
+            }
+            this.moderation.unlock({ ip: key });
             if (this.moderation.bans.ips[key]) {
                 delete this.moderation.bans.ips[key];
                 this.moderation.saveBans();
@@ -565,7 +649,9 @@ export class AdminConsole {
         add("flags", "flags <player>", "anticheat summary for a player", (a) => {
             const { player } = this.findPlayer(a.join(" "), { needAlive: false });
             const s = player.anticheat ? player.anticheat.summary() : null;
-            return [s ? `${player.name}: flags ${s.flagNames.join(", ") || "none"}, untrusted events ${s.untrustedEvents}, strikes ${s.strikes}` : "no anticheat data"];
+            if (!s) return ["no anticheat data"];
+            const last = s.probes.lastAnswer ? `, last ${Math.round((Date.now() - s.probes.lastAnswer) / 1000)}s ago` : "";
+            return [`${player.name}: flags ${s.flagNames.join(", ") || "none"}, untrusted events ${s.untrustedEvents}, strikes ${s.strikes}, probe rounds answered ${s.probes.answered}/${s.probes.sent}${last}`];
         }, ["ac"]);
 
         // ---------------- accounts / friends / Discord

@@ -12,8 +12,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 require(path.join(here, "..", "shared", "vocabulary.js"));
 const data = require(path.join(here, "..", "shared", "gamedata.js"));
-const Runtime = require(path.join(here, "..", "loader", "src", "runtime.js"));
-const OM = require(path.join(here, "..", "loader", "src", "objectmanager.js"));
+const Runtime = require(path.join(here, "..", "loader", "src", "core", "runtime.js"));
+const OM = require(path.join(here, "..", "loader", "src", "game", "objects.js"));
 
 // item ids we use: 6 = spikes, 15 = turret (age 7), 13 = pit trap, 3 = wood wall.
 const SPIKE = data.itemByName("spikes").id;

@@ -25,13 +25,13 @@ const srcDir = path.join(here, "..", "loader", "src");
 // Load loader modules as Node CommonJS and expose them as "page globals".
 const g = globalThis;
 g.MooMooVocabulary = require(path.join(here, "..", "shared", "vocabulary.js"));
-g.MooMooMsgpack = require(path.join(srcDir, "msgpack.js"));
-g.MooMooSha256 = require(path.join(srcDir, "sha256.js"));
-g.MooMooProtocol = require(path.join(srcDir, "protocol.js"));
-g.MooMooBinding = require(path.join(srcDir, "binding.js"));
-g.MooMooRuntime = require(path.join(srcDir, "runtime.js"));
-g.MooMooAnticheat = require(path.join(srcDir, "anticheat.js"));
-g.MooMooOutgoing = require(path.join(srcDir, "outgoing.js"));
+g.MooMooMsgpack = require(path.join(srcDir, "net", "msgpack.js"));
+g.MooMooSha256 = require(path.join(srcDir, "net", "sha256.js"));
+g.MooMooProtocol = require(path.join(srcDir, "net", "protocol.js"));
+g.MooMooBinding = require(path.join(srcDir, "net", "binding.js"));
+g.MooMooRuntime = require(path.join(srcDir, "core", "runtime.js"));
+g.MooMooSocket = require(path.join(srcDir, "net", "socket.js"));
+g.MooMooOutgoing = require(path.join(srcDir, "net", "outgoing.js"));
 const LoaderCore = require(path.join(srcDir, "loader.js"));
 
 skipIfUnavailable("loader.integration");
@@ -203,12 +203,15 @@ await ok("the client's dirty T packet reaches the server with clean flags", asyn
 
     const payload = decodeHandshakePayload(env);
     const client = new g.MooMooProtocol.ClientSession(payload, mod);
-    // The real client would report SOCKET_HOOKED (2) | USERSCRIPT (1) and 25 untrusted events.
-    env.clientSocket.send(client.encodeC2S("T", [1 | 2, 25]));
+    // The current server's "T" = [flags, untrusted, probeResult, seal, salt]. The real client
+    // would report SOCKET_HOOKED (2) | USERSCRIPT (1), 25 untrusted events and some matched probes;
+    // the loader must zero the three self-reporting fields and echo the probe salt untouched.
+    env.clientSocket.send(client.encodeC2S("T", [1 | 2, 25, 7, 123456, 424242]));
 
     const t = env.acceptedByServer.find((d) => d.name === "T");
     assert.ok(t && !t.error, "server accepted the T packet");
-    assert.deepStrictEqual(t.args, [0, 0], "telemetry flags + untrusted events must be scrubbed to 0");
+    assert.deepStrictEqual(t.args.slice(0, 3), [0, 0, 0], "flags, untrusted events and probe result must be scrubbed to 0");
+    assert.strictEqual(t.args[4], 424242, "the probe salt must be echoed back unchanged");
 });
 
 console.log("\n== mod injection ==");
@@ -269,6 +272,7 @@ await ok("rate governor keeps client + mod frames under the server's buckets", a
     const ws = new env.win.WebSocket("wss://localhost/");
     env.emitHandshake();
     await tick(); await tick();
+    env.emit("C", [7]);   // setup -> alive with the default loadout (weapons [0]); weapon 0 is owned, so the anti-no-op guard lets the burst through
     const client = new g.MooMooProtocol.ClientSession(decodeHandshakePayload(env), mod);
     const dl = env.win.WebSocket.prototype.send;
     // 60 selectItem in one instant: the server's "z" bucket is [20/s, burst 40].
@@ -285,6 +289,54 @@ await ok("rate governor keeps client + mod frames under the server's buckets", a
     // telemetry is never refused
     dl.call(ws, client.encodeC2S("T", [3, 0]));
     assert.ok(env.acceptedByServer.some((a) => a.name === "T"), "T always goes out");
+});
+
+console.log("\n== anti-no-op guard (private-server stealth) ==");
+await ok("refuses packets the server would silently ignore, allows valid ones", async () => {
+    const env = makeFakeEnv(build);
+    const { MooMoo, MooMooLoader } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    new env.win.WebSocket("wss://localhost/");
+    env.emitHandshake();
+    await tick(); await tick();
+
+    const store = MooMooLoader.store;
+    const seen = () => env.acceptedByServer.filter((a) => !a.error);
+    const countName = (n) => seen().filter((a) => a.name === n).length;
+
+    // --- while DEAD: every gameplay packet is a no-op on the server, so none go out ---
+    assert.strictEqual(MooMoo.self.alive, false, "starts not alive");
+    assert.strictEqual(MooMoo.send.selectItem(0, true), false, "weapon select while dead is refused");
+    assert.strictEqual(MooMoo.send.selectItem(6, false), false, "item select while dead is refused");
+    assert.strictEqual(MooMoo.send.mouse(true, 0), false, "mouse while dead is refused");
+    assert.strictEqual(MooMoo.send.store(1, 0, false), false, "store while dead is refused");
+    assert.strictEqual(countName("z"), 0, "no z reached the server while dead");
+    assert.strictEqual(countName("F"), 0, "no F reached the server while dead");
+    assert.strictEqual(countName("c"), 0, "no c reached the server while dead");
+
+    // --- now ALIVE with the default loadout: weapons [0], items [0, 3, 6, 10] ---
+    env.emit("C", [7]);
+    assert.strictEqual(MooMoo.self.alive, true, "setup marks you alive");
+
+    // owned weapon + owned item go through
+    assert.strictEqual(MooMoo.send.selectItem(0, true), true, "owned weapon (0) select is sent");
+    assert.strictEqual(MooMoo.send.selectItem(6, false), true, "owned item (spikes 6) select is sent");
+    // an item you do not own (cookie id 1) is refused even though it is a real item
+    assert.strictEqual(MooMoo.send.selectItem(1, false), false, "unowned item select is refused");
+    // a weapon you do not hold in its slot is refused
+    assert.strictEqual(MooMoo.send.selectItem(3, true), false, "unheld weapon select is refused");
+    // mouse while alive is fine
+    assert.strictEqual(MooMoo.send.mouse(true, 0), true, "mouse while alive is sent");
+
+    // hats: take-off (equip 0) always valid; an unowned hat is refused; an owned one goes through
+    let unowned = -1;
+    for (let i = 1; i < 200; i++) if (!store.ownsHat(i)) { unowned = i; break; }
+    const owned = store.ownedHats[0];
+    assert.strictEqual(MooMoo.send.store(1, 0, false), true, "take off hat (equip 0) is sent");
+    if (unowned > 0) assert.strictEqual(MooMoo.send.store(1, unowned, false), false, "equip of an unowned hat is refused");
+    if (owned != null) assert.strictEqual(MooMoo.send.store(1, owned, false), true, "equip of an owned hat is sent");
+
+    // nothing the guard let through produced a transport error / sequence gap
+    assert.ok(seen().every((d) => !d.error), "no transport errors from the guarded sends");
 });
 
 await ok("ping is timed off the client's own 0 -> pong round trip", async () => {

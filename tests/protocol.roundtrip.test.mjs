@@ -17,9 +17,9 @@ const require = createRequire(import.meta.url);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 // Loader side (the code under test).
-const Msgpack = require(path.join(here, "..", "loader", "src", "msgpack.js"));
-const Sha = require(path.join(here, "..", "loader", "src", "sha256.js"));
-const Protocol = require(path.join(here, "..", "loader", "src", "protocol.js"));
+const Msgpack = require(path.join(here, "..", "loader", "src", "net", "msgpack.js"));
+const Sha = require(path.join(here, "..", "loader", "src", "net", "sha256.js"));
+const Protocol = require(path.join(here, "..", "loader", "src", "net", "protocol.js"));
 
 // Server side (ground truth).
 skipIfUnavailable("protocol.roundtrip");
@@ -161,6 +161,34 @@ ok("scrubbed T packet decodes with clean flags", () => {
     eq(dec.name, "T");
     eq(dec.args, [0, 0], "server must see clean telemetry");
     eq(dec.seq, 1);
+});
+
+console.log("\n== code seal (bind mode): loader folds the seal into the key like the server ==");
+ok("bind-mode sessions share a key and seal report", () => {
+    const sealVal = new Uint8Array(crypto.randomBytes(16));
+    const server = new ProtocolSession(build, crypto.randomBytes(8).toString("hex"), { seal: { mode: 2, value: sealVal } });
+    const hs = server.handshakeFrame();
+    const msg = Protocol.isHandshake(hs);
+    eq(msg[1][5], 2, "handshake advertises bind mode");
+    const client = new Protocol.ClientSession(msg[1], mod, { seal: sealVal });
+    eq(client.sealReport, server.sealReport, "seal report matches");
+    // keyed frames only validate if the seal was folded into the key on both ends
+    for (const [name, args] of [["M", [{ name: "x", moofoll: false, skin: 0 }]], ["z", [3, 1]], ["0", []], ["T", [0, 0, 0, client.sealReport, 123]]]) {
+        const dec = server.decode(client.encodeC2S(name, args));
+        assert.ok(!dec.error, "bind-mode server error for " + name + ": " + dec.error);
+        eq(dec.name, name);
+    }
+    const s = client.decodeS2C(server.encode("O", [1, 99]));
+    eq(s.name, "O"); eq(s.args, [1, 99]);
+});
+ok("a wrong seal makes the server reject (proves the seal is really in the key)", () => {
+    const sealVal = new Uint8Array(crypto.randomBytes(16));
+    const server = new ProtocolSession(build, crypto.randomBytes(8).toString("hex"), { seal: { mode: 2, value: sealVal } });
+    const msg = Protocol.isHandshake(server.handshakeFrame());
+    const wrong = sealVal.slice(); wrong[0] ^= 0xff;
+    const client = new Protocol.ClientSession(msg[1], mod, { seal: wrong });
+    const dec = server.decode(client.encodeC2S("0", []));
+    assert.ok(dec.error, "expected a bad-tag error with the wrong seal");
 });
 
 console.log("\n== sequence enforcement sanity (gap -> server rejects) ==");

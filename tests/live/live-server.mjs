@@ -16,6 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import net from "node:net";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { SERVER_DIR, available } from "../server-fixture.mjs";
@@ -156,6 +157,41 @@ export async function loadProtocolModule(srv) {
     return import("data:text/javascript;base64," + Buffer.from(code).toString("base64"));
 }
 
+// The real client appends ?b=<BUILD_ID>&u=<bundle stem>; the current server's gate rejects a
+// socket without them. Raw test bots emulate that: the bundle stem is read from the isolated
+// copy's served assets (the same file the page loads), so bots look like the real client.
+export function bundleStem(srv) {
+    try {
+        const assets = path.join(srv.dir, "dist", "official", "assets");
+        const f = fs.readdirSync(assets).find((x) => /^index-[\w-]+\.js$/.test(x));
+        if (f) return f.slice(0, -3);
+    } catch (_) { /* ignore */ }
+    return "";
+}
 export function gameUrl(srv, ticket, buildId, serverKey = "LC") {
-    return `ws://${srv.host}/s/${serverKey}?token=tk:${ticket}&b=${buildId}`;
+    const stem = bundleStem(srv);
+    return `ws://${srv.host}/s/${serverKey}?token=tk:${ticket}&b=${buildId}${stem ? "&u=" + stem : ""}`;
+}
+
+// The code seal for this deploy, computed the way the client/loader does: the "moomoo-seal"
+// import's hex file name XOR SHA-256(served bundle)[0..16]. Raw bots fold it into their key
+// (bind mode) and report its hash in telemetry, exactly like the real client. Returns the DOM
+// facts too, so a fake-window victim can let the real loader compute the same value itself.
+export async function loadSeal(srv) {
+    const html = await (await fetch(srv.base + "/")).text();
+    const mm = /<script type="importmap">([\s\S]*?)<\/script>/.exec(html);
+    const importMap = mm ? mm[1] : "";
+    let sealSpec = "";
+    try { sealSpec = importMap ? (JSON.parse(importMap).imports["moomoo-seal"] || "") : ""; } catch (_) {}
+    const hex = (/([0-9a-fA-F]{32})/.exec(sealSpec) || [])[1];
+    const sm = /\/assets\/(index-[\w-]+\.js)/.exec(html);
+    const bundlePath = sm ? "/assets/" + sm[1] : null;
+    if (!hex || !bundlePath) return { seal: null, importMap, bundlePath: null, bundleUrl: null };
+    const bundleUrl = srv.base + bundlePath;
+    const buf = new Uint8Array(await (await fetch(bundleUrl)).arrayBuffer());
+    const digest = createHash("sha256").update(buf).digest();
+    const sealBytes = Buffer.from(hex, "hex");
+    const seal = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) seal[i] = sealBytes[i] ^ digest[i];
+    return { seal, importMap, bundlePath, bundleUrl };
 }

@@ -7,6 +7,7 @@ import { config } from "../moomoo/config.js";
 import { items } from "../moomoo/modules/items.js";
 import { hats, accessories } from "../moomoo/modules/store.js";
 import { filter_chat } from "../moomoo/libs/filterchat.js";
+import { ANTICHEAT_CONFIG } from "../anticheat/config.js";
 
 const isNum = UTILS.isNumber;
 const isInt = (v) => Number.isInteger(v);
@@ -41,7 +42,7 @@ export function handlePacket(ctx, player, name, args) {
 
     switch (name) {
 
-        // SPAWN: {name, moofoll, skin}
+        // SPAWN: {name, moofoll, skin, anon}
         case "M": {
             const data = args[0];
             if (!data || typeof data !== "object" || Array.isArray(data)) return invalid("bad spawn data");
@@ -152,7 +153,8 @@ export function handlePacket(ctx, player, name, args) {
             return;
         }
 
-        // STORE: [0 buy | 1 equip, id, isAccessory]
+        // STORE: [0 equip | 1 buy, id, isAccessory]. Equipping id 0 takes it off.
+        // (The client's Buy button sends 1 and Equip / Unequip send 0.)
         case "c": {
             if (!player.alive) return;
             const [action, id, isTail] = args;
@@ -160,11 +162,12 @@ export function handlePacket(ctx, player, name, args) {
             const list = isTail ? accessories : hats;
             const owned = isTail ? player.tails : player.skins;
             const entry = list.find(x => x.id === id);
-            if (action === 0) {
+            if (action === 1) {
                 if (!entry || owned[id] || entry.dontSell || player.points < entry.price) return;
                 if (entry.price > 0) player.addResource(3, -entry.price, true);
                 owned[id] = 1;
                 player.send("5", 0, id, isTail ? 1 : 0);
+                if (player.account && ctx.accounts) ctx.accounts.recordUnlocks(player.account, isTail ? { acc: id } : { hat: id });
                 return;
             }
             if (id === 0) {
@@ -198,6 +201,7 @@ export function handlePacket(ctx, player, name, args) {
             const text = filter_chat(args[0]);
             if (!text.length) return;
             player.chatCooldown = config.chatCooldown;
+            if (ctx.chat) ctx.chat.gameChat(player, text, game.key);   // for the staff panel's "Messages"
             if (player.shadowed) {
                 player.send("6", player.sid, text);
                 return;
@@ -231,6 +235,9 @@ export function handlePacket(ctx, player, name, args) {
             if (typeof tribeName !== "string") return invalid("tribe name");
             const clean = tribeName.trim();
             if (!clean.length || clean.length > MAX_TRIBE_NAME || /[^\x20-\x7e]/.test(clean)) return;
+            // clan names belong to their clan (its members get a clan tribe); "solo" is the
+            // tag the client shows for clan members without a tribe
+            if (clean.toLowerCase() === "solo") return;
             const reserved = ctx.accounts && Object.keys(ctx.accounts.data.clans).some(c => c.toLowerCase() === clean.toLowerCase());
             if (reserved && clean.toLowerCase() !== String(player.clanTag || "").toLowerCase()) return;
             player.tribeCooldown = 200;
@@ -261,9 +268,25 @@ export function handlePacket(ctx, player, name, args) {
             return;
         }
 
-        // TELEMETRY (anti-tamper): [flags, untrustedEvents]
+        // TELEMETRY (anti-tamper), only in answer to "q":
+        // [flags, untrustedEvents, probeResult, seal, probeSalt]
         case "T": {
-            ac.onTelemetry(args[0], args[1]);
+            ac.onTelemetry(args);
+            return;
+        }
+
+        // ANONYMOUS MODE: [1 | 0] (signed-in players; the client allows a switch every 31 s)
+        case "I": {
+            if (args[0] !== 0 && args[0] !== 1) return invalid("anon");
+            if (!player.account || !player.account.name) return;
+            const now = Date.now();
+            if (now - (player.anonChangedAt || 0) < ANTICHEAT_CONFIG.rateLimits.anonCooldownMs) return;
+            player.anonChangedAt = now;
+            const on = args[0] === 1;
+            if (player.anon === on) return;
+            player.anon = on;
+            resendData(game, player);
+            game.leaderboardTimer = 0;
             return;
         }
 
@@ -310,11 +333,15 @@ export function handlePacket(ctx, player, name, args) {
             return;
         }
 
-        // STATS: [sid] whose live stats the profile card shows (-1 = none)
+        // STATS: [sid] whose live stats the profile card shows (-1 = none). In game the card
+        // itself comes back over the socket too ("p"), so anonymous players stay anonymous.
         case "V": {
             if (!isInt(args[0])) return invalid("stats");
             player.watchStats = args[0];
-            if (args[0] >= 0) game.sendStats(player, args[0]);
+            if (args[0] >= 0) {
+                game.sendProfile(player, args[0]);
+                game.sendStats(player, args[0]);
+            }
             return;
         }
 

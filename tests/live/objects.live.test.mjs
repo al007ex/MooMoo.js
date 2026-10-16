@@ -1,6 +1,6 @@
 /*
  * LIVE (REAL CLIENT): proves the loader's OBJECT MANAGER tracks the real world.
- * The official client in headless Chrome, loader + examplescript injected. We:
+ * The official client in headless Chrome, loader + moomooplus injected. We:
  *   1. assert natural resources populate on spawn (real "H" packets parsed), and
  *   2. place a spike from the player and assert the object manager reports it as
  *      a spike building owned by the player, then break nothing — just read back
@@ -18,7 +18,7 @@ if (!available) { console.log("SKIP objects.live: server not found"); process.ex
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "..", "..");
 const LOADER = fs.readFileSync(path.join(ROOT, "loader", "dist", "moomoo-loader.user.js"), "utf8");
-const MOD = fs.readFileSync(path.join(ROOT, "mods", "examplescript.js"), "utf8");
+const MOD = fs.readFileSync(path.join(ROOT, "mods", "moomooplus.js"), "utf8");
 
 const PLAYER = { email: "live-player@moomoojs.test", password: "local-test" };
 

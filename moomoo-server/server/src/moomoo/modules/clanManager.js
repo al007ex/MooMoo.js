@@ -1,7 +1,9 @@
 // TRIBES (in-game alliances)
-// Packets: g addTribe({sid, owner}), 1 deleteTribe(sid), 2 joinRequest(sid, name),
+// Packets: g addTribe({sid, owner, clan}), 1 deleteTribe(sid), 2 joinRequest(sid, name),
 //          3 setTribe(team, isOwner), 4 tribeMembers([sid, name, ...]),
-//          A initData({teams: [{sid, owner}, ...]}) on connect.
+//          A initData({teams: [{sid, owner, clan}, ...]}) on connect.
+// A tribe named after its owner's clan is that clan's tribe (clan: true): the client
+// offers its "Create" button to clan members and only lets that clan's members join.
 
 export class ClanManager {
 
@@ -11,9 +13,13 @@ export class ClanManager {
         this.tribes = new Map();
     }
 
-    // [{sid, owner}] list for packet "A".
+    // [{sid, owner, clan}] list for packet "A".
     list() {
-        return [...this.tribes.values()].map(t => ({ sid: t.sid, owner: t.owner.sid }));
+        return [...this.tribes.values()].map(t => this.info(t));
+    }
+
+    info(tribe) {
+        return tribe.clan ? { sid: tribe.sid, owner: tribe.owner.sid, clan: true } : { sid: tribe.sid, owner: tribe.owner.sid };
     }
 
     members(tribe) {
@@ -28,13 +34,15 @@ export class ClanManager {
 
     create(name, owner) {
         if (owner.team || this.tribes.has(name)) return false;
-        const tribe = { sid: name, owner };
-        this.tribes.set(name, tribe);
-        owner.team = name;
+        const clan = !!owner.clanTag && name.toLowerCase() === String(owner.clanTag).toLowerCase();
+        const tribe = { sid: clan ? owner.clanTag : name, owner, clan };
+        if (this.tribes.has(tribe.sid)) return false;
+        this.tribes.set(tribe.sid, tribe);
+        owner.team = tribe.sid;
         owner.isOwner = true;
         owner.joinRequests.clear();
-        this.server.broadcast("g", { sid: name, owner: owner.sid });
-        owner.send("3", name, true);
+        this.server.broadcast("g", this.info(tribe));
+        owner.send("3", tribe.sid, true);
         this.sendMembers(tribe);
         return true;
     }
@@ -52,10 +60,11 @@ export class ClanManager {
         this.server.broadcast("1", name);
     }
 
-    // "b": ask to join a tribe.
+    // "b": ask to join a tribe. A clan's tribe only takes that clan's members.
     requestJoin(player, name) {
         const tribe = this.tribes.get(name);
         if (!tribe || player.team || tribe.owner.joinRequests.has(player.sid)) return;
+        if (tribe.clan && player.clanTag !== tribe.sid) return;
         tribe.owner.joinRequests.add(player.sid);
         tribe.owner.send("2", player.sid, player.name);
     }
@@ -68,7 +77,7 @@ export class ClanManager {
         owner.joinRequests.delete(sid);
         if (!accept) return;
         const player = this.players.find(p => p.sid === sid);
-        if (!player || player.team) return;
+        if (!player || player.team || (tribe.clan && player.clanTag !== tribe.sid)) return;
         player.team = tribe.sid;
         player.isOwner = false;
         player.send("3", tribe.sid, false);

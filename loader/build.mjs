@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { obfuscate } from "../build-common.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const srcDir = path.join(here, "src");
@@ -22,31 +23,34 @@ const distDir = path.join(here, "dist");
 const MODULES = [
     { label: "vocabulary", file: path.join(sharedDir, "vocabulary.js") },
     { label: "gamedata", file: path.join(sharedDir, "gamedata.js") },
-    { label: "msgpack", file: path.join(srcDir, "msgpack.js") },
-    { label: "sha256", file: path.join(srcDir, "sha256.js") },
-    { label: "protocol", file: path.join(srcDir, "protocol.js") },
-    { label: "binding", file: path.join(srcDir, "binding.js") },
-    { label: "runtime", file: path.join(srcDir, "runtime.js") },
-    { label: "anticheat", file: path.join(srcDir, "anticheat.js") },
-    { label: "input", file: path.join(srcDir, "input.js") },
-    { label: "objectmanager", file: path.join(srcDir, "objectmanager.js") },
-    { label: "store", file: path.join(srcDir, "store.js") },
-    { label: "combat", file: path.join(srcDir, "combat.js") },
-    { label: "helpers", file: path.join(srcDir, "helpers.js") },
-    { label: "menu", file: path.join(srcDir, "menu.js") },
-    { label: "configmenu", file: path.join(srcDir, "configmenu.js") },
-    { label: "outgoing", file: path.join(srcDir, "outgoing.js") },
+    { label: "net/msgpack", file: path.join(srcDir, "net", "msgpack.js") },
+    { label: "net/sha256", file: path.join(srcDir, "net", "sha256.js") },
+    { label: "net/protocol", file: path.join(srcDir, "net", "protocol.js") },
+    { label: "net/binding", file: path.join(srcDir, "net", "binding.js") },
+    { label: "net/socket", file: path.join(srcDir, "net", "socket.js") },
+    { label: "net/outgoing", file: path.join(srcDir, "net", "outgoing.js") },
+    { label: "core/runtime", file: path.join(srcDir, "core", "runtime.js") },
+    { label: "game/input", file: path.join(srcDir, "game", "input.js") },
+    { label: "game/objects", file: path.join(srcDir, "game", "objects.js") },
+    { label: "game/store", file: path.join(srcDir, "game", "store.js") },
+    { label: "game/combat", file: path.join(srcDir, "game", "combat.js") },
+    { label: "game/render", file: path.join(srcDir, "game", "render.js") },
+    { label: "game/pathfind", file: path.join(srcDir, "game", "pathfind.js") },
+    { label: "core/api", file: path.join(srcDir, "core", "api.js") },
+    { label: "core/modstab", file: path.join(srcDir, "core", "modstab.js") },
+    { label: "core/notice", file: path.join(srcDir, "core", "notice.js") },
     { label: "loader", file: path.join(srcDir, "loader.js") }
 ];
 
-const VERSION = "1.0.0";
+// one version for the userscript header and the runtime (loader.js VERSION)
+const VERSION = /const VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(srcDir, "loader.js"), "utf8"))[1];
 
 const HEADER = `// ==UserScript==
 // @name         moomoo.js Loader
 // @namespace    moomoo.js
 // @version      ${VERSION}
 // @description  moomoo.js mod loader — hooks the game socket and exposes window.MooMoo for mods. Update this file when the server's packets change.
-// @author       you
+// @author       al007ex
 // @match        *://*/*
 // @run-at       document-start
 // @grant        none
@@ -54,7 +58,7 @@ const HEADER = `// ==UserScript==
 //
 // EDIT @match to your private server's origin, e.g.  // @match https://play.myserver.io/*
 // Host this file somewhere your plugins can @require it (or paste it as its own
-// userscript). See extension/README.md.
+// userscript). See the README.
 `;
 
 const bodies = MODULES.map((m) => {
@@ -76,8 +80,7 @@ ${bodies}
   }
 }`;
 
-const bootstrap = `${HEADER}
-(function bootstrap(){
+const iife = `(function bootstrap(){
   ${core}
   // Run core in the PAGE context. Under a userscript sandbox we inject a <script>;
   // if we are already in the page (e.g. @grant none page-context, or a bookmarklet)
@@ -101,7 +104,11 @@ const bootstrap = `${HEADER}
 })();
 `;
 
+// Mangle + compress the body (the UserScript header must stay verbatim for Tampermonkey).
+const body = await obfuscate(iife, { label: "loader", toplevel: true });
+const bootstrap = `${HEADER}\n${body}\n`;
+
 fs.mkdirSync(distDir, { recursive: true });
 const outFile = path.join(distDir, "moomoo-loader.user.js");
 fs.writeFileSync(outFile, bootstrap);
-console.log("wrote " + path.relative(path.join(here, "..", ".."), outFile) + "  (" + bootstrap.length + " bytes)");
+console.log("wrote " + path.relative(path.join(here, "..", ".."), outFile) + "  (" + bootstrap.length + " bytes" + (body !== iife ? ", mangled" : ", READABLE (not mangled)") + ")");

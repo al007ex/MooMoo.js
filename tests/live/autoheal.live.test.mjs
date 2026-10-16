@@ -1,9 +1,9 @@
 /*
- * LIVE: take real damage on a real server with examplescript running.
+ * LIVE: take real damage on a real server with moomooplus running.
  * ====================================================================
  * Boots an isolated copy of the moomoo-clone server, connects:
  *   - an attacker bot (admin test account -> /goto + /give)
- *   - a victim running the real loader + mods/examplescript.js
+ *   - a victim running the real loader + mods/moomooplus.js
  * then hits the victim and checks that the server's anti-cheat never closes,
  * kicks or shames it, and that auto-heal actually heals.
  *
@@ -47,7 +47,7 @@ try {
     bot = await createBot({ WS, srv, mod, name: "attacker", url: gameUrl(srv, await joinTicket(srv, botToken), mod.BUILD_ID) });
     T0 = Date.now();
     const vsid = victim.client.sid;
-    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}, autoHeal=${victim.MooMoo.getMods().find((m) => m.id === "examplescript").settings.find((s) => s.key === "auto heal").value}`);
+    note(`victim sid ${vsid}, attacker sid ${bot.client.sid}, autoHeal=${victim.MooMoo.getMods().find((m) => m.id === "moomooplus").settings.find((s) => s.key === "auto heal").value}`);
 
     victim.MooMoo.on("health", (p) => { if (p.sid === vsid) note(`victim health -> ${p.value}`); });
     victim.MooMoo.on("playerValue", (p) => { if (p.key === "food") note(`victim food -> ${p.value}`); });

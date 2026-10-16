@@ -9,6 +9,10 @@
 // random 32-bit table salt and a randomly parameterised ARX key mixer. The module text
 // is written to disk, served to browsers, and imported here too, so both ends run the
 // exact same mixKey implementation.
+//
+// Each build also has a 16-byte seal. The page gets it through a second import map entry,
+// "moomoo-seal", whose file name is the seal in hex (/p/<32 hex>.js); the client only reads
+// that name and combines it with a hash of its own bundle (see protocol/session.js).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -72,6 +76,7 @@ function randomParams() {
         rotB: randInt(5, 27),
         mult: (randU32() | 1) >>> 0,
         modulePath: randId(6),
+        sealHex: randomBytes(16).toString("hex"),
         createdAt: Date.now()
     };
 }
@@ -81,6 +86,11 @@ export async function createProtocolBuild({ outDir, pinFile }) {
     let params = null;
     if (pinFile && fs.existsSync(pinFile)) {
         params = JSON.parse(fs.readFileSync(pinFile, "utf8"));
+        // builds pinned before seals existed get one without rolling the build
+        if (!/^[0-9a-f]{32}$/.test(params.sealHex || "")) {
+            params.sealHex = randomBytes(16).toString("hex");
+            fs.writeFileSync(pinFile, JSON.stringify(params, null, 2));
+        }
     } else {
         params = randomParams();
         if (pinFile) {
@@ -105,6 +115,9 @@ export async function createProtocolBuild({ outDir, pinFile }) {
         mixKey: mod.mixKey,
         // Browser-facing path used in the import map, mirroring moomoo.io's /p/<id>.js.
         publicPath: `/p/${params.modulePath}.js`,
+        sealBytes: new Uint8Array(Buffer.from(params.sealHex, "hex")),
+        sealPath: `/p/${params.sealHex}.js`,
+        sealSource: `// moomoo-seal | build ${params.buildId}\nexport {};\n`,
         file,
         source,
         createdAt: params.createdAt

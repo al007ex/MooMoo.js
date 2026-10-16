@@ -18,7 +18,7 @@ module.exports.groups = [{
     id: 3,
     name: "mill",
     place: true,
-    limit: 7,
+    limit: 200,
     sandboxLimit: 299,
     layer: 1
 }, {

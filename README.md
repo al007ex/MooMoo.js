@@ -4,12 +4,10 @@ a modding framework for my MooMoo.io-style private server. you write mods withou
 ever touching the websocket, the crypto, or the packet format. you just listen for
 events, send actions, and let the framework do the rest.
 
-```
-on health(sid, value) {
-    if (sid == self.sid) {
-        log("My health is now " + value)
-    }
-}
+```js
+MooMoo.on("health", ({ sid, value }) => {
+    if (sid === MooMoo.self.sid) console.log("my health is now " + value);
+});
 ```
 
 that's a complete, working mod.
@@ -25,16 +23,21 @@ that's a complete, working mod.
 | | what | changes when the server updates? |
 | --- | --- | --- |
 | **the loader** | a Tampermonkey userscript that hooks the socket, speaks the protocol, exposes `window.MooMoo`, and adds the in-game **Mods** menu | **yes** — it's the only piece that does |
-| **the runtime + language** | the stable `window.MooMoo` API and the **moomoo.js** language; mods only ever touch these | **never** |
+| **the runtime** | the stable `window.MooMoo` API mods are written against | **never** |
 
 the thing connecting them is a tiny **binding** that maps wire packets to stable
 names. rename a packet on the server, change one line in the binding, and every mod
-anyone ever wrote keeps working.
+anyone ever wrote keeps working. on top of the runtime the loader also builds the
+**game engines** (combat, objects, store, renderer, pathfinder) that a mod gets on
+its `ctx`.
 
 ```
 wire bytes ─(loader: hook + decode + binding)─▶ named events ─▶ your mod
 your mod ─▶ named actions ─(loader: binding + encode + send)─▶ wire bytes
 ```
+
+and the big worked example that ships with it is **MooMooPlus (MMP)** — a full
+combat / defense / movement / visuals mod with its own in-game menu on **M**.
 
 ---
 
@@ -43,24 +46,23 @@ your mod ─▶ named actions ─(loader: binding + encode + send)─▶ wire by
 ```
 shared/vocabulary.js      the stable packet vocabulary (the contract mods use)
 loader/
-  src/                    the loader, split into modules
-    msgpack.js  sha256.js  protocol.js   ← the wire codec
-    binding.js            ← wire ⇄ vocabulary (edit this on server updates)
-    anticheat.js          ← the undetectable WebSocket proxy
-    runtime.js            ← window.MooMoo: events, actions, state, mod registry
-    menu.js               ← the in-game Mods tab + settings UI
-    loader.js             ← wires it together
-  build.mjs               bundles src/ → dist/moomoo-loader.user.js
+  src/
+    net/    msgpack · sha256 · protocol · binding · socket · outgoing   (the wire)
+    core/   runtime (window.MooMoo) · api (ctx verbs) · modstab (Mods tab)
+    game/   combat · objects · store · render · pathfind                (the ctx engines)
+    loader.js                 wires it all together
+  build.mjs                   bundles + mangles src/ → dist/moomoo-loader.user.js
   dist/moomoo-loader.user.js
-compiler/
-  moomoo-compiler.js      the moomoo.js language compiler (Node + browser)
-  cli.mjs                 command-line compiler
-examples/
-  health-logger.moomoo    the sample mod (source)
-  health-logger.user.js   compiled Tampermonkey userscript
-  menu-preview.html       a static preview of the in-game Mods menu
-tests/                    codec + loader + compiler tests
-website/                  Docusaurus docs + the in-browser playground
+mods/
+  moomooplus/                 MooMooPlus, one file per area (the big worked example)
+  build-moomooplus.mjs        concatenates + mangles → moomooplus.user.js
+  moomooplus.js               readable build (tests)   moomooplus.user.js (delivered)
+  lite.js                     MooMoo Lite — a small, additive mod (place spammers,
+  build-lite.mjs              legit auto heal, hat hotkeys, own menu) → lite.user.js
+build-common.mjs              the shared mangle step (esbuild)
+examples/                     a tiny standalone mod + a menu preview
+tests/                        codec + loader + live tests
+docs/                         full documentation (Markdown)
 ```
 
 ---
@@ -68,70 +70,60 @@ website/                  Docusaurus docs + the in-browser playground
 ## Quickstart
 
 ```bash
-npm run build     # build loader/dist/moomoo-loader.user.js
-npm test          # run all tests (checks the codec against the server if present)
+npm install       # one-time: esbuild, used to mangle the builds
+npm run build     # loader/dist/moomoo-loader.user.js
+npm run build:mod # mods/moomooplus.user.js
+npm test          # all tests (checks the codec against the server if present)
 ```
 
 1. **install the loader.** set its `@match` to your server, host it somewhere, and
    add it in Tampermonkey. open the game and a **Mods** tab shows up in the menu.
-2. **write a mod** in the [playground](website/static/playground/index.html) or in
-   moomoo.js, then compile it:
+2. **install a mod.** `mods/moomooplus.user.js` is ready to go — it `@require`s the
+   loader, so updating the loader updates every mod at once. your own mod is a tiny
+   userscript that does the same.
 
-   ```bash
-   node compiler/cli.mjs examples/health-logger.moomoo \
-     --loader "https://your-host/moomoo-loader.user.js"
-   ```
-3. **install the compiled userscript.** it `@require`s the loader, so updating the
-   loader updates every mod at once.
-
-full walkthrough: **`website/docs/getting-started.md`**.
+full walkthrough: **`docs/getting-started.md`**.
 
 ---
 
-## the moomoo.js language
+## writing a mod
 
-a tiny language for one job: react to events, send actions. it's got `mod`, `on`,
-`every`, `fn`, `let`, `if/else`, `while`, `repeat`, `send.*`, `log`, and per-mod
-`setting`s that show up in the in-game menu.
+a mod registers against `window.MooMoo` and gets a `ctx` that cleans itself up:
 
+```js
+MooMoo.register({
+    id: "auto-reply",
+    name: "Auto Reply",
+    settings: [{ key: "phrase", label: "Reply text", default: "hi there" }]
+}, (ctx) => {
+    ctx.on("chat", ({ message }) => {
+        if (message === "hi") MooMoo.send.chat(ctx.settings.phrase);
+    });
+});
 ```
-mod "Auto Reply" {
-    setting phrase = "hi there" "Reply text"
 
-    on chat(sid, message) {
-        if (message == "hi") { send.chat(setting.phrase) }
-    }
-}
-```
+`register` gives it a **Mods** tab entry (toggle + settings). for combat-grade mods
+`ctx` also carries `combat`, `objects`, `store`, `render`, `path` and `onOutgoing`.
+see `docs/writing-mods.md`, and `mods/moomooplus/` for the real thing.
 
-compile it and you get a Tampermonkey plugin that sits on top of the loader. see
-`website/docs/language-reference.md`.
+---
+
+## the builds are mangled
+
+both delivered userscripts are minified + identifier-mangled by esbuild
+(`build-common.mjs`), so they're small and not easily read. property/global names
+are left alone, so `window.MooMoo` and the whole API still work. a readable
+`mods/moomooplus.js` is kept for the tests, and `build-common.mjs` also supports
+build-time macros (`define`) — that's how the test build keeps the debug view and
+the delivered build compiles it out.
 
 ---
 
 ## the in-game Mods menu
 
-the loader drops a **Mods** tab into the game's pause menu, styled to match the
-native tabs. every registered mod gets an on/off toggle you can flip while playing,
-and if it has settings, an expandable panel for them. the state sticks around across
-reloads.
-
----
-
-## the website
-
-`website/` is a Docusaurus site with the full docs and an interactive
-**playground** where you write moomoo.js, see a live preview of the in-game menu,
-and compile to a userscript in one click.
-
-```bash
-cd website
-npm install
-npm start        # docs + playground at http://localhost:3000
-```
-
-the playground also runs standalone, just open
-`website/static/playground/index.html`.
+the loader drops a **Mods** tab into the game's pause menu. every registered mod
+gets an on/off toggle and its "basic" settings there; a mod with its own menu (like
+MMP) points you at it. state sticks across reloads.
 
 ---
 
@@ -141,15 +133,16 @@ the playground also runs standalone, just open
 npm test
 ```
 
-- **`protocol.roundtrip`** — the loader's codec vs. the real server protocol and vs.
-  `msgpack-lite`.
+- **`protocol.roundtrip`** — the loader's codec (incl. the code seal) vs. the real
+  server protocol and vs. `msgpack-lite`.
 - **`loader.integration`** — the whole loader against a real server session in a fake
   browser (hook, decode, re-encode, telemetry scrub, injection).
-- **`bundle.vm`** — the assembled userscript, run in a sandbox.
-- **`compiler`** — lexing, parsing, codegen, and runtime mod management.
+- **`bundle.vm`** — the assembled, mangled userscript, run in a sandbox.
+- **`combat` / `objectmanager`** — the game engines.
+- **`tests/live/*`** — real Chrome + a real server copy (the end-to-end proof).
 
-the codec tests run against the `moomoo-clone` server when it's sitting next to this
-repo (or at `$MOOMOO_SERVER_DIR`). otherwise they just skip.
+the codec tests run against the `moomoo-clone` server when it's next to this repo
+(or at `$MOOMOO_SERVER_DIR`). otherwise they skip.
 
 ---
 
@@ -162,11 +155,27 @@ MooMooLoader.onRaw((dir, name, args) => console.log(dir, name, args));
 ```
 
 ```js
-// loader/src/binding.js — only the LEFT side moves
+// loader/src/net/binding.js — only the LEFT side moves
 incoming["O"] = { event: "health", parse: (a) => ({ sid: a[0], value: a[1] }) };
 ```
 
-rebuild, re-host at the same url, done. see `website/docs/updating-the-loader.md`.
+rebuild, re-host at the same url, done. see `docs/updating-the-loader.md`.
+
+the loader also checks itself against the server as it connects. on a clean join it
+shows a short notice; if the server has moved ahead of the binding it shows a
+mismatch report you can copy and send over, and if it's certain the loader can't keep
+up it stops the connection rather than let you get flagged. see `docs/anticheat.md`.
+
+---
+
+## Author & support
+
+made by **Nuro** ([@al007ex](https://github.com/al007ex)).
+
+- GitHub: https://github.com/al007ex/MooMoo.js
+- Discord: https://discord.gg/NMS3YR9Q5R
+
+bugs, questions and mismatch reports are all welcome there.
 
 ---
 
