@@ -65,7 +65,6 @@ if(typeof jQuery==="undefined"){throw new Error("jquery-confirm requires jQuery"
  *   70-keys    every key: spammers, instas, four-places, auto trap, bot mode, arrow spams
  *   90-init    runs the setup in the original's exact order
  */
-
 (function () {
     "use strict";
 

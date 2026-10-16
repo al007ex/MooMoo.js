@@ -53,6 +53,7 @@ const HEADER = `// ==UserScript==
 // @author       al007ex
 // @match        *://*/*
 // @run-at       document-start
+// @inject-into  page
 // @grant        none
 // ==/UserScript==
 //
@@ -82,25 +83,44 @@ ${bodies}
 
 const iife = `(function bootstrap(){
   ${core}
-  // Run core in the PAGE context. Under a userscript sandbox we inject a <script>;
-  // if we are already in the page (e.g. @grant none page-context, or a bookmarklet)
-  // we just call it.
+  // The loader MUST run in the page's own realm: that's the only place where
+  // window.WebSocket is the constructor the game client actually uses (and is
+  // writable). With "@inject-into page" + "@grant none" the body already runs
+  // there, so we just call core(). In a userscript sandbox we inject the code
+  // as a page <script> instead. We never fall back to running core() in the
+  // sandbox realm — the WebSocket there isn't the game's, and replacing it
+  // throws "read-only property".
   var inPage;
   try { inPage = (typeof unsafeWindow === "undefined") || (window === unsafeWindow); }
   catch (e) { inPage = true; }
-  if (inPage) {
-    core();
-  } else {
-    try {
-      var s = document.createElement("script");
-      s.textContent = "(" + core.toString() + ")();";
-      (document.head || document.documentElement).appendChild(s);
-      s.remove();
-    } catch (e) {
-      // Last resort: run in whatever context we are in.
-      core();
-    }
-  }
+  if (inPage) { core(); return; }
+
+  var src = "(" + core.toString() + ")();";
+  // 1) inline page <script> — synchronous, wins the document-start race.
+  try {
+    var s = document.createElement("script");
+    s.textContent = src;
+    (document.head || document.documentElement).appendChild(s);
+    s.remove();
+    return;
+  } catch (e) { /* CSP blocked inline scripts; try a blob url */ }
+  // 2) blob url <script> — clears many inline-script CSPs (loads async, so it
+  //    may lose the timing race, but that beats not loading at all).
+  try {
+    var url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+    var b = document.createElement("script");
+    b.src = url;
+    b.onload = b.onerror = function () { try { b.remove(); URL.revokeObjectURL(url); } catch (e) {} };
+    (document.head || document.documentElement).appendChild(b);
+    return;
+  } catch (e) { /* blob blocked too */ }
+  // 3) can't reach the page realm at all.
+  try {
+    console.error("%c[moomoo.js]", "color:#e66",
+      "couldn't inject into the page (CSP). Set the script to run in page context: " +
+      "Violentmonkey → @inject-into page, Tampermonkey → @grant none. " +
+      "It can't run in the sandbox because the game's WebSocket isn't reachable there.");
+  } catch (e) {}
 })();
 `;
 

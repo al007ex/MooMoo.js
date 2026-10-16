@@ -23,6 +23,7 @@ const HEADER = `// ==UserScript==
 // @author       you
 // @match        *://*/*
 // @run-at       document-start
+// @inject-into  page
 // @require      ${loaderUrl}?v=${LOADER_MIN}
 // @grant        none
 // ==/UserScript==

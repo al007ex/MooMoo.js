@@ -69,6 +69,7 @@ const HEADER = `// ==UserScript==
 // @author       Nuro (ported to moomoo.js)
 // @match        *://*/*
 // @run-at       document-start
+// @inject-into  page
 // @require      ${loaderUrl}?v=${LOADER_MIN}
 // @grant        none
 // ==/UserScript==

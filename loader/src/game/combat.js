@@ -57,7 +57,7 @@
     const ce = 1000 / 9;                 // server tick ms
     const u = ce * 2;                    // two ticks (combo length)
     const r3 = Math.pow(0.993, 111);     // decel constant used by l4's T()
-    const EN = [1, 1.1, 1.18, 1.18];     // En: weapon-variant damage multipliers as the bundle used them
+    const EN = [1, 1.1, 1.18, 1.18, 1.18]; // En: weapon-variant damage multipliers (gold, diamond, ruby, emerald)
     const h = Math.PI / 2.6;             // gather angle (bundle `h`)
 
     // ---- math primitives (bundle aliases) ----

@@ -6,6 +6,7 @@
 // @author       Nuro (ported to moomoo.js)
 // @match        *://*/*
 // @run-at       document-start
+// @inject-into  page
 // @require      https://pastebin.com/raw/jWDq3mmF?v=1.3.0
 // @grant        none
 // ==/UserScript==

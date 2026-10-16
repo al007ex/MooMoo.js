@@ -148,10 +148,14 @@ test("trapAt finds a pit trap covering a point; wiggle marks a hit", () => {
     assert.ok(objects.get(9).lastHit > 0);
 });
 
-test("setup/died clear the world", () => {
+test("objects survive a death; a new connection clears them", () => {
     const { MooMoo, objects } = setup();
     MooMoo._dispatch("objectsLoad", { args: [[].concat(obj(1, 0, 0, SPIKE, 2))] });
     assert.equal(objects.count(), 1);
+    // the server never re-sends objects after a respawn, so they must stay
     MooMoo._dispatch("died", {});
+    MooMoo._dispatch("setup", { sid: 1 });
+    assert.equal(objects.count(), 1);
+    objects.newConnection();
     assert.equal(objects.count(), 0);
 });

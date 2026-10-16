@@ -142,13 +142,24 @@
         const Proxied = new Proxy(NativeWebSocket, handler);
 
         // Replace the global. Define it the same way the platform does so a
-        // descriptor probe sees nothing unusual.
+        // descriptor probe sees nothing unusual. If the property can't be written
+        // (a frozen WebSocket, or a userscript sandbox realm where it's read-only)
+        // don't throw out of here and abort the whole loader — report it and carry
+        // on. window.MooMoo still comes up; the fix is to run in page context
+        // (@inject-into page / @grant none).
+        let swapped = false;
         try {
             Object.defineProperty(win, "WebSocket", {
                 value: Proxied, writable: true, enumerable: false, configurable: true
             });
-        } catch (e) {
-            win.WebSocket = Proxied;
+            swapped = win.WebSocket === Proxied;
+        } catch (e1) {
+            try { win.WebSocket = Proxied; swapped = win.WebSocket === Proxied; }
+            catch (e2) { /* handled below */ }
+        }
+        if (!swapped) {
+            report(new Error("could not replace window.WebSocket (read-only in this realm). " +
+                "Run the userscript in page context: Violentmonkey -> @inject-into page, Tampermonkey -> @grant none."));
         }
         return NativeWebSocket;
     }

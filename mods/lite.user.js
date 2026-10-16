@@ -6,6 +6,7 @@
 // @author       you
 // @match        *://*/*
 // @run-at       document-start
+// @inject-into  page
 // @require      https://pastebin.com/raw/jWDq3mmF?v=1.3.1
 // @grant        none
 // ==/UserScript==

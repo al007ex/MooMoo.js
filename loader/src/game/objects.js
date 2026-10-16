@@ -18,7 +18,10 @@
  *   wiggle       ("L")  [dir,sid]                                      -> object was hit
  *   turretShoot  ("M")  [sid,dir]                                      -> turret fired (reload timer)
  *   itemCount    ("S")  [groupId,count]                               -> your placed-count per group
- *   setup/died                                                         -> clear (new life)
+ *   first setup on a connection                                        -> clear
+ *
+ * Objects are NOT cleared when you die. The server sends each object to a
+ * player only once per connection, so a respawn has to keep the old ones.
  *
  * Mechanics copied from the server (server/src/moomoo/modules/gameObject.js +
  * objectManager.js + server.js syncObjects) and the client bundle's GameObject.
@@ -270,8 +273,14 @@
         // this at the bundle's point in the tick (k4); without it, the "a" packet does.
         let driven = false;
         MooMoo.on("playersUpdate", () => { if (!driven) update(); });
-        MooMoo.on("setup", clearAll);
-        MooMoo.on("died", clearAll);
+        // Objects are NOT cleared when you die: the server sends each object to a
+        // player only ONCE per connection, so a respawn has to keep the old world
+        // (clearing it on death left you blind to every building until a reconnect).
+        // Only the first spawn of a connection starts from an empty world, like the
+        // game client does; the loader calls newConnection() for every new socket.
+        let firstSetup = true;
+        function newConnection() { clearAll(); firstSetup = true; }
+        MooMoo.on("setup", () => { if (firstSetup) { firstSetup = false; clearAll(); } });
 
         // ---- query API (what features call) ----
         function get(sid) { return byId.get(sid) || null; }
@@ -327,6 +336,7 @@
             isEnemyObject, isFriendly, isTeammate, isSelf,
             itemCount: (gid) => itemCounts[gid] || 0,
             clear: clearAll,
+            newConnection,
             update,
             setDriven: (b) => { driven = !!b; },
             setFriendlyTest: (fn) => { hooksRef.te = fn; },

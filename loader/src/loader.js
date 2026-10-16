@@ -505,6 +505,7 @@
             if (MooMoo._reset) MooMoo._reset();
             if (out) out.reset();
             if (store) store.reset();
+            if (objects && objects.newConnection) objects.newConnection();   // new socket = fresh world (objects survive death, not reconnect)
             // Field 6 of io-init: the seal mode. Bind mode folds the seal into the session
             // key, so we must have it before encoding a single frame; otherwise pass through.
             const sealMode = (payload && payload[5]) | 0;
