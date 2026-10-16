@@ -275,244 +275,332 @@
             }
 
             // =================================================================
-            // MENU — one moomoo-styled card you open with the menu key.
+            // MENU — a dark, moomoo-styled client panel (sidebar + module cards).
             // =================================================================
             const FONT = '"Hammersmith One", sans-serif';
+            const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
             const CSS = `
-            #mml-gui{position:fixed;inset:0;z-index:99990;display:none;background:rgba(0,0,0,.18);font-family:${FONT};-webkit-user-select:none;user-select:none}
+            #mml-gui{position:fixed;inset:0;z-index:99990;display:none;background:rgba(9,11,16,.5);font-family:${FONT};-webkit-user-select:none;user-select:none;
+              --acc:#8ecc51;--side:#13151b;--panel:#1b1e26;--card:#23262f;--ctrl:#2b2f3a;--track:#363b47;--text:#eceef2;--sub:#aab0bd;--muted:#6f7684;--border:#2a2e38}
             #mml-gui.open{display:block}
-            #mml-card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;max-height:86vh;overflow-y:auto;padding:12px 20px 18px;border-radius:4px;background:#fff;color:#4A4A4A;box-shadow:0 5px 8px 0 rgba(0,0,0,.2),0 7px 20px 0 rgba(0,0,0,.17)}
-            #mml-card::-webkit-scrollbar{width:9px}
-            #mml-card::-webkit-scrollbar-thumb{background:#d4d4d4;border-radius:5px}
-            #mml-card .closeit{float:right;font-size:24px;line-height:1;color:#FF1100;cursor:pointer;margin-top:2px}
-            #mml-card .closeit:hover,#mml-card .closeit:focus{color:#9e0c02}
-            #mml-title{font-size:30px;text-align:center;color:#4A4A4A;margin:4px 0 2px;font-weight:normal}
-            #mml-card hr{border:none;border-top:1px solid #ededed;margin:12px 0 10px}
-            #mml-card .sect{font-size:17px;color:#4A4A4A;text-align:center;margin:0 0 6px;opacity:.92}
-            #mml-card .ctl{display:flex;align-items:center;gap:11px;margin:7px 0;min-height:28px}
-            #mml-card .lbl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:18px;color:#4A4A4A}
-            #mml-card .sub{display:flex;align-items:center;gap:9px;margin:2px 0 9px 36px}
-            #mml-card .sub .tag{flex:0 0 auto;font-size:15px;color:#9a9a9a}
-            #mml-card .hint{font-size:12.5px;color:#b2b2b2;line-height:1.55;text-align:center;padding:3px 4px 2px}
-            #mml-card .foot{margin-top:14px;text-align:center;font-size:13px;color:#bdbdbd}
-            /* retro checkbox (CloudyMod .container/.checkmark) */
-            #mml-card .chk{flex:0 0 auto;position:relative;box-sizing:border-box;width:25px;height:25px;background:#eee;border-radius:3px;cursor:pointer}
-            #mml-card .chk:hover{background:#ccc}
-            #mml-card .chk.on{background:#000}
-            #mml-card .chk.on::after{content:"";position:absolute;left:9px;top:4px;width:5px;height:10px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
-            /* key-bind box (CloudyMod keyPressLow) */
-            #mml-card .kb{flex:0 0 auto;box-sizing:border-box;min-width:52px;height:28px;padding:3px 9px;text-align:center;font-size:16px;color:#4A4A4A;background:#fcfcfc;border:.5px solid #f2f2f2;border-radius:3.5px;cursor:pointer}
-            #mml-card .kb:hover{background:#f3f3f3}
-            #mml-card .kb.grab{color:#5aa844;background:#eaf6e2;border-color:#cfe9c0}
-            /* item text box */
-            #mml-card input.txt{flex:0 0 auto;box-sizing:border-box;width:118px;height:28px;padding:2px 7px;text-align:center;font-family:inherit;font-size:15px;color:#4A4A4A;background:#fcfcfc;border:.5px solid #f2f2f2;border-radius:3.5px;outline:none}
-            #mml-card input.txt:focus{border-color:#8ed265}
-            /* slider (CloudyMod healSlider) */
-            #mml-card input[type=range]{-webkit-appearance:none;flex:1 1 auto;min-width:0;height:10px;margin:0;border-radius:5px;background:#dddddd;outline:none;cursor:pointer}
-            #mml-card input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:11px;background:rgb(142,210,101);box-shadow:0 1px 2px rgba(0,0,0,.25);cursor:pointer}
-            #mml-card input[type=range]::-moz-range-thumb{width:22px;height:22px;border:none;border-radius:11px;background:rgb(142,210,101);cursor:pointer}
-            /* green value pill (CloudyMod numfocus) */
-            #mml-card .pill{flex:0 0 auto;box-sizing:border-box;min-width:56px;text-align:center;font-size:14px;color:#75d679;background:#fff;border:1.5px solid #75d679;border-radius:16px;padding:3px 10px}
-            /* hat select boxes (CloudyMod selectObj) */
-            #mml-hats{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:4px 0 2px}
-            #mml-card .hatslot{display:flex;flex-direction:column;align-items:center;gap:6px}
-            #mml-card .selectObj{display:flex;align-items:center;justify-content:center;width:74px;height:74px;background:#fcfcfc;border-radius:10px;cursor:pointer;box-shadow:0 2px 5px 0 rgba(0,0,0,.08),0 2px 10px 0 rgba(0,0,0,.06)}
-            #mml-card .selectObj:hover{background:#f6f6f6}
-            #mml-card .selectObj img{width:58px;height:58px;object-fit:contain}
-            #mml-card .selectObj .ph{font-size:12px;color:#bdbdbd}
-            /* hat picker (CloudyMod selectObjAlert tiles + chosenhat highlight) */
-            #mml-pick{position:fixed;inset:0;z-index:99992;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.24);font-family:${FONT}}
-            #mml-pick .panel{width:472px;max-width:92vw;max-height:74vh;overflow-y:auto;padding:16px;border-radius:6px;background:#fff;box-shadow:0 5px 8px 0 rgba(0,0,0,.2),0 7px 20px 0 rgba(0,0,0,.17);display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start;justify-content:center}
-            #mml-pick .ptitle{width:100%;text-align:center;font-size:20px;color:#4A4A4A;margin:0 0 4px}
-            #mml-pick .tile{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:76px;height:84px;padding:4px;border:2px solid transparent;border-radius:10px;background:#fcfcfc;box-shadow:0 2px 5px 0 rgba(0,0,0,.08);cursor:pointer}
-            #mml-pick .tile:hover{background:#f3f3f3}
-            #mml-pick .tile.sel{border-color:#7daaf2}
-            #mml-pick .tile img{width:52px;height:52px;object-fit:contain}
-            #mml-pick .tile .cap{max-width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:#888}
-            #mml-pick .tile .none{font-size:13px;color:#aaa}
+            #mml-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;width:720px;max-width:94vw;height:522px;max-height:88vh;background:var(--panel);border-radius:16px;overflow:hidden;color:var(--text);box-shadow:0 22px 64px rgba(0,0,0,.55);font-size:14px}
+            #mml-panel .side{flex:0 0 178px;background:var(--side);display:flex;flex-direction:column;padding:14px 10px}
+            #mml-panel .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 15px}
+            #mml-panel .logo{width:27px;height:27px;border-radius:8px;background:var(--acc);color:#153318;display:flex;align-items:center;justify-content:center;font-size:12px}
+            #mml-panel .bname{font-size:15px;color:var(--text)}
+            #mml-panel .nav{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+            #mml-panel .navitem{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:9px;color:var(--sub);cursor:pointer;transition:background .12s,color .12s}
+            #mml-panel .navitem:hover{background:#1d2029;color:var(--text)}
+            #mml-panel .navitem.active{background:#242834;color:var(--text)}
+            #mml-panel .navitem.active .ico{color:var(--acc)}
+            #mml-panel .ico{display:inline-flex;width:18px;height:18px;color:var(--muted);flex:0 0 auto}
+            #mml-panel .ico svg{width:18px;height:18px;display:block}
+            #mml-panel .ntxt{font-size:14px}
+            #mml-panel .user{display:flex;align-items:center;gap:9px;padding:11px 7px 2px;margin-top:8px;border-top:1px solid var(--border)}
+            #mml-panel .uava{width:29px;height:29px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#5f933a);flex:0 0 auto}
+            #mml-panel .uinfo{display:flex;flex-direction:column;min-width:0}
+            #mml-panel .uname{font-size:13px;color:var(--text)}
+            #mml-panel .uver{font-size:11px;color:var(--muted);font-family:${SANS}}
+            #mml-panel .body{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+            #mml-panel .head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border)}
+            #mml-panel .htitle{font-size:18px;color:var(--text)}
+            #mml-panel .close{color:var(--muted);cursor:pointer;font-size:15px;padding:5px 9px;border-radius:8px}
+            #mml-panel .close:hover{color:var(--text);background:#242834}
+            #mml-panel .content{flex:1 1 auto;overflow-y:auto;padding:16px 20px 20px}
+            #mml-panel .content::-webkit-scrollbar{width:11px}
+            #mml-panel .content::-webkit-scrollbar-thumb{background:#2e333e;border-radius:6px;border:3px solid var(--panel)}
+            #mml-panel .modgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:13px;align-items:start}
+            #mml-panel .mod{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+            #mml-panel .mod.wide{grid-column:1/-1}
+            #mml-panel .modhead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border)}
+            #mml-panel .modtitle{font-size:15px;color:var(--text)}
+            #mml-panel .modbody{padding:7px 14px 11px}
+            #mml-panel .row{display:flex;align-items:center;gap:12px;min-height:34px;padding:3px 0}
+            #mml-panel .rl{font-size:13.5px;color:var(--sub);font-family:${SANS}}
+            #mml-panel .row:not(.srow) .rl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            #mml-panel .srow .rl{flex:0 0 84px}
+            #mml-panel .sw{flex:0 0 auto;width:42px;height:24px;border-radius:12px;background:var(--track);position:relative;cursor:pointer;transition:background .16s}
+            #mml-panel .sw.on{background:var(--acc)}
+            #mml-panel .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .16s;box-shadow:0 1px 2px rgba(0,0,0,.35)}
+            #mml-panel .sw.on::after{left:21px}
+            #mml-panel .rng{-webkit-appearance:none;flex:1 1 auto;min-width:50px;height:6px;border-radius:3px;background:var(--track);outline:none;cursor:pointer}
+            #mml-panel .rng::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.45);cursor:pointer}
+            #mml-panel .rng::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:#fff;cursor:pointer}
+            #mml-panel .rngval{flex:0 0 auto;min-width:48px;text-align:right;font-size:13px;color:var(--text);font-family:${SANS}}
+            #mml-panel .kb{flex:0 0 auto;min-width:40px;text-align:center;padding:6px 13px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--sub);font-size:13px;cursor:pointer;font-family:${SANS}}
+            #mml-panel .kb:hover{color:var(--text);border-color:#3b4150}
+            #mml-panel .kb.grab{color:var(--acc);border-color:var(--acc)}
+            #mml-panel .txt{flex:0 0 auto;width:132px;padding:6px 10px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--text);font-family:${SANS};font-size:13px;text-align:center;outline:none}
+            #mml-panel .txt:focus{border-color:var(--acc)}
+            #mml-panel .selwrap{position:relative;flex:0 0 auto}
+            #mml-panel .sel{appearance:none;-webkit-appearance:none;padding:6px 32px 6px 12px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--text);font-family:${SANS};font-size:13px;cursor:pointer;outline:none}
+            #mml-panel .sel:focus{border-color:var(--acc)}
+            #mml-panel .sel option{background:#23262f;color:var(--text)}
+            #mml-panel .selwrap::after{content:"";position:absolute;right:12px;top:45%;width:7px;height:7px;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:translateY(-50%) rotate(45deg);pointer-events:none}
+            #mml-panel .hatrow{display:flex;flex-wrap:wrap;gap:13px;justify-content:center;padding:9px 0 5px}
+            #mml-panel .hatcell{display:flex;flex-direction:column;align-items:center;gap:7px}
+            #mml-panel .hatbox{width:62px;height:62px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--ctrl);border:1px solid var(--border);cursor:pointer;transition:border-color .12s}
+            #mml-panel .hatbox:hover{border-color:#3b4150}
+            #mml-panel .hatbox img{width:46px;height:46px;object-fit:contain}
+            #mml-panel .hatph{color:var(--muted);font-size:20px}
+            #mml-panel .hatcap{font-size:12px;color:var(--muted);font-family:${SANS}}
+            #mml-panel .btn{margin-top:9px;text-align:center;padding:9px;border-radius:9px;background:var(--ctrl);border:1px solid var(--border);color:var(--sub);cursor:pointer;font-size:13px;font-family:${SANS}}
+            #mml-panel .btn:hover{color:var(--text);border-color:#3b4150}
+            #mml-pick{position:fixed;inset:0;z-index:99992;display:flex;align-items:center;justify-content:center;background:rgba(9,11,16,.62);font-family:${FONT}}
+            #mml-pick .pickpanel{width:520px;max-width:92vw;max-height:76vh;overflow-y:auto;padding:18px;border-radius:14px;background:#1b1e26;border:1px solid #2a2e38;box-shadow:0 22px 64px rgba(0,0,0,.6);color:#eceef2}
+            #mml-pick .picktitle{text-align:center;font-size:18px;margin-bottom:13px}
+            #mml-pick .pickgrid{display:flex;flex-wrap:wrap;gap:9px;justify-content:center}
+            #mml-pick .ptile{box-sizing:border-box;width:76px;height:84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:5px;border-radius:11px;background:#23262f;border:2px solid transparent;cursor:pointer}
+            #mml-pick .ptile:hover{background:#2b2f3a}
+            #mml-pick .ptile.sel{border-color:#8ecc51}
+            #mml-pick .ptile img{width:50px;height:50px;object-fit:contain}
+            #mml-pick .pcap{font-size:10px;color:#9aa0aa;max-width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:${SANS}}
+            #mml-pick .pnone{font-size:13px;color:#6f7684}
             `;
             let gui = null, built = false, open = false, grab = null, grabEl = null;
+            let activeCat = "placement", headTitle = null, contentEl = null;
 
             function mk(tag, cls, text) { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
-            function toggle(get, set) {
-                const b = mk("div", "chk");
-                const paint = () => b.classList.toggle("on", !!get());
-                b.addEventListener("click", (e) => { e.stopPropagation(); set(!get()); save(); paint(); });
-                paint(); return b;
+            function svgEl(markup) { const s = mk("span", "ico"); s.innerHTML = markup; return s; }
+
+            // ---- components ----
+            function toggleSwitch(get, set) {
+                const sw = mk("div", "sw");
+                const paint = () => sw.classList.toggle("on", !!get());
+                sw.addEventListener("click", (e) => { e.stopPropagation(); set(!get()); save(); paint(); });
+                paint(); return sw;
             }
             function bindBtn(get, set) {
                 const b = mk("div", "kb");
                 const paint = () => { if (grabEl !== b) { b.classList.remove("grab"); b.textContent = keyLabel(get()); } };
-                b.addEventListener("click", () => { b.classList.add("grab"); b.textContent = "press…"; grab = (id) => { set(id); save(); paint(); }; grabEl = b; });
+                b.addEventListener("click", () => { b.classList.add("grab"); b.textContent = "…"; grab = (id) => { set(id); save(); paint(); }; grabEl = b; });
                 paint(); b._paint = paint; return b;
             }
-            function slider(min, max, step, get, set, fmt) {
-                const r = mk("input"); r.type = "range"; r.min = min; r.max = max; r.step = step; r.value = get();
-                const v = mk("span", "pill", (fmt || String)(get()));
-                r.addEventListener("input", () => { v.textContent = (fmt || String)(+r.value); });
+            function smoothSlider(min, max, step, get, set, fmt) {
+                const r = mk("input", "rng"); r.type = "range"; r.min = min; r.max = max; r.step = step; r.value = get();
+                const val = mk("span", "rngval");
+                const paint = () => {
+                    const p = max > min ? ((+r.value - min) / (max - min)) * 100 : 0;
+                    r.style.background = "linear-gradient(to right, var(--acc) " + p + "%, var(--track) " + p + "%)";
+                    val.textContent = (fmt || String)(+r.value);
+                };
+                r.addEventListener("input", paint);
                 r.addEventListener("change", () => { set(+r.value); save(); });
-                return [r, v];
+                paint();
+                return { input: r, val };
             }
             function textInput(get, set, cls) {
-                const i = mk("input"); i.type = "text"; i.className = cls || "txt"; i.value = get();
+                const i = mk("input", "txt" + (cls ? " " + cls : "")); i.type = "text"; i.value = get();
                 i.addEventListener("change", () => { set(i.value.trim()); save(); });
                 i.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") i.blur(); });
                 return i;
             }
-
-            // a hat slot: a CloudyMod-style select box showing the hat; click opens the picker
+            function selectBox(options, get, set) {
+                const wrap = mk("div", "selwrap");
+                const sel = mk("select", "sel");
+                for (const o of options) { const op = mk("option"); op.value = o.value; op.textContent = o.label; sel.appendChild(op); }
+                sel.value = get();
+                sel.addEventListener("change", () => { set(sel.value); save(); });
+                sel.addEventListener("keydown", (e) => e.stopPropagation());
+                wrap.appendChild(sel); return wrap;
+            }
             function hatSlot(get, set) {
-                const box = mk("div", "selectObj");
+                const box = mk("div", "hatbox");
                 const paint = () => {
                     box.textContent = "";
                     const id = get();
-                    if (id) { const img = mk("img"); img.src = hatImg(id); img.alt = hatName(id); img.onerror = () => { img.replaceWith(mk("div", "ph", "\u2014")); }; box.appendChild(img); }
-                    else box.appendChild(mk("div", "ph", "none"));
+                    if (id) { const img = mk("img"); img.src = hatImg(id); img.alt = hatName(id); img.onerror = () => { img.replaceWith(mk("div", "hatph", "—")); }; box.appendChild(img); }
+                    else box.appendChild(mk("div", "hatph", "+"));
                     box.title = hatName(id);
                 };
                 box.addEventListener("click", () => openHatPicker(get(), (id) => { set(id); save(); paint(); }));
                 paint(); return box;
             }
-            // the picker: a grid of hat icons (None + every hat) to choose from
             function openHatPicker(cur, onPick) {
                 if (!gui) return;
                 const old = doc.getElementById("mml-pick"); if (old) old.remove();
                 const pick = mk("div"); pick.id = "mml-pick";
-                const panel = mk("div", "panel");
-                panel.appendChild(mk("div", "ptitle", "Choose a hat"));
+                const panel = mk("div", "pickpanel");
+                panel.appendChild(mk("div", "picktitle", "Choose a hat"));
+                const grid = mk("div", "pickgrid");
                 const close = () => pick.remove();
                 const list = [{ id: 0, name: "None" }].concat(data.hats || []);
                 for (const h of list) {
-                    const t = mk("div", "tile" + (h.id === cur ? " sel" : ""));
+                    const t = mk("div", "ptile" + (h.id === cur ? " sel" : ""));
                     if (h.id) { const img = mk("img"); img.src = hatImg(h.id); img.alt = h.name; img.onerror = () => { img.style.visibility = "hidden"; }; t.appendChild(img); }
-                    else t.appendChild(mk("div", "none", "none"));
-                    t.appendChild(mk("div", "cap", h.name));
+                    else t.appendChild(mk("div", "pnone", "none"));
+                    t.appendChild(mk("div", "pcap", h.name));
                     t.title = h.name + (h.desc ? " — " + h.desc : "");
                     t.addEventListener("click", (e) => { e.stopPropagation(); onPick(h.id); close(); });
-                    panel.appendChild(t);
+                    grid.appendChild(t);
                 }
+                panel.appendChild(grid);
                 pick.appendChild(panel);
                 pick.addEventListener("mousedown", (e) => { e.stopPropagation(); if (e.target === pick) close(); });
                 gui.appendChild(pick);
             }
-
             function doGrab(e) {
                 const done = grab; grab = null; const el = grabEl; grabEl = null;
-                // a bare modifier isn't a standalone bind — keep waiting for a real key
                 if (/^(Shift|Control|Alt|Meta|CapsLock|OS)$/.test(e.key)) { grab = done; grabEl = el; return; }
-                if (e.key === "Escape") { done(""); return; }   // Esc clears / unbinds
-                done(keyId(e));                                  // any other key binds (Backspace, Delete, Space, arrows, symbols, ...)
+                if (e.key === "Escape") { done(""); return; }
+                done(keyId(e));
+            }
+
+            // ---- rows + module card ----
+            function row(label, control) { const r = mk("div", "row"); r.appendChild(mk("span", "rl", label)); r.appendChild(control); return r; }
+            function sliderRow(label, min, max, step, get, set, fmt) {
+                const r = mk("div", "row srow"); r.appendChild(mk("span", "rl", label));
+                const s = smoothSlider(min, max, step, get, set, fmt); r.appendChild(s.input); r.appendChild(s.val); return r;
+            }
+            function modCard(title, master, wide) {
+                const card = mk("div", "mod" + (wide ? " wide" : ""));
+                const head = mk("div", "modhead"); head.appendChild(mk("span", "modtitle", title));
+                if (master) head.appendChild(toggleSwitch(master.get, master.set));
+                card.appendChild(head);
+                const body = mk("div", "modbody"); card.appendChild(body);
+                return { card, body };
+            }
+
+            // ---- icons / modules / categories ----
+            const ICON = {
+                grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>',
+                combat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7.5"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
+                hat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h18"/><path d="M5.5 17c0-5.2 2.6-9 6.5-9s6.5 3.8 6.5 9"/></svg>',
+                gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>'
+            };
+            const MODULES = {};
+            for (const s of SPAMMERS) {
+                const sid = s.id;
+                MODULES["spam_" + sid] = () => {
+                    const cfg = prefs.spammers[sid];
+                    const m = modCard(s.label, { get: () => cfg.on, set: (v) => { cfg.on = v; } });
+                    m.body.appendChild(row("Key", bindBtn(() => cfg.key, (id) => { cfg.key = id; })));
+                    m.body.appendChild(row("Item", textInput(() => cfg.item, (v) => { cfg.item = v || s.item; })));
+                    m.body.appendChild(sliderRow("Speed", 40, 500, 10, () => cfg.speed, (x) => { cfg.speed = x; }, (n) => n + "ms"));
+                    return m.card;
+                };
+            }
+            MODULES.humanize = () => {
+                const h = prefs.humanize;
+                const m = modCard("Humanize", { get: () => h.on, set: (v) => { h.on = v; } });
+                m.body.appendChild(sliderRow("Jitter", 0, 60, 1, () => h.jitter, (x) => { h.jitter = x; }, (n) => "±" + n + "%"));
+                m.body.appendChild(sliderRow("Pause %", 0, 25, 1, () => h.pauseChance, (x) => { h.pauseChance = x; }, (n) => n + "%"));
+                m.body.appendChild(sliderRow("Pause ms", 0, 600, 10, () => h.pauseMax, (x) => { h.pauseMax = x; }, (n) => n + "ms"));
+                return m.card;
+            };
+            MODULES.insta = () => {
+                const ik = prefs.insta;
+                const m = modCard("Instakill", null);
+                m.body.appendChild(row("Key", bindBtn(() => ik.key, (id) => { if (id) ik.key = id; })));
+                m.body.appendChild(row("Mode", selectBox([{ value: "packet", label: "Confirmed" }, { value: "timed", label: "Timed" }], () => ik.mode, (v) => { ik.mode = v; })));
+                m.body.appendChild(row("Auto aim", toggleSwitch(() => ik.autoAim, (v) => { ik.autoAim = v; })));
+                m.body.appendChild(row("Switch back", toggleSwitch(() => ik.switchBack, (v) => { ik.switchBack = v; })));
+                m.body.appendChild(sliderRow("Swap ms", 40, 300, 10, () => ik.swapDelay, (x) => { ik.swapDelay = x; }, (n) => n + "ms"));
+                const hats = mk("div", "hatrow");
+                const cell = (label, get, set) => { const c = mk("div", "hatcell"); c.appendChild(hatSlot(get, set)); c.appendChild(mk("span", "hatcap", label)); return c; };
+                hats.appendChild(cell("Primary", () => ik.primaryHat, (id) => { ik.primaryHat = id; }));
+                hats.appendChild(cell("Secondary", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }));
+                m.body.appendChild(hats);
+                return m.card;
+            };
+            MODULES.heal = () => {
+                const h = prefs.heal;
+                const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
+                m.body.appendChild(row("Legit mode", toggleSwitch(() => h.legit, (v) => { h.legit = v; })));
+                m.body.appendChild(row("Shame-safe", toggleSwitch(() => h.shameSafe, (v) => { h.shameSafe = v; })));
+                m.body.appendChild(sliderRow("Below", 1, 99, 1, () => h.healAt, (x) => { h.healAt = x; }, (n) => n + "%"));
+                m.body.appendChild(sliderRow("In hand", 0, 300, 10, () => h.showInHand, (x) => { h.showInHand = x; }, (n) => n + "ms"));
+                m.body.appendChild(sliderRow("Jitter", 0, 200, 10, () => h.jitter, (x) => { h.jitter = x; }, (n) => n + "ms"));
+                m.body.appendChild(sliderRow("Max/s", 1, 12, 1, () => h.maxPerSec, (x) => { h.maxPerSec = x; }, null));
+                return m.card;
+            };
+            MODULES.hats = () => {
+                const m = modCard("Hat keys", null, true);
+                const grid = mk("div", "hatrow");
+                prefs.hats.forEach((h) => {
+                    const c = mk("div", "hatcell");
+                    c.appendChild(hatSlot(() => h.id, (id) => { h.id = id; }));
+                    c.appendChild(bindBtn(() => h.key, (id) => { h.key = id; }));
+                    grid.appendChild(c);
+                });
+                m.body.appendChild(grid);
+                return m.card;
+            };
+            MODULES.general = () => {
+                const m = modCard("General", null, true);
+                m.body.appendChild(row("Menu key", bindBtn(() => prefs.menuKey, (id) => { if (id) prefs.menuKey = id; })));
+                const reset = mk("div", "btn", "Reset to defaults");
+                reset.addEventListener("click", () => {
+                    if (win.confirm && !win.confirm("Reset all MooMoo Lite settings?")) return;
+                    const d = JSON.parse(JSON.stringify(DEFAULTS));
+                    for (const k of Object.keys(prefs)) delete prefs[k];
+                    Object.assign(prefs, d);
+                    save();
+                    renderContent(contentEl);
+                });
+                m.body.appendChild(reset);
+                return m.card;
+            };
+            const CATEGORIES = [
+                { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
+                { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
+                { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
+                { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
+            ];
+
+            function renderContent(content) {
+                if (!content) return;
+                content.textContent = "";
+                const cat = CATEGORIES.find((c) => c.id === activeCat) || CATEGORIES[0];
+                if (headTitle) headTitle.textContent = cat.label;
+                const grid = mk("div", "modgrid");
+                for (const id of cat.mods) { const b = MODULES[id]; if (b) grid.appendChild(b()); }
+                content.appendChild(grid);
             }
 
             function buildCard() {
-                const card = mk("div"); card.id = "mml-card";
-                const x = mk("span", "closeit", "\u2715"); x.addEventListener("click", closeMenu); card.appendChild(x);
-                const title = mk("h1", null, "MooMoo Lite"); title.id = "mml-title"; card.appendChild(title);
-
-                // a ".ctl" row: retro checkbox + label
-                const ctlToggle = (label, get, set) => {
-                    const row = mk("div", "ctl");
-                    row.appendChild(toggle(get, set));
-                    row.appendChild(mk("span", "lbl", label));
-                    return row;
-                };
-                // a ".sub" row: tag + green-thumb slider + green value pill
-                const subSlider = (label, min, max, step, obj, key, fmt) => {
-                    const sub = mk("div", "sub");
-                    sub.appendChild(mk("span", "tag", label));
-                    const [r, v] = slider(min, max, step, () => obj[key], (val) => { obj[key] = val; }, fmt);
-                    sub.appendChild(r); sub.appendChild(v);
-                    return sub;
-                };
-
-                // ---- place spammers ----
-                card.appendChild(mk("div", "sect", "Place spammers"));
-                for (const s of SPAMMERS) {
-                    const cfg = prefs.spammers[s.id];
-                    const row = mk("div", "ctl");
-                    row.appendChild(toggle(() => cfg.on, (v) => { cfg.on = v; }));
-                    row.appendChild(mk("span", "lbl", s.label));
-                    row.appendChild(bindBtn(() => cfg.key, (id) => { cfg.key = id; }));
-                    card.appendChild(row);
-                    const sub = mk("div", "sub");
-                    sub.appendChild(mk("span", "tag", "item"));
-                    sub.appendChild(textInput(() => cfg.item, (v) => { cfg.item = v || s.item; }));
-                    sub.appendChild(mk("span", "tag", "speed"));
-                    const [r, v] = slider(40, 500, 10, () => cfg.speed, (val) => { cfg.speed = val; }, (n) => n + "ms");
-                    sub.appendChild(r); sub.appendChild(v);
-                    card.appendChild(sub);
+                const panel = mk("div"); panel.id = "mml-panel";
+                const side = mk("div", "side");
+                const brand = mk("div", "brand");
+                brand.appendChild(mk("span", "logo", "ML"));
+                brand.appendChild(mk("span", "bname", "MooMoo Lite"));
+                side.appendChild(brand);
+                const nav = mk("div", "nav");
+                const navItems = {};
+                for (const c of CATEGORIES) {
+                    const it = mk("div", "navitem" + (c.id === activeCat ? " active" : ""));
+                    it.appendChild(svgEl(c.icon));
+                    it.appendChild(mk("span", "ntxt", c.label));
+                    it.addEventListener("click", () => {
+                        activeCat = c.id;
+                        for (const k in navItems) navItems[k].classList.toggle("active", k === c.id);
+                        renderContent(contentEl);
+                    });
+                    navItems[c.id] = it; nav.appendChild(it);
                 }
-                card.appendChild(mk("div", "hint", "Hold the key to keep placing toward your cursor. \u201Cutility\u201D places the age-7 building in your bar; \u201Ca|b\u201D places the first one you have."));
-
-                // ---- humanize timing (placement anti-pattern) ----
-                card.appendChild(mk("hr"));
-                card.appendChild(mk("div", "sect", "Humanize timing"));
-                card.appendChild(ctlToggle("Humanize timing", () => prefs.humanize.on, (v) => { prefs.humanize.on = v; }));
-                card.appendChild(subSlider("jitter", 0, 60, 1, prefs.humanize, "jitter", (n) => "\u00B1" + n + "%"));
-                card.appendChild(subSlider("pause chance", 0, 25, 1, prefs.humanize, "pauseChance", (n) => n + "%"));
-                card.appendChild(subSlider("pause up to", 0, 600, 10, prefs.humanize, "pauseMax", (n) => n + "ms"));
-                card.appendChild(mk("div", "hint", "Spreads each placement around its speed on a bell curve and drops in the odd longer gap, so the timing never repeats on a fixed clock a packet check could spot."));
-
-                // ---- instakill ----
-                card.appendChild(mk("hr"));
-                card.appendChild(mk("div", "sect", "Instakill"));
-                const ik = prefs.insta;
-                const ikKey = mk("div", "ctl");
-                ikKey.appendChild(mk("span", "lbl", "Instakill key"));
-                ikKey.appendChild(bindBtn(() => ik.key, (id) => { if (id) ik.key = id; }));
-                card.appendChild(ikKey);
-                const ikMode = mk("div", "ctl");
-                ikMode.appendChild(mk("span", "lbl", "Mode"));
-                const modeBtn = mk("div", "kb"); modeBtn.style.minWidth = "94px";
-                const paintMode = () => { modeBtn.textContent = ik.mode === "timed" ? "Timed" : "Confirmed"; };
-                modeBtn.addEventListener("click", () => { ik.mode = ik.mode === "timed" ? "packet" : "timed"; save(); paintMode(); });
-                paintMode(); ikMode.appendChild(modeBtn);
-                card.appendChild(ikMode);
-                card.appendChild(ctlToggle("Auto aim", () => ik.autoAim, (v) => { ik.autoAim = v; }));
-                card.appendChild(ctlToggle("Switch back to primary", () => ik.switchBack, (v) => { ik.switchBack = v; }));
-                card.appendChild(subSlider("swap delay (Timed)", 40, 300, 10, ik, "swapDelay", (n) => n + "ms"));
-                const ikHats = mk("div"); ikHats.id = "mml-hats";
-                const hatPick = (label, get, set) => { const slot = mk("div", "hatslot"); slot.appendChild(hatSlot(get, set)); slot.appendChild(mk("span", "tag", label)); return slot; };
-                ikHats.appendChild(hatPick("primary hit", () => ik.primaryHat, (id) => { ik.primaryHat = id; }));
-                ikHats.appendChild(hatPick("secondary hit", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }));
-                card.appendChild(ikHats);
-                card.appendChild(mk("div", "hint", "Press the key to hit with your primary (in the primary hat), then swap to your secondary (in the secondary hat). Confirmed swaps only once the server registers the first hit, so it always lands; Timed uses the swap delay. Auto aim points each hit at the nearest enemy."));
-
-                // ---- auto heal ----
-                card.appendChild(mk("hr"));
-                card.appendChild(mk("div", "sect", "Auto heal"));
-                card.appendChild(ctlToggle("Auto heal", () => prefs.heal.on, (v) => { prefs.heal.on = v; }));
-                card.appendChild(ctlToggle("Legit mode", () => prefs.heal.legit, (v) => { prefs.heal.legit = v; }));
-                card.appendChild(ctlToggle("Shame-safe timing", () => prefs.heal.shameSafe, (v) => { prefs.heal.shameSafe = v; }));
-                card.appendChild(subSlider("heal below", 1, 99, 1, prefs.heal, "healAt", (n) => n + "%"));
-                card.appendChild(subSlider("show in hand", 0, 300, 10, prefs.heal, "showInHand", (n) => n + "ms"));
-                card.appendChild(subSlider("timing jitter", 0, 200, 10, prefs.heal, "jitter", (n) => n + "ms"));
-                card.appendChild(subSlider("max per sec", 1, 12, 1, prefs.heal, "maxPerSec", null));
-                card.appendChild(mk("div", "hint", "Legit mode heals a little lower, shows the food in hand for a moment, and jitters the timing so it reads like a person."));
-
-                // ---- hat keys ----
-                card.appendChild(mk("hr"));
-                card.appendChild(mk("div", "sect", "Hat keys"));
-                const hats = mk("div"); hats.id = "mml-hats";
-                prefs.hats.forEach((h) => {
-                    const slot = mk("div", "hatslot");
-                    slot.appendChild(hatSlot(() => h.id, (id) => { h.id = id; }));
-                    slot.appendChild(bindBtn(() => h.key, (id) => { h.key = id; }));
-                    hats.appendChild(slot);
-                });
-                card.appendChild(hats);
-                card.appendChild(mk("div", "hint", "Click a box to pick a hat, then bind a key. Press it in game to equip (again to take it off)."));
-
-                // ---- general ----
-                card.appendChild(mk("hr"));
-                card.appendChild(mk("div", "sect", "General"));
-                const gr = mk("div", "ctl");
-                gr.appendChild(mk("span", "lbl", "Menu key"));
-                gr.appendChild(bindBtn(() => prefs.menuKey, (id) => { if (id) { prefs.menuKey = id; } }));
-                card.appendChild(gr);
-                card.appendChild(mk("div", "foot", "MooMoo Lite"));
-                return card;
+                side.appendChild(nav);
+                const user = mk("div", "user");
+                user.appendChild(mk("span", "uava"));
+                const ui = mk("div", "uinfo");
+                ui.appendChild(mk("span", "uname", "MooMoo Lite"));
+                ui.appendChild(mk("span", "uver", "menu · " + keyLabel(prefs.menuKey)));
+                user.appendChild(ui);
+                side.appendChild(user);
+                panel.appendChild(side);
+                const body = mk("div", "body");
+                const head = mk("div", "head");
+                headTitle = mk("span", "htitle", "Placement");
+                head.appendChild(headTitle);
+                const close = mk("div", "close", "✕"); close.addEventListener("click", closeMenu);
+                head.appendChild(close);
+                body.appendChild(head);
+                contentEl = mk("div", "content");
+                body.appendChild(contentEl);
+                panel.appendChild(body);
+                renderContent(contentEl);
+                return panel;
             }
+
             function build() {
                 if (built || !doc || !doc.body || !doc.head) return built;
                 const style = mk("style"); style.textContent = CSS; doc.head.appendChild(style);
