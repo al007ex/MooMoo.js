@@ -76,9 +76,10 @@ const bodies = MODULES.map((m) => {
 // mods) is defined non-enumerable.
 const core = `function core(){
   "use strict";
-  try { if (window.__MOOMOO_LOADER__) return; } catch (e) {}   // a plugin may @require us more than once
-  try { Object.defineProperty(window, "__MOOMOO_LOADER__", { value: ${JSON.stringify(VERSION)}, writable: true, configurable: true, enumerable: false }); }
-  catch (e) { window.__MOOMOO_LOADER__ = ${JSON.stringify(VERSION)}; }
+  // Dedup across separately-injected mods that each @require the loader: once an
+  // install has put window.MooMoo in place, later copies bow out. No marker global —
+  // one less name on window for an integrity probe to find.
+  try { if (window.MooMoo && window.MooMoo.register) return; } catch (e) {}
   var __ns = {};
   (function(self, globalThis, module, exports, require){
 ${bodies}

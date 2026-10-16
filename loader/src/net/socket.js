@@ -141,6 +141,23 @@
 
         const Proxied = new Proxy(NativeWebSocket, handler);
 
+        // The integrity probe "SOCKET_WRAPPED" (kind 5) flags WebSocket when
+        //   WebSocket.prototype.constructor !== WebSocket
+        // On a real client those are the same object; our Proxy breaks that (the native
+        // prototype's `constructor` still points at the native constructor, not the Proxy),
+        // which is a detectable fingerprint. Point the prototype's constructor back at the
+        // Proxy so the invariant holds again. `constructor` is a plain data property, read by
+        // almost nothing, and a Proxy of the native constructor still stringifies as native.
+        try {
+            const cd = Object.getOwnPropertyDescriptor(NativeWebSocket.prototype, "constructor") || {};
+            Object.defineProperty(NativeWebSocket.prototype, "constructor", {
+                value: Proxied,
+                writable: "writable" in cd ? cd.writable : true,
+                enumerable: "enumerable" in cd ? cd.enumerable : false,
+                configurable: "configurable" in cd ? cd.configurable : true
+            });
+        } catch (e) { report(e); }
+
         // Replace the global. Define it the same way the platform does so a
         // descriptor probe sees nothing unusual. If the property can't be written
         // (a frozen WebSocket, or a userscript sandbox realm where it's read-only)

@@ -70,7 +70,9 @@ await ok("window.MooMoo exists after the bundle runs", () => {
     assert.ok(win.MooMoo, "window.MooMoo should be defined");
     assert.ok(win.MooMooLoader, "window.MooMooLoader should be defined");
     const LOADER_VERSION = /const VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(here, "..", "loader", "src", "loader.js"), "utf8"))[1];
-    assert.strictEqual(win.__MOOMOO_LOADER__, LOADER_VERSION);
+    assert.strictEqual(win.MooMooLoader.version, LOADER_VERSION);
+    // the loader must not leave a marker global behind; window.MooMoo is the dedup signal
+    assert.ok(!("__MOOMOO_LOADER__" in win), "no __MOOMOO_LOADER__ marker on window");
 });
 
 await ok("end-to-end: health event + telemetry scrub + injection", async () => {
