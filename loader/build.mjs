@@ -67,14 +67,24 @@ const bodies = MODULES.map((m) => {
     return `/* ===== module: ${m.label} (${path.relative(path.join(here, ".."), m.file)}) ===== */\n${code}`;
 }).join("\n\n");
 
-// `core` runs IN THE PAGE. It defines every module on the page window, then boots.
+// `core` runs IN THE PAGE. Every module is a UMD that attaches itself to its
+// `root` (normally the global object). We give them a PRIVATE namespace as that
+// root instead, by shadowing self / globalThis / this with a local object, so the
+// page's window is never littered with MooMoo* properties — only the public API
+// (window.MooMoo / window.MooMooLoader) is exposed, by createLoader. The one
+// unavoidable window flag (the re-require guard, shared across separately injected
+// mods) is defined non-enumerable.
 const core = `function core(){
   "use strict";
-  if (window.__MOOMOO_LOADER__) return;   // a plugin may @require us more than once
-  window.__MOOMOO_LOADER__ = ${JSON.stringify(VERSION)};
+  try { if (window.__MOOMOO_LOADER__) return; } catch (e) {}   // a plugin may @require us more than once
+  try { Object.defineProperty(window, "__MOOMOO_LOADER__", { value: ${JSON.stringify(VERSION)}, writable: true, configurable: true, enumerable: false }); }
+  catch (e) { window.__MOOMOO_LOADER__ = ${JSON.stringify(VERSION)}; }
+  var __ns = {};
+  (function(self, globalThis, module, exports, require){
 ${bodies}
+  }).call(__ns, __ns, __ns, undefined, undefined, undefined);
   try {
-    MooMooLoaderCore.createLoader(window);
+    __ns.MooMooLoaderCore.createLoader(window, { deps: __ns });
     console.log("%c[moomoo.js]", "color:#7cc;font-weight:bold", "loader ${VERSION} installed — window.MooMoo is ready for mods");
   } catch (e) {
     console.error("%c[moomoo.js]", "color:#e66", "loader failed to install:", e);

@@ -46,10 +46,12 @@
 
     const VERSION = "1.3.2";
 
-    // Resolve dependencies either from Node require (tests) or page globals (bundle).
-    function resolveDeps(win) {
+    // Resolve dependencies either from Node require (tests), an explicit namespace
+    // passed by the bundle (opts.deps — the private object every module attaches to,
+    // so nothing lands on window), or, as a fallback, page globals.
+    function resolveDeps(win, opts) {
         if (nodeDeps) return nodeDeps;
-        const g = win || (typeof globalThis !== "undefined" ? globalThis : {});
+        const g = (opts && opts.deps) || win || (typeof globalThis !== "undefined" ? globalThis : {});
         return {
             Protocol: g.MooMooProtocol,
             Msgpack: g.MooMooMsgpack,
@@ -163,7 +165,7 @@
 
     function createLoader(win, options) {
         const opts = options || {};
-        const D = resolveDeps(win);
+        const D = resolveDeps(win, opts);
         if (!D.Protocol || !D.Binding || !D.Runtime || !D.Socket) {
             throw new Error("moomoo.js loader: missing dependencies (bundle not assembled?)");
         }
@@ -585,8 +587,17 @@
             active: () => active && { ready: active.ready, failed: active.failed, buildId: diag.buildId }
         };
 
-        win.MooMoo = MooMoo;
-        win.MooMooLoader = MooMooLoader;
+        // The two globals mods actually use. Defined non-enumerable so they don't show
+        // up in Object.keys(window) / for..in sweeps (the loader's other modules never
+        // reach window at all — see loader/build.mjs). The internal modules stay reachable
+        // for diagnostics/tests under MooMooLoader._deps, not as their own window globals.
+        try { Object.defineProperty(MooMooLoader, "_deps", { value: D, enumerable: false, configurable: true }); } catch (e) { /* ignore */ }
+        try {
+            Object.defineProperty(win, "MooMoo", { value: MooMoo, writable: true, configurable: true, enumerable: false });
+            Object.defineProperty(win, "MooMooLoader", { value: MooMooLoader, writable: true, configurable: true, enumerable: false });
+        } catch (e) {
+            win.MooMoo = MooMoo; win.MooMooLoader = MooMooLoader;
+        }
 
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;

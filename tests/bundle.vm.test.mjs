@@ -94,7 +94,9 @@ await ok("end-to-end: health event + telemetry scrub + injection", async () => {
     // telemetry scrub (simulate the client sending dirty flags). Seal mode 0 here, so the
     // last two fields (seal, salt) stay 0; the three self-reporting fields must be zeroed.
     const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0, server.sealMode | 0];
-    const Protocol = win.MooMooProtocol;
+    // The loader keeps its modules off window now; they're reachable for tests under
+    // MooMooLoader._deps.
+    const Protocol = win.MooMooLoader._deps.Protocol;
     const client = new Protocol.ClientSession(payload, mod);
     clientSocket.send(client.encodeC2S("T", [2, 30, 4, 0, 0]));
     const t = accepted.find((d) => d.name === "T");
