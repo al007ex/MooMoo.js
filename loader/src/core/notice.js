@@ -216,6 +216,11 @@
         // welcome / loading screen before the player enters a game, never mid-game.
         function watchMenu() {
             if (!doc || welcomeShown || menuTimer) return;
+            // Don't put the welcome in front of an automated browser (test harnesses,
+            // bots): it would just sit over the menu with nothing to click it away. A
+            // real player has navigator.webdriver false. The hard-mismatch refusal is a
+            // separate, connection-driven path and still fires.
+            try { if (win.navigator && win.navigator.webdriver) return; } catch (e) { /* ignore */ }
             // If it's already up (loader installed late), show at once.
             if (menuVisible()) { showMenuWelcome(); return; }
             let tries = 0;

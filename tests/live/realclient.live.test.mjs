@@ -63,16 +63,6 @@ try {
     await page.goto(srv.base + "/", { waitUntil: "domcontentloaded" });
     await page.waitForSelector("#enterGame", { visible: true, timeout: 20000 });
     await tick(1500);
-    // The loader shows a one-time welcome card over the menu; dismiss it like a player would.
-    const dismissed = await page.evaluate(() => {
-        const card = document.querySelector(".mmj-nt-card");
-        if (!card) return false;
-        const got = card.querySelector(".mmj-nt-btn.green");
-        if (got) got.click();
-        return true;
-    }).catch(() => false);
-    if (dismissed) note("dismissed the welcome card");
-    await tick(200);
     await page.click("#nameInput", { clickCount: 3 }).catch(() => {});
     await page.type("#nameInput", "player").catch(() => {});
     await page.click("#enterGame");
