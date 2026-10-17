@@ -134,7 +134,7 @@
         }
     };
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomooplus",
             name: "MooMooPlus",
@@ -167,7 +167,7 @@
             // the render hooks and shame timing) ----
             {
                 const w0 = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-                const lv = (w0.MooMooLoader && w0.MooMooLoader.version) || "0";
+                const lv = (MooMooLoader && MooMooLoader.version) || "0";   // from the handshake, not a window global
                 const ok = ctx.store && ctx.combat && typeof ctx.combat.onTickStart === "function" && typeof ctx.onOutgoing === "function" &&
                     ctx.render && typeof ctx.combat.shameWait === "function";
                 if (!ok) {
@@ -5461,12 +5461,16 @@
         });
     }
 
+    // Fetch the loader's API through its event handshake — there is no window.MooMoo.
     const w = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-    if (w.MooMoo) { boot(w.MooMoo); return; }
+    function connect() {
+        let mm = null, ld = null;
+        try { w.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { mm = m; ld = l; } } })); } catch (e) {}
+        if (mm) { boot(mm, ld); return true; }
+        return false;
+    }
+    if (connect()) return;
     let tries = 0;
-    const iv = setInterval(function () {
-        if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); }
-        else if (++tries > 200) clearInterval(iv);
-    }, 50);
-    if (w.addEventListener) w.addEventListener("moomoo:ready", function () { if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); } });
+    const iv = setInterval(function () { if (connect() || ++tries > 200) clearInterval(iv); }, 50);
+    if (w.addEventListener) w.addEventListener("moomoo.js:ready", function () { if (connect()) clearInterval(iv); });
 })();

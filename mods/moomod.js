@@ -68,7 +68,7 @@ if(typeof jQuery==="undefined"){throw new Error("jquery-confirm requires jQuery"
 (function () {
     "use strict";
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomod",
             name: "MooMod",
@@ -1574,7 +1574,7 @@ Featured Hacker:`;
             // only half goes out leaves the wrong thing in your hand, so a placement macro is sent
             // whole or not at all (the old site had no such limit, every one went out).
             const wireOf = (action) => {
-                const b = win.MooMooBinding;
+                const b = MooMooLoader && MooMooLoader._deps && MooMooLoader._deps.Binding;   // internal module, via the handshake
                 return b && b.outgoing && b.outgoing[action] ? b.outgoing[action].wire : null;
             };
             function roomFor(selects, clicks) {
@@ -3012,14 +3012,18 @@ Featured Hacker:`;
         });
     }
 
+    // Fetch the loader's API through its event handshake — there is no window.MooMoo.
     const w = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-    if (w.MooMoo) { boot(w.MooMoo); return; }
+    function connect() {
+        let mm = null, ld = null;
+        try { w.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { mm = m; ld = l; } } })); } catch (e) {}
+        if (mm) { boot(mm, ld); return true; }
+        return false;
+    }
+    if (connect()) return;
     let tries = 0;
-    const iv = setInterval(function () {
-        if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); }
-        else if (++tries > 200) clearInterval(iv);
-    }, 50);
-    if (w.addEventListener) w.addEventListener("moomoo:ready", function () { if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); } });
+    const iv = setInterval(function () { if (connect() || ++tries > 200) clearInterval(iv); }, 50);
+    if (w.addEventListener) w.addEventListener("moomoo.js:ready", function () { if (connect()) clearInterval(iv); });
 })();
 
 })();
