@@ -36,8 +36,9 @@ wire bytes ─(loader: hook + decode + binding)─▶ named events ─▶ your m
 your mod ─▶ named actions ─(loader: binding + encode + send)─▶ wire bytes
 ```
 
-and the big worked example that ships with it is **MooMooPlus (MMP)** — a full
-combat / defense / movement / visuals mod with its own in-game menu on **M**.
+and the mod that ships with it is **MooMoo Lite** — place spammers, legit auto heal,
+an instakill combo, hold-a-mouse-button hat/accessory loadouts, hat hotkeys and
+on-screen player / animal arrows, all in its own in-game menu.
 
 ---
 
@@ -54,11 +55,10 @@ loader/
   build.mjs                   bundles + mangles src/ → dist/moomoo-loader.user.js
   dist/moomoo-loader.user.js
 mods/
-  moomooplus/                 MooMooPlus, one file per area (the big worked example)
-  build-moomooplus.mjs        concatenates + mangles → moomooplus.user.js
-  moomooplus.js               readable build (tests)   moomooplus.user.js (delivered)
-  lite.js                     MooMoo Lite — a small, additive mod (place spammers,
-  build-lite.mjs              legit auto heal, hat hotkeys, own menu) → lite.user.js
+  lite.js                     MooMoo Lite — the mod (place spammers, legit auto heal,
+  build-lite.mjs              an instakill combo, mouse-button loadouts, hat hotkeys,
+                              player / animal arrows, own menu) → lite.user.js
+  ac-monitor.user.js          a small anti-cheat telemetry monitor (dev tool)
 build-common.mjs              the shared mangle step (esbuild)
 examples/                     a tiny standalone mod + a menu preview
 tests/                        codec + loader + live tests
@@ -71,14 +71,14 @@ docs/                         full documentation (Markdown)
 
 ```bash
 npm install       # one-time: esbuild, used to mangle the builds
-npm run build     # loader/dist/moomoo-loader.user.js
-npm run build:mod # mods/moomooplus.user.js
-npm test          # all tests (checks the codec against the server if present)
+npm run build      # loader/dist/moomoo-loader.user.js
+npm run build:lite # mods/lite.user.js
+npm test           # all tests (checks the codec against the server if present)
 ```
 
 1. **install the loader.** set its `@match` to your server, host it somewhere, and
    add it in Tampermonkey. open the game and a **Mods** tab shows up in the menu.
-2. **install a mod.** `mods/moomooplus.user.js` is ready to go — it `@require`s the
+2. **install a mod.** `mods/lite.user.js` is ready to go — it `@require`s the
    loader, so updating the loader updates every mod at once. your own mod is a tiny
    userscript that does the same.
 
@@ -104,18 +104,17 @@ MooMoo.register({
 
 `register` gives it a **Mods** tab entry (toggle + settings). for combat-grade mods
 `ctx` also carries `combat`, `objects`, `store`, `render`, `path` and `onOutgoing`.
-see `docs/writing-mods.md`, and `mods/moomooplus/` for the real thing.
+see `docs/writing-mods.md`, and `mods/lite.js` for the real thing.
 
 ---
 
 ## the builds are mangled
 
-both delivered userscripts are minified + identifier-mangled by esbuild
-(`build-common.mjs`), so they're small and not easily read. property/global names
-are left alone, so `window.MooMoo` and the whole API still work. a readable
-`mods/moomooplus.js` is kept for the tests, and `build-common.mjs` also supports
-build-time macros (`define`) — that's how the test build keeps the debug view and
-the delivered build compiles it out.
+the delivered userscripts are minified + identifier-mangled by esbuild
+(`build-common.mjs`), so they're small and not easily read. property names are left
+alone, so the whole API still works. a readable `mods/lite.js` is kept for the tests,
+and `build-common.mjs` also supports build-time macros (`define`) — that's how a
+test build can keep a debug view the delivered build compiles out.
 
 ---
 
@@ -123,7 +122,7 @@ the delivered build compiles it out.
 
 the loader drops a **Mods** tab into the game's pause menu. every registered mod
 gets an on/off toggle and its "basic" settings there; a mod with its own menu (like
-MMP) points you at it. state sticks across reloads.
+MooMoo Lite) points you at it. state sticks across reloads.
 
 ---
 

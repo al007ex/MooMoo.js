@@ -106,7 +106,7 @@ so you don't re-derive it per frame:
 - `ctx.path` — A* pathfinding in a worker pool: `ctx.path.find({...})`
 - `ctx.onOutgoing` — see / rewrite / drop the packets the official client sends
 
-**MooMooPlus** (`mods/moomooplus/`) is the big worked example and uses all of them.
+**MooMoo Lite** (`mods/lite.js`) is the worked example and uses several of them.
 
 ## turning mods on and off at runtime
 

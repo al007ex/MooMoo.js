@@ -70,7 +70,7 @@ telemetry.
 | --- | --- | --- | --- |
 | loader | `moomoo-loader.user.js` | everyone, once | when the server updates |
 | a mod | a tiny userscript that `@require`s the loader | per mod | never |
-| MooMooPlus | `mods/moomooplus.user.js` (built) | you, once | with the loader |
+| MooMoo Lite | `mods/lite.user.js` (built) | you, once | with the loader |
 
 since every mod `@require`s the one loader, updating the loader updates every mod
 in one go.

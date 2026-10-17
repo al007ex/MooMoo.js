@@ -6,7 +6,7 @@
  *    loader's constructor Proxy can hook it exactly like it hooks Chrome's.
  *
  *  - createVictim(): a fake page window running the REAL loader core and the REAL
- *    mods/moomooplus.js, plus an emulation of the official client's own
+ *    a real mod, plus an emulation of the official client's own
  *    traffic (its own ClientSession + seq, spawn, telemetry, ping, aim). That's
  *    the important part: in the real game, client frames and mod-injected frames
  *    interleave on one socket, and the loader has to re-sequence both.
@@ -98,7 +98,7 @@ async function waitFor(fn, ms, label) {
 }
 
 /*
- * The victim: real loader + real moomooplus in a fake page.
+ * The victim: real loader + a real mod in a fake page.
  *   opts: { WS, srv, mod, url, name, configure(MooMoo) }
  */
 export async function createVictim(opts) {
@@ -130,10 +130,10 @@ export async function createVictim(opts) {
     const LoaderCore = require(path.join(ROOT, "loader", "src", "loader.js"));
     const { MooMoo, MooMooLoader } = LoaderCore.createLoader(win, { resolveProtocol: () => opts.mod });
 
-    // Run the real moomooplus exactly as Tampermonkey would (it reads `window`).
-    const code = fs.readFileSync(path.join(ROOT, "mods", "moomooplus.js"), "utf8");
+    // Run a real mod exactly as Tampermonkey would (it reads `window`).
+    const code = fs.readFileSync(path.join(ROOT, "mods", "lite.js"), "utf8");
     new Function("window", "unsafeWindow", code)(win, undefined);
-    await waitFor(() => MooMoo.getMods().some((m) => m.id === "moomooplus"), 3000, "moomooplus to register");
+    await waitFor(() => MooMoo.getMods().some((m) => m.id === "moomoo-lite"), 3000, "the mod to register");
     if (opts.configure) opts.configure(MooMoo);
 
     // Record every frame that actually leaves the socket (after the loader).

@@ -87,8 +87,8 @@ every single time.
 
 so the loader exposes `ctx.combat.shameWait()`: how long to wait until an eat is
 safe, worked out from when you saw the hit and your quickest recent round trip. it's
-`0` on a laggy connection and about 125ms locally. MooMooPlus's routine heal waits
-for it (toggle it with "shame-safe timing"); its emergency heals don't.
+`0` on a laggy connection and about 125ms locally. MooMoo Lite's auto heal waits
+for it when its "shame-safe" setting is on.
 
 ## the takeaway for your own anti-cheat
 

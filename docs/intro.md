@@ -45,9 +45,9 @@ changes:
   per-mod registry with the in-game Mods menu (on/off toggles + settings).
 - the loader's **game engines** a mod can build on: combat prediction, the world
   objects, the store, an overlay/renderer, and an A* pathfinder (all on `ctx`).
-- **MooMooPlus (MMP)**, a full combat / defense / movement / visuals mod that ships
-  with it. press **M** in game for its menu. it's also the worked example for
-  writing your own.
+- **MooMoo Lite**, the mod that ships with it: place spammers, legit auto heal, an
+  instakill combo, hold-a-mouse-button loadouts, hat hotkeys and player / animal
+  arrows, in its own in-game menu. it's also the worked example for writing your own.
 
 ## where to go next
 

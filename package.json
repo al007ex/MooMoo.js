@@ -14,7 +14,6 @@
   ],
   "scripts": {
     "build": "node loader/build.mjs",
-    "build:mod": "node mods/build-moomooplus.mjs",
     "build:lite": "node mods/build-lite.mjs",
     "test": "node tests/run-all.mjs"
   },

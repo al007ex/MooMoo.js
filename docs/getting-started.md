@@ -100,4 +100,4 @@ console.
 - the **Mods menu** let you toggle the mod and change its setting while playing.
 
 next up: **[Writing mods](./writing-mods)** for the rest of the API, and the
-**MooMooPlus** source (`mods/moomooplus/`) for a big worked example.
+**MooMoo Lite** source (`mods/lite.js`) for a worked example.
