@@ -73,6 +73,9 @@
                 reloads: { on: true, self: true, enemies: true },
                 // running count of each item you've placed, shown on its action-bar icon
                 counter: { on: true },
+                // minimap overlay: your placed buildings (their action-bar icons) +
+                // resource dots + biome bands, with a full-screen map on a key.
+                minimap: { on: true, items: true, trees: true, bushes: true, stones: true, gold: true, biomes: true, key: "m" },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -96,6 +99,7 @@
                     if (got.arrows && typeof got.arrows === "object") Object.assign(prefs.arrows, got.arrows);
                     if (got.reloads && typeof got.reloads === "object") Object.assign(prefs.reloads, got.reloads);
                     if (got.counter && typeof got.counter === "object") Object.assign(prefs.counter, got.counter);
+                    if (got.minimap && typeof got.minimap === "object") Object.assign(prefs.minimap, got.minimap);
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -284,9 +288,11 @@
                 if (grab) { e.preventDefault(); e.stopImmediatePropagation(); doGrab(e); return; }
                 // Escape closes the hat picker
                 if (e.key === "Escape" && doc) { const pk = doc.querySelector(".mml-pick"); if (pk) { e.preventDefault(); e.stopImmediatePropagation(); pk.remove(); return; } }
+                if (e.key === "Escape" && bigOpen) { e.preventDefault(); e.stopImmediatePropagation(); bigOpen = false; return; }
                 if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
                 const id = keyId(e);
                 if (same(id, prefs.menuKey)) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toggleMenu(); return; }
+                if (prefs.minimap.on && !open && same(id, prefs.minimap.key)) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toggleBigMap(); return; }
                 if (same(id, prefs.insta.key)) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) runInsta(); return; }
                 for (const s of SPAMMERS) {
                     const cfg = prefs.spammers[s.id];
@@ -526,6 +532,155 @@
             if (doc) {
                 ctx.every(150, updateCounter);
                 ctx.onCleanup(() => { try { const bs = doc.querySelectorAll(".mml-cnt"); for (let i = 0; i < bs.length; i++) bs[i].remove(); } catch (e) {} });
+            }
+
+            // ---- minimap: your placed buildings (shown as their action-bar icons) +
+            // resource dots + biome bands, painted over the game's minimap, with a full-
+            // screen map on a key. We use our OWN overlay canvas (no id, pointer-events
+            // none) stacked above the game UI — the game repaints #mapDisplay every frame,
+            // and the loader's world overlay sits below the UI, so neither can host this.
+            // The canvas carries no id, so an integrity probe scanning id'd elements never
+            // sees it; object positions come from the world the engine already tracks.
+            const TAU = Math.PI * 2;
+            const MAPSCALE = (ctx.combat && ctx.combat.K && ctx.combat.K.mapScale) || 14400;
+            const SNOWY = 2400, RIVERW = 724;     // clone biome bands (world units)
+            const BIOME = { grass: "#b6db66", snow: "#ffffff", desert: "#dbc666", river: "#91b2db" };  // the clone's own colours
+            const BIOME_A = 0.45;   // biome bands are a translucent overlay over the base map
+            const DOT = { tree: "#3f8f2e", bush: "#cf4b4b", stone: "#9aa0a6", gold: "#e8c24a" };
+            const marks = new Map();   // sid -> { x, y, kind, id }
+            function kindOf(o) {
+                if (o.isItem) return "item";
+                if (o.type === 0) return "tree"; if (o.type === 1) return "bush";
+                if (o.type === 2) return "stone"; if (o.type === 3) return "gold";
+                return null;
+            }
+            function pollMap() {
+                if (!prefs.minimap.on || !ctx.objects || !ctx.objects.all) return;
+                const me = MooMoo.self, mySid = me ? me.sid : null;
+                const list = ctx.objects.all(), live = new Set();
+                for (let i = 0; i < list.length; i++) {
+                    const o = list[i]; live.add(o.sid);
+                    if (marks.has(o.sid)) continue;
+                    const k = kindOf(o); if (!k) continue;
+                    if (k === "item" && !(mySid != null && o.ownerSid === mySid)) continue;   // only your own buildings
+                    marks.set(o.sid, { x: o.x, y: o.y, kind: k, id: o.id });
+                }
+                for (const [sid, m] of marks) if (m.kind === "item" && !live.has(sid)) marks.delete(sid);   // drop destroyed buildings
+            }
+            ctx.every(500, pollMap);
+
+            // an item's icon = the game's own action-bar slot art. The slot renders the icon
+            // as a CSS background-image data-URL; we read it, load it into an off-DOM Image
+            // (never appended — no network, no footprint) and cache a small canvas of it.
+            const iconCache = new Map();   // id -> { src, cv, ready }
+            function slotArt(id) {
+                const slot = doc.getElementById("actionBarItem" + (NW + id));
+                if (!slot) return null;
+                const bg = slot.style.backgroundImage;
+                if (bg && bg !== "none") { const m = /url\(["']?(.*?)["']?\)/.exec(bg); if (m) return { url: m[1] }; }
+                const cv = slot.querySelector("canvas"); if (cv && cv.width) return { canvas: cv };
+                const im = slot.querySelector("img"); if (im && im.src) return { url: im.src };
+                return null;
+            }
+            function itemIcon(id) {
+                if (id == null || !doc) return null;
+                const got = slotArt(id); let e = iconCache.get(id);
+                if (!got) return e && e.ready ? e.cv : null;
+                if (got.canvas) {   // a live canvas: recopy periodically
+                    const now = Date.now();
+                    if (e && e.src === "#canvas" && now - e.t < 1500) return e.cv;
+                    const cv = (e && e.cv) || doc.createElement("canvas"); cv.width = 36; cv.height = 36;
+                    try { const g2 = cv.getContext("2d"); g2.clearRect(0, 0, 36, 36); g2.drawImage(got.canvas, 0, 0, 36, 36); } catch (err) { return e ? e.cv : null; }
+                    iconCache.set(id, { src: "#canvas", cv, ready: true, t: now }); return cv;
+                }
+                if (e && e.src === got.url) return e.ready ? e.cv : null;   // already loading/loaded this art
+                const cv = doc.createElement("canvas"); cv.width = 36; cv.height = 36;
+                const rec = { src: got.url, cv, ready: false };
+                const img = new Image();
+                img.onload = () => { try { const g2 = cv.getContext("2d"); g2.clearRect(0, 0, 36, 36); g2.drawImage(img, 0, 0, 36, 36); rec.ready = true; } catch (err) {} };
+                img.src = got.url;
+                iconCache.set(id, rec);
+                return null;
+            }
+
+            // shared renderer: biomes, then markers, then your position, inside a square
+            // of side `size` at (mx,my). world (0..MAPSCALE) maps linearly onto that square.
+            function drawMap(g, mx, my, size, big) {
+                const cfg = prefs.minimap, f = size / MAPSCALE;
+                if (big || cfg.biomes) { g.fillStyle = BIOME.grass; g.fillRect(mx, my, size, size); }   // base map (grass)
+                if (cfg.biomes) {
+                    g.globalAlpha = BIOME_A;   // translucent overlay so the base + markers still read through
+                    g.fillStyle = BIOME.snow;   g.fillRect(mx, my, size, SNOWY * f);
+                    g.fillStyle = BIOME.desert; g.fillRect(mx, my + (MAPSCALE - SNOWY) * f, size, size - (MAPSCALE - SNOWY) * f);
+                    g.fillStyle = BIOME.river;  g.fillRect(mx, my + (MAPSCALE / 2 - RIVERW / 2) * f, size, RIVERW * f);
+                    g.globalAlpha = 1;
+                }
+                const dot = big ? 4 : 1.7, icon = big ? 16 : 6.5;
+                for (const m of marks.values()) {
+                    const on = m.kind === "item" ? cfg.items : m.kind === "tree" ? cfg.trees : m.kind === "bush" ? cfg.bushes : m.kind === "stone" ? cfg.stones : m.kind === "gold" ? cfg.gold : false;
+                    if (!on) continue;
+                    const px = mx + m.x * f, py = my + m.y * f;
+                    if (m.kind === "item") {
+                        const cv = itemIcon(m.id);
+                        if (cv) g.drawImage(cv, px - icon / 2, py - icon / 2, icon, icon);
+                        else { g.fillStyle = "#f2f4f7"; g.fillRect(px - icon * 0.35, py - icon * 0.35, icon * 0.7, icon * 0.7); }
+                    } else { g.beginPath(); g.fillStyle = DOT[m.kind]; g.arc(px, py, dot, 0, TAU); g.fill(); }
+                }
+                const meR = (ctx.render && ctx.render.me) || MooMoo.self;
+                if (meR && meR.x != null) {
+                    const px = mx + meR.x * f, py = my + meR.y * f;
+                    g.beginPath(); g.fillStyle = "#ffffff"; g.arc(px, py, big ? 5 : 2.6, 0, TAU); g.fill();
+                    g.lineWidth = big ? 2 : 1.3; g.strokeStyle = "#1a1c22"; g.stroke();
+                }
+            }
+            function drawBig(g, W, H) {
+                g.globalAlpha = 0.5; g.fillStyle = "#0b0e14"; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
+                const side = Math.min(W, H) * 0.84, mx = (W - side) / 2, my = (H - side) / 2;
+                g.save(); g.beginPath(); g.rect(mx, my, side, side); g.clip();
+                drawMap(g, mx, my, side, true);
+                g.restore();
+                g.lineWidth = 3; g.strokeStyle = "#3d3f42"; g.strokeRect(mx, my, side, side);
+                g.fillStyle = "#eceef2"; g.font = "15px 'Hammersmith One',sans-serif"; g.textAlign = "center"; g.textBaseline = "bottom";
+                g.fillText("Map — " + keyLabel(prefs.minimap.key) + " to close", W / 2, my - 8);
+            }
+
+            let bigOpen = false;
+            function toggleBigMap() { bigOpen = !bigOpen; }
+            let mapCv = null, mapG = null;
+            function ensureCanvas() {
+                if (mapCv || !doc || !doc.body) return mapCv;   // body may not exist at boot
+                mapCv = doc.createElement("canvas");
+                mapCv.style.cssText = "position:fixed;left:0;top:0;pointer-events:none;z-index:9000;display:none";
+                doc.body.appendChild(mapCv);
+                mapG = mapCv.getContext("2d");
+                return mapCv;
+            }
+            function paintMap(view) {
+                if (!ensureCanvas()) return;
+                const live = view && view.inGame, big = bigOpen && live;
+                if ((!prefs.minimap.on || !live) && !big) { if (mapCv.style.display !== "none") mapCv.style.display = "none"; return; }
+                let rx, ry, rw, rh;
+                if (big) { rx = 0; ry = 0; rw = win.innerWidth || view.width; rh = win.innerHeight || view.height; }
+                else {
+                    const md = doc && doc.getElementById("mapDisplay");
+                    const r = md && md.getBoundingClientRect();
+                    if (!r || r.width < 8) { if (mapCv.style.display !== "none") mapCv.style.display = "none"; return; }
+                    rx = r.left; ry = r.top; rw = r.width; rh = r.height;
+                }
+                const dpr = (view && view.dpr) || win.devicePixelRatio || 1;
+                const W = Math.max(1, Math.round(rw * dpr)), H = Math.max(1, Math.round(rh * dpr));
+                if (mapCv.width !== W || mapCv.height !== H) { mapCv.width = W; mapCv.height = H; }
+                mapCv.style.left = rx + "px"; mapCv.style.top = ry + "px"; mapCv.style.width = rw + "px"; mapCv.style.height = rh + "px";
+                mapCv.style.display = "block";
+                mapG.setTransform(dpr, 0, 0, dpr, 0, 0);
+                mapG.clearRect(0, 0, rw, rh);
+                mapG.lineJoin = "round";
+                if (big) drawBig(mapG, rw, rh);
+                else drawMap(mapG, 0, 0, rw, false);
+            }
+            if (ctx.render && ctx.render.onFrame) {
+                ctx.render.onFrame(paintMap);
+                ctx.onCleanup(() => { try { if (mapCv) mapCv.remove(); } catch (e) {} });
             }
 
             // =================================================================
@@ -807,6 +962,18 @@
                 const m = modCard("Item counter", { get: () => c.on, set: (v) => { c.on = v; updateCounter(); } });
                 return m.card;
             };
+            MODULES.minimap = () => {
+                const mm = prefs.minimap;
+                const m = modCard("Minimap", { get: () => mm.on, set: (v) => { mm.on = v; } });
+                m.body.appendChild(row("Placed items", toggleSwitch(() => mm.items, (v) => { mm.items = v; })));
+                m.body.appendChild(row("Trees", toggleSwitch(() => mm.trees, (v) => { mm.trees = v; })));
+                m.body.appendChild(row("Bushes", toggleSwitch(() => mm.bushes, (v) => { mm.bushes = v; })));
+                m.body.appendChild(row("Stones", toggleSwitch(() => mm.stones, (v) => { mm.stones = v; })));
+                m.body.appendChild(row("Gold", toggleSwitch(() => mm.gold, (v) => { mm.gold = v; })));
+                m.body.appendChild(row("Biomes", toggleSwitch(() => mm.biomes, (v) => { mm.biomes = v; })));
+                m.body.appendChild(row("Expand key", bindBtn(() => mm.key, (id) => { if (id) mm.key = id; })));
+                return m.card;
+            };
             MODULES.heal = () => {
                 const h = prefs.heal;
                 const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
@@ -849,7 +1016,7 @@
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
                 { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
                 { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
-                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads", "counter"] },
+                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads", "counter", "minimap"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
                 { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
             ];

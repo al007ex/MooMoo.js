@@ -42,6 +42,8 @@ const LITE_CFG = {
     heal: { on: true, legit: true, healAt: 75, showInHand: 0, jitter: 0, maxPerSec: 10, shameSafe: true },
     // arrows on, "off-screen only" off so any visible enemy/animal draws (deterministic to check)
     arrows: { on: true, players: true, animals: true, offscreen: false, radius: 120, size: 18 },
+    // minimap on with every marker + biomes, so the overlay is deterministic to verify
+    minimap: { on: true, items: true, trees: true, bushes: true, stones: true, gold: true, biomes: true, key: "m" },
     hats: [{ key: "k", id: 51 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
 };
 
@@ -202,6 +204,24 @@ try {
     check("arrows: animal arrow is blue (when animals are in range)", arrowPx.animals === 0 || arrowPx.blue > 0, JSON.stringify(arrowPx));
     // reload bars render under each visible player (the secondary bar's amber is unique to them)
     check("reload bars drawn under players", arrowPx.relYellow > 0, JSON.stringify(arrowPx));
+
+    // 8c. MINIMAP — its own id-less overlay canvas (z 9000) draws biomes + markers over
+    //     #mapDisplay; pressing M expands it full-screen. Both states carry no id (kind-4 safe).
+    const mini = await page.evaluate(() => {
+        const cv = [...document.querySelectorAll("canvas")].find(c => c.style.zIndex === "9000");
+        if (!cv || !cv.width) return { err: "no minimap canvas" };
+        const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+        let drawn = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 30) drawn++;
+        return { hasId: !!cv.id, w: cv.width, drawn };
+    });
+    check("minimap: id-less overlay present, drawing content", !mini.err && mini.hasId === false && mini.drawn > 0, JSON.stringify(mini));
+    await page.keyboard.press("m"); await tick(250);
+    const bigMap = await page.evaluate(() => {
+        const cv = [...document.querySelectorAll("canvas")].find(c => c.style.zIndex === "9000");
+        return cv ? { w: cv.width, big: cv.width > 800, hasId: !!cv.id } : { err: "none" };
+    });
+    check("minimap: M expands to a full-screen map (no id)", bigMap.big === true && bigMap.hasId === false, JSON.stringify(bigMap));
+    await page.keyboard.press("m"); await tick(150);   // close it again
     if (process.env.LITE_SHOT) { try { await page.screenshot({ path: process.env.LITE_SHOT }); } catch (e) {} }
 
     const hpBefore = await page.evaluate(() => window.MooMoo.self.health);
