@@ -39,6 +39,7 @@ const MODULES = [
     { label: "core/api", file: path.join(srcDir, "core", "api.js") },
     { label: "core/modstab", file: path.join(srcDir, "core", "modstab.js") },
     { label: "core/notice", file: path.join(srcDir, "core", "notice.js") },
+    { label: "core/antidetect", file: path.join(srcDir, "core", "antidetect.js") },
     { label: "loader", file: path.join(srcDir, "loader.js") }
 ];
 

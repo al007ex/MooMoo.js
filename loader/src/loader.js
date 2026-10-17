@@ -28,6 +28,7 @@
             Api: require("./core/api.js"),
             ModsTab: require("./core/modstab.js"),
             Notice: require("./core/notice.js"),
+            AntiDetect: require("./core/antidetect.js"),
             GameData: require("../../shared/gamedata.js"),
             Input: require("./game/input.js"),
             Objects: require("./game/objects.js"),
@@ -44,7 +45,7 @@
 })(typeof self !== "undefined" ? self : this, function (nodeDeps) {
     "use strict";
 
-    const VERSION = "1.3.2";
+    const VERSION = "1.3.3";
 
     // Resolve dependencies either from Node require (tests), an explicit namespace
     // passed by the bundle (opts.deps — the private object every module attaches to,
@@ -62,6 +63,7 @@
             Api: g.MooMooApi,
             ModsTab: g.MooMooModsTab,
             Notice: g.MooMooNotice,
+            AntiDetect: g.MooMooAntiDetect,
             GameData: g.MooMooGameData,
             Input: g.MooMooInput,
             Objects: g.MooMooObjects,
@@ -177,6 +179,11 @@
             || (() => defaultResolveProtocol(win));
         const binding = D.Binding;
         const telemetry = binding.telemetry;
+        // Cancels the client's "T" detection packet and sends an empty one in its place
+        // (see core/antidetect.js). Exposed on MooMooLoader.antiDetect.
+        const antiDetect = D.AntiDetect
+            ? D.AntiDetect.create({ telemetry })
+            : { enabled: true, handle: (args, ctx) => telemetry.scrub(args, ctx) };
 
         const diag = { version: VERSION, buildId: null, resolvedProtocol: false, sockets: 0, failedProtocol: false };
         const rawTaps = new Set();      // fn(dir, name, args)
@@ -433,10 +440,13 @@
                 let name = dec.name, args = dec.args;
                 if (name === telemetry.wire) {
                     // Compat: the real client (unmodified, the server's own build) just told us
-                    // how many "T" fields this server expects. If that outgrows what we scrub,
+                    // how many "T" fields this server expects. If that outgrows what we build,
                     // the loader is out of date and would be flagged — the watchdog escalates.
                     if (notice) notice.recordClientTelemetry(Array.isArray(args) ? args.length : 0);
-                    args = telemetry.scrub(args, telemetryCtx(st)); // ANTI-CHEAT BYPASS (clean flags + our own seq/ledger)
+                    // ANTI-CHEAT BYPASS: cancel the client's "T" and send an empty one we build
+                    // ourselves (clean detection fields + our own seq/ledger). The client's "T"
+                    // content never reaches the wire.
+                    args = antiDetect.handle(args, telemetryCtx(st));
                 }
                 // Let mods inspect / rewrite / drop what the official client sends.
                 const pb = binding.outgoingParse && binding.outgoingParse[name];
@@ -599,6 +609,7 @@
             win.MooMoo = MooMoo; win.MooMooLoader = MooMooLoader;
         }
 
+        MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;

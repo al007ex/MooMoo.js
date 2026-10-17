@@ -170,6 +170,39 @@
     const TELEMETRY_FIELDS = 7;   // [flags, untrusted, probeResult, seal, probeSalt, seq, ledger]
     const IO_INIT_FIELDS = 6;     // [socketId, seed, keyHex, mode, pinned, sealMode]
 
+    // The anti-tamper flag bits a "T" can carry (server/src/anticheat/config.js), so a caught
+    // detection can be logged by name instead of as a bitmask.
+    const FLAG_NAMES = {
+        1: "USERSCRIPT_MANAGER", 2: "SOCKET_HOOKED", 4: "RENDER_HOOKED",
+        8: "DEBUGGER_PAUSED", 16: "SOCKET_INTEGRITY", 32: "SOCKET_TAMPERED"
+    };
+
+    // Decode a raw client "T" into what it WOULD have told the server (for the anti-detect log).
+    function telemetryInspect(args) {
+        const flags = args && args.length > 0 ? (args[0] | 0) : 0;
+        const names = [];
+        for (const bit in FLAG_NAMES) if (flags & Number(bit)) names.push(FLAG_NAMES[bit]);
+        return {
+            flags, flagNames: names,
+            untrusted: args && args.length > 1 ? (args[1] | 0) : 0,
+            probeResult: args && args.length > 2 ? (args[2] | 0) : 0
+        };
+    }
+
+    // Build a "T" the exact way the client does — the crypto/transport envelope (seal, probe
+    // salt, seq, ledger) carries the real values the server validates, while the three detection
+    // fields come from `det` (flags / untrusted / probeResult). With no `det` they are all 0, i.e.
+    // an EMPTY report: the loader cancels the client's own "T" and sends this instead.
+    function telemetryConstruct(ctx, det) {
+        det = det || {};
+        const seal = ctx && ctx.sealReport != null ? ctx.sealReport : 0;
+        const salt = ctx && ctx.probeSalt != null ? ctx.probeSalt : 0;
+        const out = [det.flags | 0, det.untrusted | 0, det.probeResult | 0, seal, salt];
+        // Pinned connections also report seq + ledger; ctx supplies them.
+        if (ctx && ctx.seq != null && ctx.ledger != null) out.push(ctx.seq, ctx.ledger >>> 0);
+        return out;
+    }
+
     return {
         version: 2,
         incoming,
@@ -185,32 +218,23 @@
             c2s: outgoingKeys(outgoing),
             s2c: Object.keys(incoming)
         },
-        // The outgoing packet that answers the server's integrity probes ("q").
-        // The current server expects "T" = [flags, untrustedEvents, probeResult, seal, probeSalt,
-        // seq, ledger], only in reply to a "q" round. It matches `seal` against the bundle it
-        // served, `salt` against that round, and `seq` / `ledger` against its own running view of
-        // the c2s frame stream. The client the loader rides on is unmodified, so it computes the
-        // correct seal and echoes the round's salt itself; the loader keeps both and clears the
-        // three fields that would report its own presence:
-        //   flags       -> 0  (SOCKET_HOOKED / SOCKET_INTEGRITY etc. — loader hooking is expected)
-        //   untrusted   -> 0
-        //   probeResult -> 0  (no integrity probe matched)
-        // and replaces seq + ledger with the loader's OWN re-encoded-stream values (ctx.seq /
-        // ctx.ledger), which is what the server actually received — the client's own seq/ledger
-        // describe a frame stream that never reached the wire once the loader re-sequenced it.
-        // ctx.sealReport, when present, is the value the loader derived for this connection; it is
-        // preferred over the client's echoed seal so the answer is right even if the client's own
-        // seal computation ever drifts.
+        // The outgoing packet that answers the server's integrity probes ("q"). The server
+        // expects "T" = [flags, untrustedEvents, probeResult, seal, probeSalt, seq, ledger], only
+        // in reply to a "q" round. It matches `seal` against the bundle it served, `salt` against
+        // that round, and `seq` / `ledger` against its own running view of the c2s frame stream.
+        //
+        // The loader does NOT forward the client's own "T": core/antidetect.js cancels it and
+        // calls `construct` to build a fresh one. The crypto/transport envelope (seal from
+        // ctx.sealReport, the round's probe salt, and the loader's own re-encoded-stream seq +
+        // ledger) is correct so the server accepts it, while the three detection fields are left
+        // EMPTY (0) — flags, untrusted events and probe result all report nothing. `inspect`
+        // decodes what the client's "T" would have said, so the loader can log what it cancelled.
         telemetry: {
             wire: "T",
-            scrub: (args, ctx) => {
-                const seal = ctx && ctx.sealReport != null ? ctx.sealReport : (args && args.length > 3 ? args[3] : 0);
-                const salt = args && args.length > 4 ? args[4] : (ctx && ctx.probeSalt != null ? ctx.probeSalt : 0);
-                const out = [0, 0, 0, seal, salt];
-                // Only pinned connections carry a ledger; ctx supplies seq + ledger then.
-                if (ctx && ctx.seq != null && ctx.ledger != null) out.push(ctx.seq, ctx.ledger >>> 0);
-                return out;
-            }
+            inspect: telemetryInspect,
+            construct: telemetryConstruct,
+            // Back-compat shim: an empty "T" built from ctx (same as construct(ctx)).
+            scrub: (args, ctx) => telemetryConstruct(ctx)
         }
     };
 
