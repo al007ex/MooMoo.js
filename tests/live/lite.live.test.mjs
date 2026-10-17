@@ -209,6 +209,10 @@ try {
     const probeSeen = [...new Set(tel.map(a => a[2]))];
     check("telemetry flags stay masked (0) while hooked", tel.length === 0 || tel.every(a => a[0] === 0), `T=${tel.length} flags=${JSON.stringify(flagsSeen)}`);
     check("no integrity probe matched the loader/mods", tel.length === 0 || tel.every(a => a[2] === 0), `probeResults=${JSON.stringify(probeSeen)}`);
+    // kind 3: nothing of ours is in localStorage mid-session (config lives in the loader's
+    // hidden store; the seeded legacy "mml_v1" was migrated + wiped at startup).
+    const lsOurs = await page.evaluate(() => Object.keys(localStorage).filter((k) => /^moomoojs:|^mml_v1$/.test(k)));
+    check("no moomoo.js localStorage key mid-session (kind-3 clean)", lsOurs.length === 0, JSON.stringify(lsOurs));
     check("no page errors", !errors.length, errors.slice(0, 3).join(" | "));
     note("telemetry rounds observed: " + tel.length);
 

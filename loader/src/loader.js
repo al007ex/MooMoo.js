@@ -620,6 +620,7 @@
             }, false);
         } catch (e) { errorSink(e); }
 
+        MooMooLoader.config = MooMoo._config;   // hidden config store for mods (no localStorage key of their own)
         MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;

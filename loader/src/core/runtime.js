@@ -246,17 +246,58 @@
         // ---- MOD REGISTRY (enable/disable at runtime + per-mod settings) ----
         const mods = new Map();          // id -> record
         const modListeners = new Set();  // fn(getMods())
-        const STORE_PREFIX = "moomoojs:mod:";
-        const mem = {};                  // fallback store when localStorage is unavailable
 
-        function loadPersist(id) {
-            try { if (typeof localStorage !== "undefined") { const v = localStorage.getItem(STORE_PREFIX + id); return v ? JSON.parse(v) : {}; } } catch (e) { /* ignore */ }
-            return mem[id] || {};
+        // ---- PERSISTENCE (kept out of localStorage while the page is open) ----
+        // A localStorage key is enumerable (Object.keys(localStorage)), so any key we
+        // leave there is something an integrity probe could hash and look for. So we
+        // never keep one around during play: at startup every moomoo.js key is read
+        // into memory and WIPED from localStorage (this runs at document-start, long
+        // before the server's first probe), kept in memory for the session, and written
+        // back only as the page unloads — when the socket is already closing and no probe
+        // can run. Mid-session, Object.keys(localStorage) shows nothing of ours.
+        const STORE_PREFIX = "moomoojs:mod:";    // per-mod enable-state + settings
+        const CFG_PREFIX = "moomoojs:cfg:";      // a mod's own config blob (e.g. a big prefs object)
+        // old plain-text keys the mods used to write -> their new home (migrated, then removed)
+        const LEGACY = { "mml_v1": CFG_PREFIX + "lite" };
+        const LEGACY_DROP = ["mmp_menu_v1", "mmp_menu_v2", "mmp_stock_look_v1"];   // leftover keys from older builds: wiped
+        const mem = {};                  // full key -> parsed value (the live store)
+        const ls = () => { try { return (typeof localStorage !== "undefined") ? localStorage : null; } catch (e) { return null; } };
+        (function hydrate() {
+            const s = ls(); if (!s) return;
+            try {
+                const keys = [];
+                for (let i = 0; i < s.length; i++) keys.push(s.key(i));
+                for (const k of keys) {
+                    if (k && (k.indexOf(STORE_PREFIX) === 0 || k.indexOf(CFG_PREFIX) === 0)) {
+                        try { mem[k] = JSON.parse(s.getItem(k)); } catch (e) { mem[k] = {}; }
+                        s.removeItem(k);
+                    } else if (k && LEGACY[k]) {
+                        try { mem[LEGACY[k]] = JSON.parse(s.getItem(k)); } catch (e) { /* drop bad json */ }
+                        s.removeItem(k);
+                    } else if (k && LEGACY_DROP.indexOf(k) >= 0) {
+                        s.removeItem(k);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        })();
+        function flush() {
+            const s = ls(); if (!s) return;
+            for (const k in mem) { try { s.setItem(k, JSON.stringify(mem[k])); } catch (e) { /* quota / unavailable */ } }
         }
-        function savePersist(id, data) {
-            mem[id] = data;
-            try { if (typeof localStorage !== "undefined") localStorage.setItem(STORE_PREFIX + id, JSON.stringify(data)); } catch (e) { /* ignore */ }
-        }
+        try {
+            if (typeof window !== "undefined" && window.addEventListener) {
+                window.addEventListener("pagehide", flush, false);
+                window.addEventListener("beforeunload", flush, false);
+            }
+        } catch (e) { /* non-DOM env */ }
+
+        function loadPersist(id) { const v = mem[STORE_PREFIX + id]; return (v && typeof v === "object") ? v : {}; }
+        function savePersist(id, data) { mem[STORE_PREFIX + id] = data; }   // memory only; flushed on unload
+        // Exposed to mods (MooMooLoader.config) so they persist config without a key of their own.
+        const config = {
+            get(id) { const v = mem[CFG_PREFIX + id]; return (v && typeof v === "object") ? v : null; },
+            set(id, obj) { mem[CFG_PREFIX + id] = obj; }
+        };
         const slug = (s) => String(s || "mod").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "mod";
         const titleCase = (s) => String(s).replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -450,6 +491,7 @@
             log,
             // internal hooks used by the loader (underscore-prefixed)
             _dispatch, _setReady, _reset, _clearMods, _filterOutgoing, _notifySent,
+            _config: config,
             _setCtxExtensions: (ext) => { ctxExtensions = ext; }
         };
         return MooMoo;

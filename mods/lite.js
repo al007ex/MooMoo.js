@@ -14,12 +14,13 @@
  *   hat hotkeys      bind keys to equip (toggle) a hat by id.
  *   its own menu      opens on a key (default O), styled like the game's own boxes.
  *
- * Config lives in localStorage "mml_v1" and is edited entirely from the menu.
+ * Config is edited entirely from the menu and persisted through the loader's hidden
+ * store (MooMooLoader.config) — no localStorage key of its own.
  */
 (function () {
     "use strict";
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomoo-lite",
             name: "MooMoo Lite",
@@ -72,10 +73,13 @@
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
 
+            // Config is kept in the loader's hidden store (no localStorage key of our
+            // own for an integrity probe to find — the loader wipes it from localStorage
+            // during play and writes it back only as the page unloads).
+            const cfgStore = (MooMooLoader && MooMooLoader.config) || null;
             const prefs = JSON.parse(JSON.stringify(DEFAULTS));
             try {
-                const raw = win.localStorage && win.localStorage.getItem("mml_v1");
-                const got = raw ? JSON.parse(raw) : null;
+                const got = cfgStore ? cfgStore.get("lite") : null;
                 if (got && typeof got === "object") {
                     if (typeof got.menuKey === "string" && got.menuKey) prefs.menuKey = got.menuKey;
                     if (got.heal && typeof got.heal === "object") Object.assign(prefs.heal, got.heal);
@@ -91,7 +95,7 @@
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
                 }
             } catch (e) { /* defaults */ }
-            const save = () => { try { win.localStorage && win.localStorage.setItem("mml_v1", JSON.stringify(prefs)); } catch (e) {} };
+            const save = () => { try { if (cfgStore) cfgStore.set("lite", prefs); } catch (e) {} };
 
             // ---- keys ----
             const keyId = (e) => (e.key === " " ? "Space" : e.key);
