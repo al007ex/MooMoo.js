@@ -442,7 +442,7 @@
             // broadcasts every player's swing) and that weapon's known reload speed, so
             // it is smooth at any frame rate.
             const RL = { bg: "#3d3f42", primary: "#58c0ff", secondary: "#ffc24a" };
-            const HW = 50, PAD = 4.5, NAMEY = 34, HBH = 17, BARH = 13, GAP = 3;   // game health-bar geometry (world units)
+            const HW = 50, PAD = 4.5, NAMEY = 34, HBH = 17, BARH = 17, GAP = 3;   // game health-bar geometry (world units); reload bars match its height
             const swings = new Map();   // sid -> { pAt, pDur, sAt, sDur }
             ctx.on("gatherAnimation", (pk) => {
                 const a = pk && pk.args; if (!a) return;
@@ -459,10 +459,11 @@
             function barRect(g, x, y, w, h, r) { if (w <= 0) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
             const FULLW = HW * 2 + PAD * 2;         // the health bar's width (world units)
             const HALFW = (FULLW - GAP) / 2;        // each reload bar: half the health bar, side by side
+            // same look as the game's health bar: a #3d3f42 round-rect (r 8), then the fill
+            // inset by healthBarPad with r 7 (no stroke — the dark inset is the "outline").
             function drawBar(g, x, y, w, prog, color) {
-                const ins = 2;
-                g.fillStyle = RL.bg; barRect(g, x, y, w, BARH, 5);
-                g.fillStyle = color; barRect(g, x + ins, y + ins, (w - ins * 2) * Math.max(0, Math.min(1, prog)), BARH - ins * 2, 3);
+                g.fillStyle = RL.bg; barRect(g, x, y, w, BARH, 8);
+                g.fillStyle = color; barRect(g, x + PAD, y + PAD, (w - PAD * 2) * Math.max(0, Math.min(1, prog)), BARH - PAD * 2, 7);
             }
             function drawReloads(g, view) {
                 if (!prefs.reloads.on || !ctx.render) return;
