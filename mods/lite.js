@@ -454,9 +454,12 @@
             ctx.every(5000, () => { for (const sid of swings.keys()) if (!ctx.render || !ctx.render.players.has(sid)) swings.delete(sid); });
             const reloadOf = (s, at, dur, now) => (s && s[at]) ? Math.min(1, (now - s[at]) / (s[dur] || 1)) : 1;
             function barRect(g, x, y, w, h, r) { if (w <= 0) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
-            function drawBar(g, cx, y, prog, color) {
-                g.fillStyle = RL.bg; barRect(g, cx - (HW + PAD), y, HW * 2 + PAD * 2, BARH, 6);
-                g.fillStyle = color; barRect(g, cx - HW, y + 2.5, HW * 2 * Math.max(0, Math.min(1, prog)), BARH - 5, 4);
+            const FULLW = HW * 2 + PAD * 2;         // the health bar's width (world units)
+            const HALFW = (FULLW - GAP) / 2;        // each reload bar: half the health bar, side by side
+            function drawBar(g, x, y, w, prog, color) {
+                const ins = 2;
+                g.fillStyle = RL.bg; barRect(g, x, y, w, BARH, 5);
+                g.fillStyle = color; barRect(g, x + ins, y + ins, (w - ins * 2) * Math.max(0, Math.min(1, prog)), BARH - ins * 2, 3);
             }
             function drawReloads(g, view) {
                 if (!prefs.reloads.on || !ctx.render) return;
@@ -467,9 +470,10 @@
                     const isSelf = !!(me && sid === me.sid);
                     if (isSelf ? !prefs.reloads.self : !prefs.reloads.enemies) continue;
                     const s = swings.get(sid);
-                    const x = p.x - left, y0 = (p.y - top) + (p.scale || 35) + NAMEY + HBH + GAP;
-                    drawBar(g, x, y0, reloadOf(s, "pAt", "pDur", now), RL.primary);
-                    drawBar(g, x, y0 + BARH + GAP, reloadOf(s, "sAt", "sDur", now), RL.secondary);
+                    const lx = (p.x - left) - (HW + PAD);   // same left edge as the health bar
+                    const y0 = (p.y - top) + (p.scale || 35) + NAMEY + HBH + GAP;
+                    drawBar(g, lx, y0, HALFW, reloadOf(s, "pAt", "pDur", now), RL.primary);                 // primary (left half)
+                    drawBar(g, lx + HALFW + GAP, y0, HALFW, reloadOf(s, "sAt", "sDur", now), RL.secondary);  // secondary (right half)
                 }
             }
             let reloadsLayer = null;
