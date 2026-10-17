@@ -108,7 +108,7 @@ try {
     note("frames the page sent (excluding aim): " + out.slice(-30).map((f) => `${((f[0] - T0) / 1000).toFixed(2)}:${f[1]}${f[2]}`).join("  "));
     const health = await page.evaluate(() => window.MooMoo.self.health).catch(() => "n/a");
     note(`final player health ${health}`);
-    const menuOk = await page.evaluate(() => ({ modsTab: !!document.querySelector(".mmj-tab") && !!document.querySelector(".mmj-body"), modMenu: !!document.getElementById("mmjp-gui") }));
+    const menuOk = await page.evaluate(() => ({ modsTab: !!document.querySelector(".mmj-tab") && !!document.querySelector(".mmj-body"), modMenu: !!document.querySelector(".mmjp-gui") }));
     note("menus mounted: " + JSON.stringify(menuOk));
     const inc = srv.incidents().filter((l) => /player/.test(l) && !/leave sid/.test(l));
     if (wsClosed || inc.length) throw new Error("player was disconnected / acted on. incidents: " + JSON.stringify(inc));

@@ -163,66 +163,66 @@
                 // ---- look (moomoo.io's own in-game boxes) ----
                 const FONT = "\"Hammersmith One\", sans-serif";
                 const CSS = `
-                #mmjp-gui{position:fixed;inset:0;z-index:99990;display:none;pointer-events:none;background-color:#00000033;font-family:${FONT};color:#fff;-webkit-user-select:none;user-select:none}
-                #mmjp-gui.open{display:block}
-                #mmjp-gui .mp{position:absolute;width:236px;pointer-events:auto}
-                #mmjp-gui .mp-head{display:flex;align-items:center;gap:7px;padding:7px 12px;font-size:21px;background-color:#00000040;border-radius:10px;cursor:pointer;transition:background-color .12s}
-                #mmjp-gui .mp-head:hover{background-color:#32323240}
-                #mmjp-gui .mp-head.drag{cursor:grabbing}
-                #mmjp-gui .mp-count{font-size:15px;color:#a8a8a8}
-                #mmjp-gui .mp-fold{margin-left:auto;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #a8a8a8;transition:transform .12s}
-                #mmjp-gui .mp.folded .mp-fold{transform:rotate(90deg)}
-                #mmjp-gui .mp-body{margin-top:6px;padding:6px;background-color:#00000040;border-radius:10px;max-height:62vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.45) transparent}
-                #mmjp-gui .mp.folded .mp-body{display:none}
-                #mmjp-gui.searching .mp.folded .mp-body{display:block}
-                #mmjp-gui .mm-box+.mm-box{margin-top:4px}
-                #mmjp-gui .mm{display:flex;align-items:center;gap:8px;padding:4px 9px;font-size:17px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:background-color .12s}
-                #mmjp-gui .mm:hover{background-color:#ffffff14}
-                #mmjp-gui .mm.on{background-color:#7ee559;box-shadow:0 3px #62b846}
-                #mmjp-gui .mm.on:hover{background-color:#6fc94e}
-                #mmjp-gui .mm.info{cursor:default;font-size:15px;color:#a8a8a8}
-                #mmjp-gui .mm.info:hover{background-color:transparent}
-                #mmjp-gui .mm-name{overflow:hidden;text-overflow:ellipsis}
-                #mmjp-gui .mm-key{margin-left:auto;flex:0 0 auto;font-size:13px;color:#a8a8a8}
-                #mmjp-gui .mm.on .mm-key{color:#ecffe4}
-                #mmjp-gui .mm-more{flex:0 0 auto;font-size:13px;color:#a8a8a8;margin-left:-2px}
-                #mmjp-gui .mm.on .mm-more{color:#ecffe4}
-                #mmjp-gui .mm-opts{margin:6px 2px 4px;padding:7px 9px;border-radius:6px;background-color:#00000033;font-size:14px;color:#dcdcdc;white-space:normal}
-                #mmjp-gui .mm-desc{color:#bdbdbd;line-height:1.3}
-                #mmjp-gui .mm-line{display:flex;align-items:center;gap:8px;margin-top:7px}
-                #mmjp-gui .mm-line>span:first-child{flex:0 0 auto;max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-                #mmjp-gui .mm-line input[type=range]{flex:1 1 auto;min-width:0;accent-color:#7ee559;cursor:pointer}
-                #mmjp-gui .mm-line input[type=text],#mmjp-gui .mm-line input[type=number]{flex:1 1 auto;min-width:0;background-color:#00000040;border:0;border-radius:6px;color:#fff;font-family:inherit;font-size:14px;padding:3px 7px;outline:none}
-                #mmjp-gui .mm-val{min-width:34px;text-align:right;color:#fff}
-                #mmjp-gui .mm-sw{margin-left:auto;width:34px;height:18px;border-radius:9px;background-color:#00000059;position:relative;cursor:pointer;flex:0 0 auto;transition:background-color .12s}
-                #mmjp-gui .mm-sw:after{content:"";position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;background-color:#fff;transition:transform .12s}
-                #mmjp-gui .mm-sw.on{background-color:#7ee559}
-                #mmjp-gui .mm-sw.on:after{transform:translateX(16px)}
-                #mmjp-gui .mm-bindbtn{margin-left:auto;padding:2px 10px;border-radius:6px;background-color:#00000040;color:#fff;cursor:pointer}
-                #mmjp-gui .mm-bindbtn:hover{background-color:#32323240}
-                #mmjp-gui .mm-bindbtn.grab{color:#7ee559}
-                #mmjp-gui .mm-link{color:#80eefc;cursor:pointer}
-                #mmjp-gui .mm-link:hover{color:#72d3e0}
-                #mmjp-gui .mm-btns{display:flex;gap:6px;padding:2px 0 5px}
-                #mmjp-gui .mm-btn{flex:1 1 0;text-align:center;font-size:15px;padding:5px 4px;border-radius:8px;background-color:#7ee559;box-shadow:0 3px #62b846;cursor:pointer;transition:transform .06s,box-shadow .06s,background-color .12s}
-                #mmjp-gui .mm-btn:hover{background-color:#6fc94e}
-                #mmjp-gui .mm-btn:active{transform:translateY(3px);box-shadow:0 0 #62b846}
-                #mmjp-gui .mm-btn.blue{background-color:#5aa9e8;box-shadow:0 3px #4588c2}
-                #mmjp-gui .mm-btn.blue:hover{background-color:#4f9ad6}
-                #mmjp-gui .mm-btn.blue:active{box-shadow:0 0 #4588c2}
-                #mmjp-gui .mm-btn.grey{background-color:#8a8a8a;box-shadow:0 3px #6a6a6a}
-                #mmjp-gui .mm-btn.grey:hover{background-color:#7a7a7a}
-                #mmjp-gui .mm-btn.grey:active{box-shadow:0 0 #6a6a6a}
-                #mmjp-gui .mb{position:absolute;left:50%;top:12px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:6px 6px 6px 14px;border-radius:10px;background-color:#00000040;font-size:15px;color:#a8a8a8;white-space:nowrap;pointer-events:auto}
-                #mmjp-gui .mb b{font-weight:normal;color:#fff;font-size:18px}
-                #mmjp-gui .mb input{width:190px;background-color:#00000040;border:0;border-radius:8px;color:#fff;font-family:inherit;font-size:17px;padding:5px 10px;outline:none;-webkit-user-select:text;user-select:text}
-                #mmjp-tip{position:fixed;z-index:99991;display:none;max-width:270px;padding:8px 11px;border-radius:8px;background-color:#000000b3;color:#fff;font-family:${FONT};font-size:14px;line-height:1.3;pointer-events:none}
-                #mmjp-tip b{display:block;font-weight:normal;font-size:17px;margin-bottom:3px}
-                #mmjp-tip i{display:block;font-style:normal;color:#a8a8a8;margin-top:5px;font-size:13px}
-                #mmjp-toast{position:fixed;left:50%;top:90px;transform:translateX(-50%);z-index:99991;padding:6px 14px;border-radius:8px;background-color:#00000040;color:#fff;font-family:${FONT};font-size:20px;pointer-events:none;opacity:0;transition:opacity .2s}
-                #mmjp-toast.show{opacity:1}
-                #mmjp-toast .t-on{color:#7ee559}
-                #mmjp-toast .t-off{color:#ee5551}
+                .mmjp-gui{position:fixed;inset:0;z-index:99990;display:none;pointer-events:none;background-color:#00000033;font-family:${FONT};color:#fff;-webkit-user-select:none;user-select:none}
+                .mmjp-gui.open{display:block}
+                .mmjp-gui .mp{position:absolute;width:236px;pointer-events:auto}
+                .mmjp-gui .mp-head{display:flex;align-items:center;gap:7px;padding:7px 12px;font-size:21px;background-color:#00000040;border-radius:10px;cursor:pointer;transition:background-color .12s}
+                .mmjp-gui .mp-head:hover{background-color:#32323240}
+                .mmjp-gui .mp-head.drag{cursor:grabbing}
+                .mmjp-gui .mp-count{font-size:15px;color:#a8a8a8}
+                .mmjp-gui .mp-fold{margin-left:auto;width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #a8a8a8;transition:transform .12s}
+                .mmjp-gui .mp.folded .mp-fold{transform:rotate(90deg)}
+                .mmjp-gui .mp-body{margin-top:6px;padding:6px;background-color:#00000040;border-radius:10px;max-height:62vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.45) transparent}
+                .mmjp-gui .mp.folded .mp-body{display:none}
+                .mmjp-gui.searching .mp.folded .mp-body{display:block}
+                .mmjp-gui .mm-box+.mm-box{margin-top:4px}
+                .mmjp-gui .mm{display:flex;align-items:center;gap:8px;padding:4px 9px;font-size:17px;border-radius:6px;cursor:pointer;white-space:nowrap;transition:background-color .12s}
+                .mmjp-gui .mm:hover{background-color:#ffffff14}
+                .mmjp-gui .mm.on{background-color:#7ee559;box-shadow:0 3px #62b846}
+                .mmjp-gui .mm.on:hover{background-color:#6fc94e}
+                .mmjp-gui .mm.info{cursor:default;font-size:15px;color:#a8a8a8}
+                .mmjp-gui .mm.info:hover{background-color:transparent}
+                .mmjp-gui .mm-name{overflow:hidden;text-overflow:ellipsis}
+                .mmjp-gui .mm-key{margin-left:auto;flex:0 0 auto;font-size:13px;color:#a8a8a8}
+                .mmjp-gui .mm.on .mm-key{color:#ecffe4}
+                .mmjp-gui .mm-more{flex:0 0 auto;font-size:13px;color:#a8a8a8;margin-left:-2px}
+                .mmjp-gui .mm.on .mm-more{color:#ecffe4}
+                .mmjp-gui .mm-opts{margin:6px 2px 4px;padding:7px 9px;border-radius:6px;background-color:#00000033;font-size:14px;color:#dcdcdc;white-space:normal}
+                .mmjp-gui .mm-desc{color:#bdbdbd;line-height:1.3}
+                .mmjp-gui .mm-line{display:flex;align-items:center;gap:8px;margin-top:7px}
+                .mmjp-gui .mm-line>span:first-child{flex:0 0 auto;max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+                .mmjp-gui .mm-line input[type=range]{flex:1 1 auto;min-width:0;accent-color:#7ee559;cursor:pointer}
+                .mmjp-gui .mm-line input[type=text],.mmjp-gui .mm-line input[type=number]{flex:1 1 auto;min-width:0;background-color:#00000040;border:0;border-radius:6px;color:#fff;font-family:inherit;font-size:14px;padding:3px 7px;outline:none}
+                .mmjp-gui .mm-val{min-width:34px;text-align:right;color:#fff}
+                .mmjp-gui .mm-sw{margin-left:auto;width:34px;height:18px;border-radius:9px;background-color:#00000059;position:relative;cursor:pointer;flex:0 0 auto;transition:background-color .12s}
+                .mmjp-gui .mm-sw:after{content:"";position:absolute;left:3px;top:3px;width:12px;height:12px;border-radius:50%;background-color:#fff;transition:transform .12s}
+                .mmjp-gui .mm-sw.on{background-color:#7ee559}
+                .mmjp-gui .mm-sw.on:after{transform:translateX(16px)}
+                .mmjp-gui .mm-bindbtn{margin-left:auto;padding:2px 10px;border-radius:6px;background-color:#00000040;color:#fff;cursor:pointer}
+                .mmjp-gui .mm-bindbtn:hover{background-color:#32323240}
+                .mmjp-gui .mm-bindbtn.grab{color:#7ee559}
+                .mmjp-gui .mm-link{color:#80eefc;cursor:pointer}
+                .mmjp-gui .mm-link:hover{color:#72d3e0}
+                .mmjp-gui .mm-btns{display:flex;gap:6px;padding:2px 0 5px}
+                .mmjp-gui .mm-btn{flex:1 1 0;text-align:center;font-size:15px;padding:5px 4px;border-radius:8px;background-color:#7ee559;box-shadow:0 3px #62b846;cursor:pointer;transition:transform .06s,box-shadow .06s,background-color .12s}
+                .mmjp-gui .mm-btn:hover{background-color:#6fc94e}
+                .mmjp-gui .mm-btn:active{transform:translateY(3px);box-shadow:0 0 #62b846}
+                .mmjp-gui .mm-btn.blue{background-color:#5aa9e8;box-shadow:0 3px #4588c2}
+                .mmjp-gui .mm-btn.blue:hover{background-color:#4f9ad6}
+                .mmjp-gui .mm-btn.blue:active{box-shadow:0 0 #4588c2}
+                .mmjp-gui .mm-btn.grey{background-color:#8a8a8a;box-shadow:0 3px #6a6a6a}
+                .mmjp-gui .mm-btn.grey:hover{background-color:#7a7a7a}
+                .mmjp-gui .mm-btn.grey:active{box-shadow:0 0 #6a6a6a}
+                .mmjp-gui .mb{position:absolute;left:50%;top:12px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;padding:6px 6px 6px 14px;border-radius:10px;background-color:#00000040;font-size:15px;color:#a8a8a8;white-space:nowrap;pointer-events:auto}
+                .mmjp-gui .mb b{font-weight:normal;color:#fff;font-size:18px}
+                .mmjp-gui .mb input{width:190px;background-color:#00000040;border:0;border-radius:8px;color:#fff;font-family:inherit;font-size:17px;padding:5px 10px;outline:none;-webkit-user-select:text;user-select:text}
+                .mmjp-tip{position:fixed;z-index:99991;display:none;max-width:270px;padding:8px 11px;border-radius:8px;background-color:#000000b3;color:#fff;font-family:${FONT};font-size:14px;line-height:1.3;pointer-events:none}
+                .mmjp-tip b{display:block;font-weight:normal;font-size:17px;margin-bottom:3px}
+                .mmjp-tip i{display:block;font-style:normal;color:#a8a8a8;margin-top:5px;font-size:13px}
+                .mmjp-toast{position:fixed;left:50%;top:90px;transform:translateX(-50%);z-index:99991;padding:6px 14px;border-radius:8px;background-color:#00000040;color:#fff;font-family:${FONT};font-size:20px;pointer-events:none;opacity:0;transition:opacity .2s}
+                .mmjp-toast.show{opacity:1}
+                .mmjp-toast .t-on{color:#7ee559}
+                .mmjp-toast .t-off{color:#ee5551}
                 `;
 
                 // ---- the DOM ----
@@ -613,11 +613,10 @@
                     if (gui.root) return true;
                     if (menuDead || !doc.body || !doc.head) return false;
                     const style = mk("style");
-                    style.id = "mmjp-style";
-                    style.textContent = CSS;
+                    style.textContent = CSS;   // no id/class — nothing for a tag#id probe to find
                     doc.head.appendChild(style);
                     const root = mk("div");
-                    root.id = "mmjp-gui";
+                    root.classList.add("mmjp-gui");   // class, not id
                     gui.root = root;
                     for (const def of PANELS) {
                         const p = buildPanel(def);
@@ -640,10 +639,10 @@
                     tipOn(bar, "MooMooPlus", "click a feature: on / off. right click: what it does, its options (⚙) and a key bind. drag a panel by its header to move it, click the header to fold it", keyLabel(prefs.menuKey) + " or Esc closes the menu");
                     root.appendChild(bar);
                     const tip = mk("div");
-                    tip.id = "mmjp-tip";
+                    tip.classList.add("mmjp-tip");
                     gui.tip = tip;
                     const toastEl = mk("div");
-                    toastEl.id = "mmjp-toast";
+                    toastEl.classList.add("mmjp-toast");
                     gui.toast = toastEl;
                     doc.body.appendChild(root);
                     doc.body.appendChild(tip);

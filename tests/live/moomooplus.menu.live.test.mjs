@@ -81,7 +81,7 @@ try {
     const shot = async (name) => { const p = path.join(SHOT_DIR, "mmj-" + name + ".png"); await page.screenshot({ path: p }); note("screenshot " + p); };
     const setting = (key) => page.evaluate((k) => window.MooMoo.getMods().find((m) => m.id === "moomooplus").settings.find((s) => s.key === k).value, key);
     const bundle = (src) => page.evaluate((s) => window.__mmp.eval(s), src);
-    const guiOpen = () => page.evaluate(() => !!document.querySelector("#mmjp-gui.open"));
+    const guiOpen = () => page.evaluate(() => !!document.querySelector(".mmjp-gui.open"));
     // pixels drawn on the overlay layer within r px of where you are
     const layerInkAtMe = (r = 40) => page.evaluate((r) => {
         const rd = window.MooMooLoader.render;
@@ -96,7 +96,7 @@ try {
     }, r);
     async function rowBox(label) {
         return page.evaluate((label) => {
-            const r = [...document.querySelectorAll("#mmjp-gui .mm")].find((x) => { const n = x.querySelector(".mm-name"); return n && n.textContent === label; });
+            const r = [...document.querySelectorAll(".mmjp-gui .mm")].find((x) => { const n = x.querySelector(".mm-name"); return n && n.textContent === label; });
             if (!r) return null;
             const panel = r.closest(".mp");
             if (panel && panel.classList.contains("folded")) panel.querySelector(".mp-head").dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, clientX: 0, clientY: 0 })), window.dispatchEvent(new MouseEvent("mouseup", { button: 0, clientX: 0, clientY: 0 }));
@@ -141,8 +141,8 @@ try {
     await page.keyboard.press("m");
     await tick(300);
     const v1 = await page.evaluate(() => ({
-        open: !!document.querySelector("#mmjp-gui.open"),
-        heads: [...document.querySelectorAll("#mmjp-gui .mp")].filter((p) => p.style.display !== "none").map((p) => p.querySelector(".mp-head").textContent)
+        open: !!document.querySelector(".mmjp-gui.open"),
+        heads: [...document.querySelectorAll(".mmjp-gui .mp")].filter((p) => p.style.display !== "none").map((p) => p.querySelector(".mp-head").textContent)
     }));
     check("M opens the menu", v1.open);
     check("panels by category", v1.heads.length >= 10, v1.heads.join(" · "));
@@ -152,7 +152,7 @@ try {
     // ---- all visuals from the menu: drawn on the stock picture, at you ----
     await clickRow("Info Overlay");
     check("click turns all visuals on", (await setting("all visuals")) === true);
-    check("its row lights up", await page.evaluate(() => [...document.querySelectorAll("#mmjp-gui .mm.on .mm-name")].some((n) => n.textContent === "Info Overlay")));
+    check("its row lights up", await page.evaluate(() => [...document.querySelectorAll(".mmjp-gui .mm.on .mm-name")].some((n) => n.textContent === "Info Overlay")));
     await page.keyboard.press("m");
     await tick(700);
     check("M closes the menu", !(await guiOpen()));
@@ -186,7 +186,7 @@ try {
     await tick(200);
     await clickRow("Auto Heal", "right");
     const bindBtn = await page.evaluate(() => {
-        const r = [...document.querySelectorAll("#mmjp-gui .mm")].find((x) => x.querySelector(".mm-name").textContent === "Auto Heal");
+        const r = [...document.querySelectorAll(".mmjp-gui .mm")].find((x) => x.querySelector(".mm-name").textContent === "Auto Heal");
         const b = r.parentNode.querySelector(".mm-bindbtn");
         if (!b) return null;
         const bb = b.getBoundingClientRect();
@@ -197,11 +197,11 @@ try {
     if (bindBtn) {
         await page.mouse.click(bindBtn.x, bindBtn.y);
         await tick(350);   // longer than the menu's 200 ms refresh
-        const waiting = await page.evaluate(() => { const b = document.querySelector("#mmjp-gui .mm-bindbtn.grab"); return b ? b.textContent : null; });
+        const waiting = await page.evaluate(() => { const b = document.querySelector(".mmjp-gui .mm-bindbtn.grab"); return b ? b.textContent : null; });
         check("bind button waits for a key", waiting === "press a key…", String(waiting));
         const overlap = await page.evaluate(() => {
             // docked panels never overlap, even with a module's options open
-            const boxes = [...document.querySelectorAll("#mmjp-gui .mp")].filter((p) => p.style.display !== "none").map((p) => p.getBoundingClientRect());
+            const boxes = [...document.querySelectorAll(".mmjp-gui .mp")].filter((p) => p.style.display !== "none").map((p) => p.getBoundingClientRect());
             for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
                 const a = boxes[i], b = boxes[j];
                 if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) return true;
@@ -259,7 +259,7 @@ try {
     await page.keyboard.press("m");
     await tick(200);
     const stockBtn = await page.evaluate(() => {
-        const b = [...document.querySelectorAll("#mmjp-gui .mm-btn")].find((x) => x.textContent === "stock look");
+        const b = [...document.querySelectorAll(".mmjp-gui .mm-btn")].find((x) => x.textContent === "stock look");
         if (!b) return null;
         const r = b.getBoundingClientRect();
         return r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;

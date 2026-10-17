@@ -250,7 +250,7 @@
                 // while binding, capture ANY key (doGrab decides: Esc clears, modifiers wait)
                 if (grab) { e.preventDefault(); e.stopImmediatePropagation(); doGrab(e); return; }
                 // Escape closes the hat picker
-                if (e.key === "Escape" && doc && doc.getElementById("mml-pick")) { e.preventDefault(); e.stopImmediatePropagation(); doc.getElementById("mml-pick").remove(); return; }
+                if (e.key === "Escape" && doc) { const pk = doc.querySelector(".mml-pick"); if (pk) { e.preventDefault(); e.stopImmediatePropagation(); pk.remove(); return; } }
                 if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
                 const id = keyId(e);
                 if (same(id, prefs.menuKey)) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toggleMenu(); return; }
@@ -280,82 +280,81 @@
             const FONT = '"Hammersmith One", sans-serif';
             const SANS = 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
             const CSS = `
-            #mml-gui{position:fixed;inset:0;z-index:99990;display:none;background:rgba(9,11,16,.5);font-family:${FONT};-webkit-user-select:none;user-select:none;
-              --acc:#8ecc51;--side:#13151b;--panel:#1b1e26;--card:#23262f;--ctrl:#2b2f3a;--track:#363b47;--text:#eceef2;--sub:#aab0bd;--muted:#6f7684;--border:#2a2e38}
-            #mml-gui.open{display:block}
-            #mml-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;width:720px;max-width:94vw;height:522px;max-height:88vh;background:var(--panel);border-radius:16px;overflow:hidden;color:var(--text);box-shadow:0 22px 64px rgba(0,0,0,.55);font-size:14px}
-            #mml-panel .side{flex:0 0 178px;background:var(--side);display:flex;flex-direction:column;padding:14px 10px}
-            #mml-panel .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 15px}
-            #mml-panel .logo{width:27px;height:27px;border-radius:8px;background:var(--acc);color:#153318;display:flex;align-items:center;justify-content:center;font-size:12px}
-            #mml-panel .bname{font-size:15px;color:var(--text)}
-            #mml-panel .nav{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
-            #mml-panel .navitem{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:9px;color:var(--sub);cursor:pointer;transition:background .12s,color .12s}
-            #mml-panel .navitem:hover{background:#1d2029;color:var(--text)}
-            #mml-panel .navitem.active{background:#242834;color:var(--text)}
-            #mml-panel .navitem.active .ico{color:var(--acc)}
-            #mml-panel .ico{display:inline-flex;width:18px;height:18px;color:var(--muted);flex:0 0 auto}
-            #mml-panel .ico svg{width:18px;height:18px;display:block}
-            #mml-panel .ntxt{font-size:14px}
-            #mml-panel .user{display:flex;align-items:center;gap:9px;padding:11px 7px 2px;margin-top:8px;border-top:1px solid var(--border)}
-            #mml-panel .uava{width:29px;height:29px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#5f933a);flex:0 0 auto}
-            #mml-panel .uinfo{display:flex;flex-direction:column;min-width:0}
-            #mml-panel .uname{font-size:13px;color:var(--text)}
-            #mml-panel .uver{font-size:11px;color:var(--muted);font-family:${SANS}}
-            #mml-panel .body{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
-            #mml-panel .head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border)}
-            #mml-panel .htitle{font-size:18px;color:var(--text)}
-            #mml-panel .close{color:var(--muted);cursor:pointer;font-size:15px;padding:5px 9px;border-radius:8px}
-            #mml-panel .close:hover{color:var(--text);background:#242834}
-            #mml-panel .content{flex:1 1 auto;overflow-y:auto;padding:16px 20px 20px}
-            #mml-panel .content::-webkit-scrollbar{width:11px}
-            #mml-panel .content::-webkit-scrollbar-thumb{background:#2e333e;border-radius:6px;border:3px solid var(--panel)}
-            #mml-panel .modgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:13px;align-items:start}
-            #mml-panel .mod{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-            #mml-panel .mod.wide{grid-column:1/-1}
-            #mml-panel .modhead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid var(--border)}
-            #mml-panel .modtitle{font-size:15px;color:var(--text)}
-            #mml-panel .modbody{padding:7px 14px 11px}
-            #mml-panel .row{display:flex;align-items:center;gap:12px;min-height:34px;padding:3px 0}
-            #mml-panel .rl{font-size:13.5px;color:var(--sub);font-family:${SANS}}
-            #mml-panel .row:not(.srow) .rl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-            #mml-panel .srow .rl{flex:0 0 84px}
-            #mml-panel .sw{flex:0 0 auto;width:42px;height:24px;border-radius:12px;background:var(--track);position:relative;cursor:pointer;transition:background .16s}
-            #mml-panel .sw.on{background:var(--acc)}
-            #mml-panel .sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .16s;box-shadow:0 1px 2px rgba(0,0,0,.35)}
-            #mml-panel .sw.on::after{left:21px}
-            #mml-panel .rng{-webkit-appearance:none;flex:1 1 auto;min-width:50px;height:6px;border-radius:3px;background:var(--track);outline:none;cursor:pointer}
-            #mml-panel .rng::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.45);cursor:pointer}
-            #mml-panel .rng::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:#fff;cursor:pointer}
-            #mml-panel .rngval{flex:0 0 auto;min-width:48px;text-align:right;font-size:13px;color:var(--text);font-family:${SANS}}
-            #mml-panel .kb{flex:0 0 auto;min-width:40px;text-align:center;padding:6px 13px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--sub);font-size:13px;cursor:pointer;font-family:${SANS}}
-            #mml-panel .kb:hover{color:var(--text);border-color:#3b4150}
-            #mml-panel .kb.grab{color:var(--acc);border-color:var(--acc)}
-            #mml-panel .txt{flex:0 0 auto;width:132px;padding:6px 10px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--text);font-family:${SANS};font-size:13px;text-align:center;outline:none}
-            #mml-panel .txt:focus{border-color:var(--acc)}
-            #mml-panel .selwrap{position:relative;flex:0 0 auto}
-            #mml-panel .sel{appearance:none;-webkit-appearance:none;padding:6px 32px 6px 12px;border-radius:8px;background:var(--ctrl);border:1px solid var(--border);color:var(--text);font-family:${SANS};font-size:13px;cursor:pointer;outline:none}
-            #mml-panel .sel:focus{border-color:var(--acc)}
-            #mml-panel .sel option{background:#23262f;color:var(--text)}
-            #mml-panel .selwrap::after{content:"";position:absolute;right:12px;top:45%;width:7px;height:7px;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:translateY(-50%) rotate(45deg);pointer-events:none}
-            #mml-panel .hatrow{display:flex;flex-wrap:wrap;gap:13px;justify-content:center;padding:9px 0 5px}
-            #mml-panel .hatcell{display:flex;flex-direction:column;align-items:center;gap:7px}
-            #mml-panel .hatbox{width:62px;height:62px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--ctrl);border:1px solid var(--border);cursor:pointer;transition:border-color .12s}
-            #mml-panel .hatbox:hover{border-color:#3b4150}
-            #mml-panel .hatbox img{width:46px;height:46px;object-fit:contain}
-            #mml-panel .hatph{color:var(--muted);font-size:20px}
-            #mml-panel .hatcap{font-size:12px;color:var(--muted);font-family:${SANS}}
-            #mml-panel .btn{margin-top:9px;text-align:center;padding:9px;border-radius:9px;background:var(--ctrl);border:1px solid var(--border);color:var(--sub);cursor:pointer;font-size:13px;font-family:${SANS}}
-            #mml-panel .btn:hover{color:var(--text);border-color:#3b4150}
-            #mml-pick{position:fixed;inset:0;z-index:99992;display:flex;align-items:center;justify-content:center;background:rgba(9,11,16,.62);font-family:${FONT}}
-            #mml-pick .pickpanel{width:520px;max-width:92vw;max-height:76vh;overflow-y:auto;padding:18px;border-radius:14px;background:#1b1e26;border:1px solid #2a2e38;box-shadow:0 22px 64px rgba(0,0,0,.6);color:#eceef2}
-            #mml-pick .picktitle{text-align:center;font-size:18px;margin-bottom:13px}
-            #mml-pick .pickgrid{display:flex;flex-wrap:wrap;gap:9px;justify-content:center}
-            #mml-pick .ptile{box-sizing:border-box;width:76px;height:84px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:5px;border-radius:11px;background:#23262f;border:2px solid transparent;cursor:pointer}
-            #mml-pick .ptile:hover{background:#2b2f3a}
-            #mml-pick .ptile.sel{border-color:#8ecc51}
-            #mml-pick .ptile img{width:50px;height:50px;object-fit:contain}
-            #mml-pick .pcap{font-size:10px;color:#9aa0aa;max-width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:${SANS}}
-            #mml-pick .pnone{font-size:13px;color:#6f7684}
+            .mml-gui{position:fixed;inset:0;z-index:99990;display:none;background:rgba(9,11,16,.5);font-family:${FONT};-webkit-user-select:none;user-select:none;
+              --acc:#8ecc51;--side:#13151b;--panel:#1b1e26;--ctrl:#ffffff12;--track:#ffffff1c;--text:#eceef2;--sub:#aab0bd;--muted:#6f7684;--border:#2a2e38}
+            .mml-gui.open{display:block}
+            .mml-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;width:720px;max-width:94vw;height:522px;max-height:88vh;background:var(--panel);border-radius:16px;overflow:hidden;color:var(--text);box-shadow:0 22px 64px rgba(0,0,0,.55);font-size:14px}
+            .mml-panel .side{flex:0 0 178px;background:var(--side);display:flex;flex-direction:column;padding:14px 10px}
+            .mml-panel .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 15px}
+            .mml-panel .logo{width:27px;height:27px;border-radius:8px;background:var(--acc);color:#153318;display:flex;align-items:center;justify-content:center;font-size:12px}
+            .mml-panel .bname{font-size:15px;color:var(--text)}
+            .mml-panel .nav{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+            .mml-panel .navitem{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:9px;color:var(--sub);cursor:pointer;transition:background .12s,color .12s}
+            .mml-panel .navitem:hover{background:#1d2029;color:var(--text)}
+            .mml-panel .navitem.active{background:#242834;color:var(--text)}
+            .mml-panel .navitem.active .ico{color:var(--acc)}
+            .mml-panel .ico{display:inline-flex;width:18px;height:18px;color:var(--muted);flex:0 0 auto}
+            .mml-panel .ico svg{width:18px;height:18px;display:block}
+            .mml-panel .ntxt{font-size:14px}
+            .mml-panel .user{display:flex;align-items:center;gap:9px;padding:11px 7px 2px;margin-top:8px;border-top:1px solid var(--border)}
+            .mml-panel .uava{width:29px;height:29px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#5f933a);flex:0 0 auto}
+            .mml-panel .uinfo{display:flex;flex-direction:column;min-width:0}
+            .mml-panel .uname{font-size:13px;color:var(--text)}
+            .mml-panel .uver{font-size:11px;color:var(--muted);font-family:${SANS}}
+            .mml-panel .body{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+            .mml-panel .head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border)}
+            .mml-panel .htitle{font-size:17px;color:var(--text)}
+            .mml-panel .close{color:var(--muted);cursor:pointer;font-size:15px;padding:5px 9px;border-radius:8px}
+            .mml-panel .close:hover{color:var(--text);background:#242834}
+            /* content: no boxes, no outlines, no scrollbar. modules are plain blocks
+               grouped by a quiet title — settings sit directly on the panel. */
+            .mml-panel .content{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:6px 18px 14px}
+            .mml-panel .content::-webkit-scrollbar{width:0;height:0}
+            .mml-panel .modgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 22px;align-items:start}
+            .mml-panel .mod{padding:7px 0 2px;min-width:0}
+            .mml-panel .mod.wide{grid-column:1/-1}
+            .mml-panel .modhead{display:flex;align-items:center;justify-content:space-between;min-height:24px}
+            .mml-panel .modtitle{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+            .mml-panel .modbody{padding:1px 0 0}
+            .mml-panel .row{display:flex;align-items:center;gap:10px;min-height:25px}
+            .mml-panel .rl{font-size:13px;color:var(--sub);font-family:${SANS}}
+            .mml-panel .row:not(.srow) .rl{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .mml-panel .srow .rl{flex:0 0 72px}
+            .mml-panel .sw{flex:0 0 auto;width:32px;height:18px;border-radius:9px;background:var(--track);position:relative;cursor:pointer;transition:background .16s}
+            .mml-panel .sw.on{background:var(--acc)}
+            .mml-panel .sw::after{content:"";position:absolute;top:2.5px;left:2.5px;width:13px;height:13px;border-radius:50%;background:#fff;transition:left .16s}
+            .mml-panel .sw.on::after{left:16.5px}
+            .mml-panel .rng{-webkit-appearance:none;flex:1 1 auto;min-width:40px;height:4px;border-radius:2px;background:var(--track);outline:none;cursor:pointer}
+            .mml-panel .rng::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:#fff;cursor:pointer}
+            .mml-panel .rng::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#fff;cursor:pointer}
+            .mml-panel .rngval{flex:0 0 auto;min-width:40px;text-align:right;font-size:12px;color:var(--text);font-family:${SANS}}
+            .mml-panel .kb{flex:0 0 auto;min-width:28px;text-align:center;padding:3px 9px;border-radius:5px;background:var(--ctrl);color:var(--sub);font-size:12px;cursor:pointer;font-family:${SANS}}
+            .mml-panel .kb:hover{color:var(--text)}
+            .mml-panel .kb.grab{color:var(--acc)}
+            .mml-panel .txt{flex:0 1 auto;width:88px;min-width:0;padding:3px 8px;border-radius:5px;background:var(--ctrl);border:none;color:var(--text);font-family:${SANS};font-size:12px;text-align:center;outline:none}
+            .mml-panel .selwrap{position:relative;flex:0 0 auto}
+            .mml-panel .sel{appearance:none;-webkit-appearance:none;padding:3px 24px 3px 9px;border-radius:5px;background:var(--ctrl);border:none;color:var(--text);font-family:${SANS};font-size:12px;cursor:pointer;outline:none}
+            .mml-panel .sel option{background:#23262f;color:var(--text)}
+            .mml-panel .selwrap::after{content:"";position:absolute;right:9px;top:45%;width:6px;height:6px;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:translateY(-50%) rotate(45deg);pointer-events:none}
+            .mml-panel .hatrow{display:flex;flex-wrap:wrap;gap:8px;padding:3px 0 2px}
+            .mml-panel .hatcell{display:flex;flex-direction:column;align-items:center;gap:3px}
+            .mml-panel .hatbox{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--ctrl);cursor:pointer}
+            .mml-panel .hatbox img{width:30px;height:30px;object-fit:contain}
+            .mml-panel .hatph{color:var(--muted);font-size:16px}
+            .mml-panel .hatcap{font-size:11px;color:var(--muted);font-family:${SANS}}
+            .mml-panel .btn{margin-top:6px;text-align:center;padding:5px;border-radius:6px;background:var(--ctrl);color:var(--sub);cursor:pointer;font-size:12.5px;font-family:${SANS}}
+            .mml-panel .btn:hover{color:var(--text)}
+            .mml-pick{position:fixed;inset:0;z-index:99992;display:flex;align-items:center;justify-content:center;background:rgba(9,11,16,.62);font-family:${FONT}}
+            .mml-pick .pickpanel{width:420px;max-width:92vw;max-height:70vh;overflow-y:auto;scrollbar-width:none;padding:14px;border-radius:12px;background:#1b1e26;box-shadow:0 22px 64px rgba(0,0,0,.6);color:#eceef2}
+            .mml-pick .pickpanel::-webkit-scrollbar{width:0}
+            .mml-pick .picktitle{text-align:center;font-size:16px;margin-bottom:11px}
+            .mml-pick .pickgrid{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
+            .mml-pick .ptile{box-sizing:border-box;width:60px;height:68px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px;border-radius:8px;background:#ffffff10;border:2px solid transparent;cursor:pointer}
+            .mml-pick .ptile:hover{background:#ffffff1f}
+            .mml-pick .ptile.sel{border-color:#8ecc51}
+            .mml-pick .ptile img{width:40px;height:40px;object-fit:contain}
+            .mml-pick .pcap{font-size:10px;color:#9aa0aa;max-width:54px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:${SANS}}
+            .mml-pick .pnone{font-size:12px;color:#6f7684}
             `;
             let gui = null, built = false, open = false, grab = null, grabEl = null;
             let activeCat = "placement", headTitle = null, contentEl = null;
@@ -418,8 +417,8 @@
             }
             function openHatPicker(cur, onPick) {
                 if (!gui) return;
-                const old = doc.getElementById("mml-pick"); if (old) old.remove();
-                const pick = mk("div"); pick.id = "mml-pick";
+                const old = gui.querySelector(".mml-pick"); if (old) old.remove();
+                const pick = mk("div", "mml-pick");
                 const panel = mk("div", "pickpanel");
                 panel.appendChild(mk("div", "picktitle", "Choose a hat"));
                 const grid = mk("div", "pickgrid");
@@ -559,7 +558,7 @@
             }
 
             function buildCard() {
-                const panel = mk("div"); panel.id = "mml-panel";
+                const panel = mk("div", "mml-panel");
                 const side = mk("div", "side");
                 const brand = mk("div", "brand");
                 brand.appendChild(mk("span", "logo", "ML"));
@@ -604,7 +603,7 @@
             function build() {
                 if (built || !doc || !doc.body || !doc.head) return built;
                 const style = mk("style"); style.textContent = CSS; doc.head.appendChild(style);
-                gui = mk("div"); gui.id = "mml-gui";
+                gui = mk("div", "mml-gui");
                 gui.appendChild(buildCard());
                 gui.addEventListener("mousedown", (e) => { if (e.target === gui) closeMenu(); });   // click backdrop closes
                 doc.body.appendChild(gui);
