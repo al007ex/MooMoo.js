@@ -34,11 +34,17 @@
         const subs = new Set();
 
         const api = {
-            // Master switch. On: the client's "T" is cancelled and an empty one is sent.
-            // Off: the client's real detection fields are let through (still with the
-            // loader's correct seq/ledger, so a ledger artefact isn't mistaken for a flag) —
-            // only for verifying, on your own server, that detection would otherwise fire.
-            enabled: true,
+            // Master switch for the FALLBACK canceller. Default OFF, because the loader now
+            // leaves no trace in the environment the client's integrity scan looks at (no
+            // window global — the API comes through an event handshake —, no socket props, no
+            // DOM ids, and the WebSocket hooks read as native): the client's own "T" is
+            // already clean, so we pass it through unchanged (only seq/ledger come from our
+            // stream). Passing it through is also what survives a "canary" probe — one that
+            // asks for something a real client always has — where blanking the field would
+            // actually get you caught. Turn it ON to additionally blank the detection fields
+            // (belt-and-braces, e.g. if a mod itself leaves a trace); that trades canary
+            // safety for hiding whatever a mod added.
+            enabled: false,
             // How many "T" packets have been cancelled + reconstructed.
             count: 0,
             // How many of those actually carried a detection (a non-zero flag / probe / untrusted).
@@ -86,8 +92,18 @@
                     if (env.probeSalt == null && clientArgs.length > 4) env.probeSalt = clientArgs[4];
                     if (env.sealReport == null && clientArgs.length > 3) env.sealReport = clientArgs[3];
                 }
-                // enabled -> empty detection; disabled -> pass the client's real detection through.
-                return telemetry.construct(env, this.enabled ? null : seen);
+                // The loader's ONE irreducible fingerprint is the WebSocket hook: intercepting the
+                // socket is its whole job, and the client's own SOCKET_HOOKED / SOCKET_INTEGRITY
+                // self-check reports that no matter what the environment looks like — there is no
+                // way to not-hook the socket and still be a loader. So the `flags` field is always
+                // masked (a clean client reports 0), and so is `untrusted` (a clean client never
+                // refuses a script-dispatched input). The PROBE RESULT, by contrast, is passed
+                // through unchanged: the loader leaves nothing in the page for a probe to match, so
+                // the client already answers it honestly, and passing it through — rather than
+                // blanking it — is what survives a "canary" probe (one that asks for something a
+                // real client always has). `enabled` additionally blanks the probe result, as a
+                // fallback for when a mod itself leaves a probe-detectable trace.
+                return telemetry.construct(env, { flags: 0, untrusted: 0, probeResult: this.enabled ? 0 : seen.probeResult });
             }
         };
         return api;

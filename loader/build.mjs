@@ -71,23 +71,26 @@ const bodies = MODULES.map((m) => {
 // `core` runs IN THE PAGE. Every module is a UMD that attaches itself to its
 // `root` (normally the global object). We give them a PRIVATE namespace as that
 // root instead, by shadowing self / globalThis / this with a local object, so the
-// page's window is never littered with MooMoo* properties — only the public API
-// (window.MooMoo / window.MooMooLoader) is exposed, by createLoader. The one
-// unavoidable window flag (the re-require guard, shared across separately injected
-// mods) is defined non-enumerable.
+// page's window is NEVER touched with a MooMoo* property. The API reaches mods
+// through an event handshake (createLoader), so there is nothing on window for an
+// integrity probe to enumerate, `in`-test or read.
 const core = `function core(){
   "use strict";
-  // Dedup across separately-injected mods that each @require the loader: once an
-  // install has put window.MooMoo in place, later copies bow out. No marker global —
-  // one less name on window for an integrity probe to find.
-  try { if (window.MooMoo && window.MooMoo.register) return; } catch (e) {}
+  // Dedup across separately-injected mods that each @require the loader: ask (over the
+  // same handshake event) whether a loader is already live here, and bow out if so.
+  // This leaves no marker on window — the probe surface stays empty.
+  try {
+    var present = false;
+    window.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function(){ present = true; } } }));
+    if (present) return;
+  } catch (e) {}
   var __ns = {};
   (function(self, globalThis, module, exports, require){
 ${bodies}
   }).call(__ns, __ns, __ns, undefined, undefined, undefined);
   try {
     __ns.MooMooLoaderCore.createLoader(window, { deps: __ns });
-    console.log("%c[moomoo.js]", "color:#7cc;font-weight:bold", "loader ${VERSION} installed — window.MooMoo is ready for mods");
+    console.log("%c[moomoo.js]", "color:#7cc;font-weight:bold", "loader ${VERSION} installed");
   } catch (e) {
     console.error("%c[moomoo.js]", "color:#e66", "loader failed to install:", e);
   }

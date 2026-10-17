@@ -35,7 +35,7 @@
 (function () {
     "use strict";
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomod",
             name: "MooMod",

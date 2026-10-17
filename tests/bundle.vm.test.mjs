@@ -65,32 +65,41 @@ let pass = 0, fail = 0;
 const ok = (name, fn) => Promise.resolve().then(fn).then(() => { pass++; console.log("  ✓ " + name); },
     (e) => { fail++; console.log("  ✗ " + name + "\n      " + (e && (e.stack || e.message))); });
 
+// The loader leaves NO window global; fetch its API through the event handshake, the
+// same way a mod does.
+let MooMoo = null, MooMooLoader = null;
+win.dispatchEvent({ type: "moomoo.js:api", detail: { resolve: (m, l) => { MooMoo = m; MooMooLoader = l; } } });
+
 console.log("\n== assembled bundle in a sandbox ==");
-await ok("window.MooMoo exists after the bundle runs", () => {
-    assert.ok(win.MooMoo, "window.MooMoo should be defined");
-    assert.ok(win.MooMooLoader, "window.MooMooLoader should be defined");
+await ok("the loader hands out its API via the handshake and leaves nothing on window", () => {
+    assert.ok(MooMoo, "handshake should return MooMoo");
+    assert.ok(MooMooLoader, "handshake should return MooMooLoader");
     const LOADER_VERSION = /const VERSION = "([^"]+)"/.exec(fs.readFileSync(path.join(here, "..", "loader", "src", "loader.js"), "utf8"))[1];
-    assert.strictEqual(win.MooMooLoader.version, LOADER_VERSION);
-    // the loader must not leave a marker global behind; window.MooMoo is the dedup signal
-    assert.ok(!("__MOOMOO_LOADER__" in win), "no __MOOMOO_LOADER__ marker on window");
+    assert.strictEqual(MooMooLoader.version, LOADER_VERSION);
+    // the loader must leave no MooMoo* name on the global at all
+    for (const n of ["MooMoo", "MooMooLoader", "MooMooProtocol", "__MOOMOO_LOADER__"]) {
+        assert.ok(!(n in win), "no window." + n);
+    }
 });
 
 await ok("end-to-end: health event + telemetry scrub + injection", async () => {
     const health = [];
-    win.MooMoo.on("health", (e) => health.push(e));
+    MooMoo.on("health", (e) => health.push(e));
+    // exercise the opt-in fallback canceller (default is honest passthrough)
+    MooMooLoader.antiDetect.setEnabled(true);
 
     new win.WebSocket("wss://localhost/?b=" + build.BUILD_ID);
     clientSocket._deliver(server.handshakeFrame());
     await tick(); await tick(); await tick();
-    if (!win.MooMoo.isReady()) {
-        console.log("    diag:", JSON.stringify(win.MooMooLoader.diag), "listeners:", clientSocket._m.size);
+    if (!MooMoo.isReady()) {
+        console.log("    diag:", JSON.stringify(MooMooLoader.diag), "listeners:", clientSocket._m.size);
     }
-    assert.ok(win.MooMoo.isReady(), "ready after io-init");
+    assert.ok(MooMoo.isReady(), "ready after io-init");
 
     clientSocket._deliver(server.encode("C", [9]));
     clientSocket._deliver(server.encode("O", [9, 55]));
-    assert.strictEqual(win.MooMoo.self.sid, 9);
-    assert.strictEqual(win.MooMoo.self.health, 55);
+    assert.strictEqual(MooMoo.self.sid, 9);
+    assert.strictEqual(MooMoo.self.health, 55);
     assert.deepStrictEqual(health.map((e) => [e.sid, e.value]), [[9, 55]]);
 
     // telemetry scrub (simulate the client sending dirty flags). Seal mode 0 here, so the
@@ -98,14 +107,14 @@ await ok("end-to-end: health event + telemetry scrub + injection", async () => {
     const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0, server.sealMode | 0];
     // The loader keeps its modules off window now; they're reachable for tests under
     // MooMooLoader._deps.
-    const Protocol = win.MooMooLoader._deps.Protocol;
+    const Protocol = MooMooLoader._deps.Protocol;
     const client = new Protocol.ClientSession(payload, mod);
     clientSocket.send(client.encodeC2S("T", [2, 30, 4, 0, 0]));
     const t = accepted.find((d) => d.name === "T");
     assert.deepStrictEqual(t.args.slice(0, 3), [0, 0, 0], "telemetry scrubbed");
 
     // injection
-    win.MooMoo.send.chat("from the bundle");
+    MooMoo.send.chat("from the bundle");
     const chat = accepted.find((d) => d.name === "6");
     assert.ok(chat && !chat.error);
     assert.deepStrictEqual(chat.args, ["from the bundle"]);

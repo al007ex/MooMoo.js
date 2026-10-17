@@ -59,6 +59,14 @@ try {
     await page.evaluateOnNewDocument((s) => { try { localStorage.setItem("moo_local_frvr_session", JSON.stringify(s)); } catch (e) {} }, session);
     await page.evaluateOnNewDocument(LOADER);
     await page.evaluateOnNewDocument(MOD);
+    // The loader has no window.MooMoo (it hands the API out via an event handshake). For the
+    // assertions below, re-expose it on window from the handshake — this is the TEST's own
+    // global, not the loader's (the loader's genuine footprint is checked separately).
+    await page.evaluateOnNewDocument(() => {
+        function grab() { try { window.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { window.MooMoo = m; window.MooMooLoader = l; } } })); } catch (e) {} }
+        grab();
+        if (!window.MooMoo) window.addEventListener("moomoo.js:ready", grab, false);
+    });
 
     await page.goto(srv.base + "/", { waitUntil: "domcontentloaded" });
     await page.waitForSelector("#enterGame", { visible: true, timeout: 20000 });

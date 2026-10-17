@@ -167,41 +167,5 @@
         };
     }
 
-    /*
-     * Hide a set of property NAMES on the global object from reflection, so the
-     * client's own integrity scan can't see them. The named props still work by
-     * direct access (window.MooMoo etc. — mods need that); they just stop showing up
-     * in Object.getOwnPropertyNames / Reflect.ownKeys / getOwnPropertyDescriptor on
-     * the global, which is how the integrity probes enumerate. (They're also defined
-     * non-enumerable, so Object.keys / for..in never listed them.) Each hook is a Proxy
-     * of the native function, so Function.prototype.toString still reports "[native
-     * code]" and the probe that looks for a non-native reflection method finds nothing.
-     */
-    function hideGlobalNames(win, names) {
-        const hidden = new Set(names);
-        const Obj = win.Object, Refl = win.Reflect;
-        const isHidden = (k) => typeof k === "string" && hidden.has(k);
-        const swap = (owner, key, trap) => {
-            try {
-                const real = owner[key];
-                if (typeof real !== "function") return;
-                const proxy = new win.Proxy(real, { apply: trap });
-                Obj.defineProperty(owner, key, { value: proxy, writable: true, configurable: true, enumerable: false });
-            } catch (e) { /* leave the native in place */ }
-        };
-        // enumeration of the global's own keys -> drop the hidden names
-        swap(Obj, "getOwnPropertyNames", (t, thisArg, args) => {
-            const out = Reflect.apply(t, thisArg, args);
-            return args[0] === win ? out.filter((n) => !isHidden(n)) : out;
-        });
-        if (Refl) swap(Refl, "ownKeys", (t, thisArg, args) => {
-            const out = Reflect.apply(t, thisArg, args);
-            return args[0] === win ? out.filter((n) => !isHidden(n)) : out;
-        });
-        // descriptor lookups on the global for a hidden name -> undefined (not present)
-        swap(Obj, "getOwnPropertyDescriptor", (t, thisArg, args) =>
-            (args[0] === win && isHidden(args[1])) ? undefined : Reflect.apply(t, thisArg, args));
-    }
-
-    return { installWebSocketProxy, hideGlobalNames };
+    return { installWebSocketProxy };
 });

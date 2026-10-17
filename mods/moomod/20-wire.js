@@ -63,7 +63,7 @@
             // only half goes out leaves the wrong thing in your hand, so a placement macro is sent
             // whole or not at all (the old site had no such limit, every one went out).
             const wireOf = (action) => {
-                const b = win.MooMooBinding;
+                const b = MooMooLoader && MooMooLoader._deps && MooMooLoader._deps.Binding;   // internal module, via the handshake
                 return b && b.outgoing && b.outgoing[action] ? b.outgoing[action].wire : null;
             };
             function roomFor(selects, clicks) {

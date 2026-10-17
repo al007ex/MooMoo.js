@@ -15,7 +15,7 @@
 (function () {
     "use strict";
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "debug-panel",
             name: "Debug panel (dev)",
@@ -28,9 +28,9 @@
             const doc = win.document;
             if (!doc) return;
             const self = () => MooMoo.self;
-            const net = () => (win.MooMooLoader && win.MooMooLoader.net) || null;
+            const net = () => (MooMooLoader && MooMooLoader.net) || null;
             // The loader's detection-packet canceller (loader 1.3.3+).
-            const antiDetect = () => (win.MooMooLoader && win.MooMooLoader.antiDetect) || null;
+            const antiDetect = () => (MooMooLoader && MooMooLoader.antiDetect) || null;
 
             // ---- FNV salted hash — identical to the server/loader, so probe checks match ----
             const FNV_OFFSET = 2166136261, FNV_PRIME = 16777619, FNV_FINAL_MULT = 739982445;
@@ -228,9 +228,16 @@
         });
     }
 
+    // Fetch the loader's API through its event handshake — there is no window.MooMoo.
     const w = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-    if (w.MooMoo) { boot(w.MooMoo); return; }
+    function connect() {
+        let mm = null, ld = null;
+        try { w.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: (m, l) => { mm = m; ld = l; } } })); } catch (e) {}
+        if (mm) { boot(mm, ld); return true; }
+        return false;
+    }
+    if (connect()) return;
     let tries = 0;
-    const iv = setInterval(() => { if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); } else if (++tries > 200) clearInterval(iv); }, 50);
-    if (w.addEventListener) w.addEventListener("moomoo:ready", () => { if (w.MooMoo) { clearInterval(iv); boot(w.MooMoo); } });
+    const iv = setInterval(() => { if (connect() || ++tries > 200) clearInterval(iv); }, 50);
+    if (w.addEventListener) w.addEventListener("moomoo.js:ready", () => { if (connect()) clearInterval(iv); });
 })();

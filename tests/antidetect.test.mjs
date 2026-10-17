@@ -51,6 +51,7 @@ ok("construct(ctx, det) can carry detection (the disabled path)", () => {
 console.log("\n== antiDetect cancels the client T and sends an empty one ==");
 ok("enabled: output is empty no matter how dirty the client's T is", () => {
     const ad = AntiDetect.create({ telemetry: tel });
+    ad.setEnabled(true);   // the fallback canceller is opt-in now (default is honest passthrough)
     const out = ad.handle(DIRTY, CTX);
     assert.deepStrictEqual(out, [0, 0, 0, 123456, 777, 42, 0xABCDEF]);
     assert.strictEqual(ad.count, 1);
@@ -68,11 +69,12 @@ ok("onDetection reports what was cancelled", () => {
     ad.handle(DIRTY, CTX);  // listener removed, but the packet is still handled
     assert.strictEqual(ad.count, 2);
 });
-ok("disabled: the client's real detection is let through (own-server testing), seq/ledger still ours", () => {
-    const ad = AntiDetect.create({ telemetry: tel });
-    ad.setEnabled(false);
+ok("default: flags + untrusted masked (the irreducible socket hook), probe result passed through", () => {
+    const ad = AntiDetect.create({ telemetry: tel });   // default: enabled=false
     const out = ad.handle(DIRTY, CTX);
-    assert.deepStrictEqual(out, [3, 12, 5, 123456, 777, 42, 0xABCDEF]);
+    // flags/untrusted -> 0 (a clean client reports 0 and the socket hook forces them), but the
+    // probe bit is passed through unchanged so a canary probe still reads true.
+    assert.deepStrictEqual(out, [0, 0, 5, 123456, 777, 42, 0xABCDEF]);
     assert.strictEqual(ad.last.neutralised, false);
 });
 ok("a clean client T is counted but not flagged as 'caught'", () => {

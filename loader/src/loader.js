@@ -47,6 +47,13 @@
 
     const VERSION = "1.3.3";
 
+    // The event a mod dispatches to fetch the API ({ detail: { resolve(MooMoo, MooMooLoader) } }),
+    // and the signal the loader fires once that handshake is live so a mod that loaded first can
+    // retry. Neither the event name nor the listener is visible to any integrity-probe kind, so
+    // the API leaves no window footprint. (See loader/build.mjs for the matching dedup.)
+    const RENDEZVOUS = "moomoo.js:api";
+    const READY = "moomoo.js:ready";
+
     // Resolve dependencies either from Node require (tests), an explicit namespace
     // passed by the bundle (opts.deps — the private object every module attaches to,
     // so nothing lands on window), or, as a fallback, page globals.
@@ -599,20 +606,19 @@
             active: () => active && { ready: active.ready, failed: active.failed, buildId: diag.buildId }
         };
 
-        // The two globals mods actually use. Defined non-enumerable so they don't show
-        // up in Object.keys(window) / for..in sweeps (the loader's other modules never
-        // reach window at all — see loader/build.mjs). The internal modules stay reachable
-        // for diagnostics/tests under MooMooLoader._deps, not as their own window globals.
+        // NO window global. The loader hands its API to mods through an event handshake,
+        // so there is no MooMoo* property for the server's integrity scan to find — not by
+        // enumeration (getOwnPropertyNames / Object.keys / Reflect.ownKeys), not by the `in`
+        // operator, not by direct access. A mod dispatches the RENDEZVOUS event with a
+        // resolve callback; we hand it (MooMoo, MooMooLoader) synchronously. The event name
+        // and the listener are invisible to every integrity-probe kind. (Internal modules stay
+        // reachable for diagnostics/tests under MooMooLoader._deps.)
         try { Object.defineProperty(MooMooLoader, "_deps", { value: D, enumerable: false, configurable: true }); } catch (e) { /* ignore */ }
         try {
-            Object.defineProperty(win, "MooMoo", { value: MooMoo, writable: true, configurable: true, enumerable: false });
-            Object.defineProperty(win, "MooMooLoader", { value: MooMooLoader, writable: true, configurable: true, enumerable: false });
-        } catch (e) {
-            win.MooMoo = MooMoo; win.MooMooLoader = MooMooLoader;
-        }
-        // Hide the two names from reflection too, so the client's integrity scan can't
-        // enumerate them off the global (they stay reachable by direct access for mods).
-        try { if (D.Socket.hideGlobalNames) D.Socket.hideGlobalNames(win, ["MooMoo", "MooMooLoader"]); } catch (e) { errorSink(e); }
+            win.addEventListener(RENDEZVOUS, function (e) {
+                try { const d = e && e.detail; if (d && typeof d.resolve === "function") d.resolve(MooMoo, MooMooLoader); } catch (_) {}
+            }, false);
+        } catch (e) { errorSink(e); }
 
         MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
         MooMooLoader.input = input;
@@ -631,6 +637,9 @@
         // Warm up the protocol module + the bundle seal so the first connection is instant.
         try { getProtocolModule().catch(() => {}); } catch (e) { /* ignore */ }
         try { getSeal().catch(() => {}); } catch (e) { /* ignore */ }
+
+        // Tell any mod that loaded before us that the handshake is open now.
+        try { win.dispatchEvent(new win.Event(READY)); } catch (e) { /* non-DOM env */ }
 
         return { MooMoo, MooMooLoader };
     }

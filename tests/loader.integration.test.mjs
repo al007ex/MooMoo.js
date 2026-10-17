@@ -196,7 +196,10 @@ await ok("dl.call(socket, frame) + an injected frame share ONE contiguous sequen
 console.log("\n== anti-cheat bypass: telemetry scrub ==");
 await ok("the client's dirty T packet reaches the server with clean flags", async () => {
     const env = makeFakeEnv(build);
-    LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    const { MooMooLoader } = LoaderCore.createLoader(env.win, { resolveProtocol: () => Promise.resolve(mod) });
+    // The loader is genuinely clean by default (honest passthrough); here we exercise the
+    // opt-in fallback canceller, which blanks a dirty T outright.
+    MooMooLoader.antiDetect.setEnabled(true);
     new env.win.WebSocket("wss://localhost/");
     env.emitHandshake();
     await tick(); await tick();

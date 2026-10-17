@@ -17,7 +17,7 @@
             // the render hooks and shame timing) ----
             {
                 const w0 = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
-                const lv = (w0.MooMooLoader && w0.MooMooLoader.version) || "0";
+                const lv = (MooMooLoader && MooMooLoader.version) || "0";   // from the handshake, not a window global
                 const ok = ctx.store && ctx.combat && typeof ctx.combat.onTickStart === "function" && typeof ctx.onOutgoing === "function" &&
                     ctx.render && typeof ctx.combat.shameWait === "function";
                 if (!ok) {

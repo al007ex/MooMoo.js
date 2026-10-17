@@ -133,7 +133,7 @@
         }
     };
 
-    function boot(MooMoo) {
+    function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomooplus",
             name: "MooMooPlus",
