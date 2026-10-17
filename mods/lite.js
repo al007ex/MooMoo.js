@@ -65,6 +65,9 @@
                     left: { on: false, hat: 7, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 },
                     right: { on: false, hat: 40, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 }
                 },
+                // on-screen arrows ringing your player, pointing at others: enemies red,
+                // teammates green, animals blue, all at a fixed distance from you.
+                arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -82,6 +85,7 @@
                         if (got.clicks.left) Object.assign(prefs.clicks.left, got.clicks.left);
                         if (got.clicks.right) Object.assign(prefs.clicks.right, got.clicks.right);
                     }
+                    if (got.arrows && typeof got.arrows === "object") Object.assign(prefs.arrows, got.arrows);
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -362,6 +366,64 @@
                 ctx.onCleanup(() => { win.removeEventListener("mousedown", onMouseDown, true); win.removeEventListener("mouseup", onMouseUp, true); win.removeEventListener("blur", releaseAll); });
             }
 
+            // ---- player / animal arrows (a fixed-distance ring that points at others) ----
+            // Drawn on the loader's transparent overlay (ctx.render.layer), in screen space
+            // so every arrow sits the same distance from you. Enemies red, teammates green,
+            // animals blue. Additive only — nothing the stock client draws is touched.
+            const ARROW = { enemy: "#ff4747", teammate: "#49d170", animal: "#3ea6ff" };
+            function arrowAt(g, cx, cy, ang, color, size) {
+                const x = cx + prefs.arrows.radius * Math.cos(ang), y = cy + prefs.arrows.radius * Math.sin(ang);
+                g.save();
+                g.translate(x, y);
+                g.rotate(ang);                                 // point outward, toward the entity
+                g.beginPath();
+                g.moveTo(size, 0);                             // tip
+                g.lineTo(-size * 0.72, size * 0.6);
+                g.lineTo(-size * 0.4, 0);                      // notch
+                g.lineTo(-size * 0.72, -size * 0.6);
+                g.closePath();
+                g.globalAlpha = 0.92; g.fillStyle = color; g.fill();
+                g.globalAlpha = 1; g.lineJoin = "round"; g.lineWidth = 1.5; g.strokeStyle = "rgba(0,0,0,.45)"; g.stroke();
+                g.restore();
+            }
+            function drawArrows(g, view) {
+                const a = prefs.arrows;
+                if (!a.on || !ctx.render) return;
+                const me = ctx.render.me;
+                if (!me || !me.visible) return;
+                const myTeam = (MooMoo.self && MooMoo.self.team != null) ? MooMoo.self.team : null;
+                const c = ctx.render.worldToScreen(me.x, me.y);
+                const W = win.innerWidth || 1920, H = win.innerHeight || 1080;
+                const onScreen = (p) => { const s = ctx.render.worldToScreen(p.x, p.y); return s.x >= 0 && s.x <= W && s.y >= 0 && s.y <= H; };
+                g.save();
+                g.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);    // CSS px -> device px (fixed screen distance)
+                if (a.players) {
+                    for (const [sid, p] of ctx.render.players) {
+                        if (!p.visible || p === me) continue;
+                        if (a.offscreen && onScreen(p)) continue;
+                        const gp = MooMoo.player && MooMoo.player(sid);
+                        const team = gp && gp.team != null ? gp.team : null;
+                        const col = (team != null && team === myTeam) ? ARROW.teammate : ARROW.enemy;
+                        arrowAt(g, c.x, c.y, Math.atan2(p.y - me.y, p.x - me.x), col, a.size);
+                    }
+                }
+                if (a.animals) {
+                    for (const an of ctx.render.animals.values()) {
+                        if (!an.visible) continue;
+                        if (a.offscreen && onScreen(an)) continue;
+                        arrowAt(g, c.x, c.y, Math.atan2(an.y - me.y, an.x - me.x), ARROW.animal, a.size);
+                    }
+                }
+                g.restore();
+            }
+            let arrowsLayer = null;
+            function applyArrows() {
+                if (!ctx.render || !ctx.render.layer) return;
+                if (prefs.arrows.on && !arrowsLayer) arrowsLayer = ctx.render.layer("mml-arrows", drawArrows, { z: 60 });
+                else if (!prefs.arrows.on && arrowsLayer) { try { arrowsLayer(); } catch (e) {} arrowsLayer = null; }
+            }
+            applyArrows();
+
             // =================================================================
             // MENU — a dark, moomoo-styled client panel (sidebar + module cards).
             // =================================================================
@@ -569,7 +631,8 @@
                 combat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7.5"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
                 hat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h18"/><path d="M5.5 17c0-5.2 2.6-9 6.5-9s6.5 3.8 6.5 9"/></svg>',
                 gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
-                mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><line x1="12" y1="6.5" x2="12" y2="11"/></svg>'
+                mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><line x1="12" y1="6.5" x2="12" y2="11"/></svg>',
+                eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
             };
             const MODULES = {};
             for (const s of SPAMMERS) {
@@ -618,6 +681,16 @@
             }
             MODULES.clickLeft = () => clickCard("Left click", prefs.clicks.left);
             MODULES.clickRight = () => clickCard("Right click", prefs.clicks.right);
+            MODULES.arrows = () => {
+                const a = prefs.arrows;
+                const m = modCard("Player arrows", { get: () => a.on, set: (v) => { a.on = v; applyArrows(); } });
+                m.body.appendChild(row("Players", toggleSwitch(() => a.players, (v) => { a.players = v; })));
+                m.body.appendChild(row("Animals", toggleSwitch(() => a.animals, (v) => { a.animals = v; })));
+                m.body.appendChild(row("Off-screen only", toggleSwitch(() => a.offscreen, (v) => { a.offscreen = v; })));
+                m.body.appendChild(sliderRow("Distance", 60, 220, 5, () => a.radius, (x) => { a.radius = x; }, (n) => n + "px"));
+                m.body.appendChild(sliderRow("Size", 8, 28, 1, () => a.size, (x) => { a.size = x; }, (n) => n + "px"));
+                return m.card;
+            };
             MODULES.heal = () => {
                 const h = prefs.heal;
                 const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
@@ -660,6 +733,7 @@
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
                 { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
                 { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
+                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
                 { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
             ];

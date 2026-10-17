@@ -40,6 +40,8 @@ const LITE_CFG = {
         right: { on: true, hat: 28, acc: 12, reload: false, reloadHat: 51, reloadAcc: 0 }
     },
     heal: { on: true, legit: true, healAt: 75, showInHand: 0, jitter: 0, maxPerSec: 10, shameSafe: true },
+    // arrows on, "off-screen only" off so any visible enemy/animal draws (deterministic to check)
+    arrows: { on: true, players: true, animals: true, offscreen: false, radius: 120, size: 18 },
     hats: [{ key: "k", id: 51 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
 };
 
@@ -161,15 +163,38 @@ try {
     // 8. menu opens on O, has the new Clicks tab
     await page.keyboard.press("o"); await tick(300);
     const menu = await page.evaluate(() => ({ open: !!document.querySelector(".mml-gui.open"), tabs: [...document.querySelectorAll(".mml-panel .navitem")].map(n => n.textContent.trim()) }));
-    check("menu opens with a Clicks tab", menu.open && menu.tabs.some(t => /Clicks/i.test(t)), JSON.stringify(menu.tabs));
+    check("menu opens with Clicks + Visual tabs", menu.open && menu.tabs.some(t => /Clicks/i.test(t)) && menu.tabs.some(t => /Visual/i.test(t)), JSON.stringify(menu.tabs));
     await page.keyboard.press("o"); await tick(200);
 
     // 9. AUTO HEAL — an admin bot walks up and hits; auto-heal should keep the player recovering, no shame
     const WS = loadWs();
     const mod = await loadProtocolModule(srv);
     bot = await createBot({ WS, srv, mod, name: "attacker", url: gameUrl(srv, await joinTicket(srv, await login(srv, ATTACKER.email, ATTACKER.password), gameKey), mod.BUILD_ID, gameKey) });
-    bot.admin("give", 1, 1000, vsid); bot.admin("goto", vsid); await tick(500);
+    bot.admin("give", 1, 1000, vsid); bot.admin("goto", vsid); await tick(800);
     await waitFor(() => bot.client.players.has(vsid), 5000, "attacker to see player").catch(() => {});
+
+    // 8b. ARROWS — with an enemy (the attacker) and animals in view, the overlay should carry
+    //     a red enemy arrow and a blue animal arrow at the fixed ring distance.
+    await tick(600);
+    const arrowPx = await page.evaluate(() => {
+        const r = window.MooMooLoader.render, cv = r && r.layerCanvas;
+        if (!cv || !cv.width) return { err: "no overlay canvas" };
+        const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+        let any = 0, red = 0, green = 0, blue = 0;
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 40) continue; any++;
+            const rr = d[i], gg = d[i + 1], bb = d[i + 2];
+            if (rr > 150 && gg < 120 && bb < 120) red++;
+            else if (gg > 140 && rr < 130 && bb < 150) green++;
+            else if (bb > 150 && rr < 130 && gg < 190) blue++;
+        }
+        return { any, red, green, blue, players: r.players.size, animals: r.animals.size };
+    });
+    check("arrows: overlay carries arrows (ring drawn)", arrowPx.any > 0, JSON.stringify(arrowPx));
+    check("arrows: enemy arrow is red", arrowPx.red > 0, JSON.stringify(arrowPx));
+    check("arrows: animal arrow is blue (when animals are in range)", arrowPx.animals === 0 || arrowPx.blue > 0, JSON.stringify(arrowPx));
+    if (process.env.LITE_SHOT) { try { await page.screenshot({ path: process.env.LITE_SHOT }); } catch (e) {} }
+
     const hpBefore = await page.evaluate(() => window.MooMoo.self.health);
     for (let i = 0; i < 5 && !wsClosed; i++) { bot.admin("goto", vsid); await tick(60); const d = bot.aimAt(vsid); if (d != null) { bot.client.send("F", [1, d]); await tick(90); bot.client.send("F", [0, d]); } await tick(900); }
     await tick(1500);
