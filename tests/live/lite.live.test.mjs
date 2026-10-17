@@ -40,6 +40,7 @@ const LITE_CFG = {
         right: { on: true, hat: 28, acc: 12, reload: false, reloadHat: 51, reloadAcc: 0 }
     },
     heal: { on: true, legit: true, healAt: 75, showInHand: 0, jitter: 0, maxPerSec: 10, shameSafe: true },
+    autogg: { on: true, message: "gg ez" },
     // arrows on, "off-screen only" off so any visible enemy/animal draws (deterministic to check)
     arrows: { on: true, players: true, animals: true, offscreen: false, radius: 120, size: 18 },
     // minimap on with every marker + biomes, so the overlay is deterministic to verify
@@ -172,7 +173,25 @@ try {
     await page.keyboard.press("o"); await tick(300);
     const menu = await page.evaluate(() => ({ open: !!document.querySelector(".mml-gui.open"), tabs: [...document.querySelectorAll(".mml-panel .navitem")].map(n => n.textContent.trim()) }));
     check("menu opens with Clicks + Visual tabs", menu.open && menu.tabs.some(t => /Clicks/i.test(t)) && menu.tabs.some(t => /Visual/i.test(t)), JSON.stringify(menu.tabs));
+    // Auto GG lives in the Combat tab with a text input for the message
+    const ggCard = await page.evaluate(() => {
+        const combat = [...document.querySelectorAll(".mml-gui .navitem")].find(n => /combat/i.test(n.textContent));
+        if (combat) combat.click();
+        const card = [...document.querySelectorAll(".mml-gui .mod")].find(c => /Auto GG/i.test((c.querySelector(".modtitle") || {}).textContent || ""));
+        return { present: !!card, input: card ? !!card.querySelector("input[type=text]") : false };
+    });
+    check("Combat tab has an Auto GG card with a message input", ggCard.present && ggCard.input, JSON.stringify(ggCard));
     await page.keyboard.press("o"); await tick(200);
+
+    // 8a. AUTO GG — a rising kill count (server sends the killer "N kills <n>") fires one
+    //     custom chat message ("6"), once, respecting the anti-spam cooldown.
+    const ggFrom = await page.evaluate(() => window.__raw.length);
+    await page.evaluate(() => { window.MooMoo._dispatch("playerValue", { key: "kills", value: 1, updateView: true }); });
+    await tick(150);
+    await page.evaluate(() => { window.MooMoo._dispatch("playerValue", { key: "kills", value: 2, updateView: true }); });  // within cooldown -> no second message
+    await tick(250);
+    const ggMsgs = await page.evaluate((from) => window.__raw.slice(from).filter(x => x.name === "6").map(x => x.args[0]), ggFrom);
+    check("auto GG sends the custom message once per kill (cooldown)", ggMsgs.length === 1 && ggMsgs[0] === "gg ez", JSON.stringify(ggMsgs));
 
     // 9. AUTO HEAL — an admin bot walks up and hits; auto-heal should keep the player recovering, no shame
     const WS = loadWs();

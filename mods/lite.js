@@ -66,6 +66,8 @@
                     left: { on: false, hat: 7, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 },
                     right: { on: false, hat: 40, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 }
                 },
+                // auto GG: send a custom chat message each time you get a kill
+                autogg: { on: false, message: "gg" },
                 // on-screen arrows ringing your player, pointing at others: enemies red,
                 // teammates green, animals blue, all at a fixed distance from you.
                 arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
@@ -92,6 +94,7 @@
                     if (got.heal && typeof got.heal === "object") Object.assign(prefs.heal, got.heal);
                     if (got.humanize && typeof got.humanize === "object") Object.assign(prefs.humanize, got.humanize);
                     if (got.insta && typeof got.insta === "object") Object.assign(prefs.insta, got.insta);
+                    if (got.autogg && typeof got.autogg === "object") Object.assign(prefs.autogg, got.autogg);
                     if (got.clicks && typeof got.clicks === "object") {
                         if (got.clicks.left) Object.assign(prefs.clicks.left, got.clicks.left);
                         if (got.clicks.right) Object.assign(prefs.clicks.right, got.clicks.right);
@@ -204,6 +207,21 @@
             ctx.on("health", (p) => { if (p.sid === self().sid) tryHeal(); });
             ctx.every(100, tryHeal);
             ctx.onCleanup(() => { if (healTimer) win.clearTimeout(healTimer); });
+
+            // ---- auto GG: send a custom chat message when you get a kill. The server tells the
+            // killer "N kills <count>" (only the killer gets it), so a rising count = a fresh kill.
+            let lastKills = 0, lastGG = 0;
+            ctx.on("playerValue", (p) => {
+                if (!p || p.key !== "kills") return;
+                const v = p.value | 0, prev = lastKills; lastKills = v;
+                if (v <= prev) return;                      // reset / resync, not a new kill
+                if (!prefs.autogg.on) return;
+                const msg = (prefs.autogg.message || "").trim(); if (!msg) return;
+                const now = Date.now(); if (now - lastGG < 900) return;   // don't spam on multi-kills
+                lastGG = now;
+                try { MooMoo.send.chat({ message: msg.slice(0, 48) }); } catch (e) {}
+            });
+            ctx.on("died", () => { lastKills = 0; });        // kills reset each life
 
             // ---- hat hotkeys ----
             function hatKey(h) {
@@ -985,6 +1003,12 @@
                 m.body.appendChild(sliderRow("Max/s", 1, 12, 1, () => h.maxPerSec, (x) => { h.maxPerSec = x; }, null));
                 return m.card;
             };
+            MODULES.autogg = () => {
+                const g = prefs.autogg;
+                const m = modCard("Auto GG", { get: () => g.on, set: (v) => { g.on = v; } });
+                m.body.appendChild(row("Message", textInput(() => g.message, (v) => { g.message = v || "gg"; })));
+                return m.card;
+            };
             MODULES.hats = () => {
                 const m = modCard("Hat keys", null, true);
                 const grid = mk("div", "hatrow");
@@ -1014,7 +1038,7 @@
             };
             const CATEGORIES = [
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
-                { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
+                { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal", "autogg"] },
                 { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
                 { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads", "counter", "minimap"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
