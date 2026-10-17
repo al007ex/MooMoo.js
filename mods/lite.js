@@ -69,6 +69,8 @@
                 // on-screen arrows ringing your player, pointing at others: enemies red,
                 // teammates green, animals blue, all at a fixed distance from you.
                 arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
+                // two reload bars under every player's health bar (primary + secondary cooldown)
+                reloads: { on: true, self: true },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -90,6 +92,7 @@
                         if (got.clicks.right) Object.assign(prefs.clicks.right, got.clicks.right);
                     }
                     if (got.arrows && typeof got.arrows === "object") Object.assign(prefs.arrows, got.arrows);
+                    if (got.reloads && typeof got.reloads === "object") Object.assign(prefs.reloads, got.reloads);
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -428,6 +431,54 @@
             }
             applyArrows();
 
+            // ---- reload bars: two bars under each player's health bar (primary +
+            // secondary weapon cooldown). Drawn on the loader's overlay in the SAME
+            // world-aligned space the game draws the health bar, with the game's exact
+            // geometry, so they sit right under the health bar and move with the player.
+            // The fill is a continuous function of time since the last swing (the server
+            // broadcasts every player's swing) and that weapon's known reload speed, so
+            // it is smooth at any frame rate.
+            const RL = { bg: "#3d3f42", primary: "#58c0ff", secondary: "#ffc24a" };
+            const HW = 50, PAD = 4.5, NAMEY = 34, HBH = 17, BARH = 13, GAP = 3;   // game health-bar geometry (world units)
+            const swings = new Map();   // sid -> { pAt, pDur, sAt, sDur }
+            ctx.on("gatherAnimation", (pk) => {
+                const a = pk && pk.args; if (!a) return;
+                const sid = a[0], wi = a[2];
+                const w = (wi != null) && data.weapon(wi);
+                if (!w || !w.speed) return;
+                const q = ctx.combat && ctx.combat.Hg && ctx.combat.Hg(sid);
+                const dur = w.speed * ((q && q.skinIndex === 20) ? 0.78 : 1);   // samurai gear reloads faster
+                let s = swings.get(sid); if (!s) { s = {}; swings.set(sid, s); }
+                if (wi < 9) { s.pAt = Date.now(); s.pDur = dur; } else { s.sAt = Date.now(); s.sDur = dur; }
+            });
+            ctx.every(5000, () => { for (const sid of swings.keys()) if (!ctx.render || !ctx.render.players.has(sid)) swings.delete(sid); });
+            const reloadOf = (s, at, dur, now) => (s && s[at]) ? Math.min(1, (now - s[at]) / (s[dur] || 1)) : 1;
+            function barRect(g, x, y, w, h, r) { if (w <= 0) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
+            function drawBar(g, cx, y, prog, color) {
+                g.fillStyle = RL.bg; barRect(g, cx - (HW + PAD), y, HW * 2 + PAD * 2, BARH, 6);
+                g.fillStyle = color; barRect(g, cx - HW, y + 2.5, HW * 2 * Math.max(0, Math.min(1, prog)), BARH - 5, 4);
+            }
+            function drawReloads(g, view) {
+                if (!prefs.reloads.on || !ctx.render) return;
+                const now = view.now || Date.now(), left = view.left, top = view.top, me = MooMoo.self;
+                g.globalAlpha = 1; g.lineJoin = "round";
+                for (const [sid, p] of ctx.render.players) {
+                    if (!p.visible) continue;
+                    if (!prefs.reloads.self && me && sid === me.sid) continue;
+                    const s = swings.get(sid);
+                    const x = p.x - left, y0 = (p.y - top) + (p.scale || 35) + NAMEY + HBH + GAP;
+                    drawBar(g, x, y0, reloadOf(s, "pAt", "pDur", now), RL.primary);
+                    drawBar(g, x, y0 + BARH + GAP, reloadOf(s, "sAt", "sDur", now), RL.secondary);
+                }
+            }
+            let reloadsLayer = null;
+            function applyReloads() {
+                if (!ctx.render || !ctx.render.layer) return;
+                if (prefs.reloads.on && !reloadsLayer) reloadsLayer = ctx.render.layer("mml-reloads", drawReloads, { z: 55 });
+                else if (!prefs.reloads.on && reloadsLayer) { try { reloadsLayer(); } catch (e) {} reloadsLayer = null; }
+            }
+            applyReloads();
+
             // =================================================================
             // MENU — a dark, moomoo-styled client panel (sidebar + module cards).
             // =================================================================
@@ -695,6 +746,12 @@
                 m.body.appendChild(sliderRow("Size", 8, 28, 1, () => a.size, (x) => { a.size = x; }, (n) => n + "px"));
                 return m.card;
             };
+            MODULES.reloads = () => {
+                const r = prefs.reloads;
+                const m = modCard("Reload bars", { get: () => r.on, set: (v) => { r.on = v; applyReloads(); } });
+                m.body.appendChild(row("Show on self", toggleSwitch(() => r.self, (v) => { r.self = v; })));
+                return m.card;
+            };
             MODULES.heal = () => {
                 const h = prefs.heal;
                 const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
@@ -737,7 +794,7 @@
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
                 { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
                 { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
-                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows"] },
+                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
                 { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
             ];

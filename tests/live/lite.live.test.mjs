@@ -180,19 +180,22 @@ try {
         const r = window.MooMooLoader.render, cv = r && r.layerCanvas;
         if (!cv || !cv.width) return { err: "no overlay canvas" };
         const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
-        let any = 0, red = 0, green = 0, blue = 0;
+        let any = 0, red = 0, green = 0, blue = 0, relYellow = 0;
         for (let i = 0; i < d.length; i += 4) {
             if (d[i + 3] < 40) continue; any++;
             const rr = d[i], gg = d[i + 1], bb = d[i + 2];
-            if (rr > 150 && gg < 120 && bb < 120) red++;
+            if (rr > 230 && gg > 160 && gg < 220 && bb < 110) relYellow++;   // secondary reload bar (#ffc24a)
+            else if (rr > 150 && gg < 120 && bb < 120) red++;
             else if (gg > 140 && rr < 130 && bb < 150) green++;
             else if (bb > 150 && rr < 130 && gg < 190) blue++;
         }
-        return { any, red, green, blue, players: r.players.size, animals: r.animals.size };
+        return { any, red, green, blue, relYellow, players: r.players.size, animals: r.animals.size };
     });
     check("arrows: overlay carries arrows (ring drawn)", arrowPx.any > 0, JSON.stringify(arrowPx));
     check("arrows: enemy arrow is red", arrowPx.red > 0, JSON.stringify(arrowPx));
     check("arrows: animal arrow is blue (when animals are in range)", arrowPx.animals === 0 || arrowPx.blue > 0, JSON.stringify(arrowPx));
+    // reload bars render under each visible player (the secondary bar's amber is unique to them)
+    check("reload bars drawn under players", arrowPx.relYellow > 0, JSON.stringify(arrowPx));
     if (process.env.LITE_SHOT) { try { await page.screenshot({ path: process.env.LITE_SHOT }); } catch (e) {} }
 
     const hpBefore = await page.evaluate(() => window.MooMoo.self.health);
