@@ -59,6 +59,11 @@ try {
     // exactly what Tampermonkey runs: the @requires in order, then the mod
     await page.evaluateOnNewDocument(LOADER);
     await page.evaluateOnNewDocument(() => {
+        function grab() { try { window.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { window.MooMoo = m; window.MooMooLoader = l; } } })); } catch (e) {} }
+        grab();
+        if (!window.MooMoo) window.addEventListener("moomoo.js:ready", grab, false);
+    });
+    await page.evaluateOnNewDocument(() => {
         // record every frame that leaves the socket (after the loader), for the checks
         window.__out = [];
         const tap = () => { if (window.MooMooLoader) window.MooMooLoader.onRaw((dir, name, args) => { if (dir === "out") window.__out.push([performance.now(), name, args]); }); else setTimeout(tap, 5); };

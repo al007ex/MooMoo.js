@@ -58,6 +58,11 @@ try {
         } catch (e) {}
     }, session);
     await page.evaluateOnNewDocument(LOADER);
+    await page.evaluateOnNewDocument(() => {
+        function grab() { try { window.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { window.MooMoo = m; window.MooMooLoader = l; } } })); } catch (e) {} }
+        grab();
+        if (!window.MooMoo) window.addEventListener("moomoo.js:ready", grab, false);
+    });
     await page.evaluateOnNewDocument(MOD);
     await page.goto(srv.base + "/", { waitUntil: "domcontentloaded" });
     await page.waitForSelector("#enterGame", { visible: true, timeout: 20000 });

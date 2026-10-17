@@ -38,6 +38,11 @@ try {
     const session = await loginFull(srv, PLAYER.email, PLAYER.password);
     await page.evaluateOnNewDocument((s) => { try { localStorage.setItem("moo_local_frvr_session", JSON.stringify(s)); } catch (e) {} }, session);
     await page.evaluateOnNewDocument(LOADER);
+    await page.evaluateOnNewDocument(() => {
+        function grab() { try { window.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: function (m, l) { window.MooMoo = m; window.MooMooLoader = l; } } })); } catch (e) {} }
+        grab();
+        if (!window.MooMoo) window.addEventListener("moomoo.js:ready", grab, false);
+    });
     await page.evaluateOnNewDocument(MOD);
 
     await page.goto(srv.base + "/", { waitUntil: "domcontentloaded" });
