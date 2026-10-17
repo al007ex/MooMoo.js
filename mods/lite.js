@@ -506,7 +506,7 @@
                 if (!b) {
                     try { if (win.getComputedStyle(slot).position === "static") slot.style.position = "relative"; } catch (e) { slot.style.position = "relative"; }
                     b = doc.createElement("div"); b.className = "mml-cnt";
-                    b.style.cssText = "position:absolute;top:0;right:4px;color:#fff;font-family:'Hammersmith One',sans-serif;font-size:15px;line-height:1.1;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;z-index:2";
+                    b.style.cssText = "position:absolute;top:0;right:4px;color:#fff;font-family:'Hammersmith One',sans-serif;font-size:15px;line-height:1.1;-webkit-text-stroke:2.5px #000;paint-order:stroke fill;text-shadow:0 1px 1px rgba(0,0,0,.45);pointer-events:none;z-index:2";
                     slot.appendChild(b);
                 }
                 return b;
