@@ -24,39 +24,61 @@ static host, GitHub Pages, whatever). that url is what your mods will `@require`
 ## 2. install the loader
 
 in Tampermonkey (or Violentmonkey), make a new script and paste in the contents of
-`moomoo-loader.user.js`, or just add it by url. it runs at `document-start`, hooks
-the socket, and sets up `window.MooMoo`. open the game and you should see a **Mods**
-tab in the pause menu and this in the console:
+`moomoo-loader.user.js`, or just add it by url. it runs at `document-start` and hooks
+the socket. it deliberately puts **nothing** on `window` — so the server's anti-cheat
+has no `MooMoo*` global to find — and instead hands its API to mods through a small
+event handshake (below). open the game and you should see a **Mods** tab in the pause
+menu and this in the console:
 
 ```
-[moomoo.js] loader 1.3.0 installed — window.MooMoo is ready for mods
+[moomoo.js] loader 1.3.3 installed
 ```
 
 ## 3. write a mod
 
-a mod is a Tampermonkey userscript that `@require`s the loader and talks to
-`window.MooMoo`. here's the whole thing:
+a mod is a Tampermonkey userscript that `@require`s the loader and asks it for the
+API with a one-line handshake (there is no `window.MooMoo`). here's the whole thing:
 
 ```js
 // ==UserScript==
 // @name         Health Logger
 // @match        https://play.my-private-server.example/*
 // @run-at       document-start
+// @inject-into  page
 // @require      https://your-host/moomoo-loader.user.js
 // @grant        none
 // ==/UserScript==
 
-MooMoo.register({
-    id: "health-logger",
-    name: "Health Logger",
-    settings: [{ key: "onlyMine", label: "Only my health", default: true }]
-}, (ctx) => {
-    ctx.on("setup", ({ sid }) => console.log("joined as " + sid));
-    ctx.on("health", ({ sid, value }) => {
-        if (ctx.settings.onlyMine && sid !== MooMoo.self.sid) return;
-        console.log("health " + sid + " -> " + value);
+// Ask the loader for its API. `MooMoo` (and `MooMooLoader`) are yours inside here.
+withMooMoo((MooMoo) => {
+    MooMoo.register({
+        id: "health-logger",
+        name: "Health Logger",
+        settings: [{ key: "onlyMine", label: "Only my health", default: true }]
+    }, (ctx) => {
+        ctx.on("setup", ({ sid }) => console.log("joined as " + sid));
+        ctx.on("health", ({ sid, value }) => {
+            if (ctx.settings.onlyMine && sid !== MooMoo.self.sid) return;
+            console.log("health " + sid + " -> " + value);
+        });
     });
 });
+
+// The handshake — paste this helper into any mod once. The loader answers the event
+// synchronously, so `run` fires as soon as both are loaded (it @requires the loader,
+// so that's immediately).
+function withMooMoo(run) {
+    const w = (typeof unsafeWindow !== "undefined") ? unsafeWindow : window;
+    function connect() {
+        let mm = null, ld = null;
+        try { w.dispatchEvent(new CustomEvent("moomoo.js:api", { detail: { resolve: (m, l) => { mm = m; ld = l; } } })); } catch (e) {}
+        if (mm) { run(mm, ld); return true; }
+        return false;
+    }
+    if (connect()) return;
+    const iv = setInterval(() => { if (connect()) clearInterval(iv); }, 50);
+    w.addEventListener("moomoo.js:ready", () => { if (connect()) clearInterval(iv); });
+}
 ```
 
 `register` gives you a **Mods** tab entry with an on/off toggle and your settings,

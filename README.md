@@ -22,7 +22,7 @@ that's a complete, working mod.
 
 | | what | changes when the server updates? |
 | --- | --- | --- |
-| **the loader** | a Tampermonkey userscript that hooks the socket, speaks the protocol, exposes `window.MooMoo`, and adds the in-game **Mods** menu | **yes** — it's the only piece that does |
+| **the loader** | a Tampermonkey userscript that hooks the socket, speaks the protocol, hands its API to mods through an event handshake (no window global — nothing for the server to find), and adds the in-game **Mods** menu | **yes** — it's the only piece that does |
 | **the runtime** | the stable `window.MooMoo` API mods are written against | **never** |
 
 the thing connecting them is a tiny **binding** that maps wire packets to stable

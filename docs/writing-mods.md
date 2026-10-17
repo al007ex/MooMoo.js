@@ -1,9 +1,11 @@
 # Writing mods
 
-a mod is a Tampermonkey userscript that `@require`s the loader and talks to
-`window.MooMoo`. it does one thing: react to game events and send game actions.
-this page walks through it with examples. every event and action is in the
-**[packet reference](./packets)**.
+a mod is a Tampermonkey userscript that `@require`s the loader and asks it for the
+`MooMoo` API through a small event handshake (there is no `window.MooMoo` — the loader
+keeps nothing on the page for the server's anti-cheat to find; see the
+**[getting-started](./getting-started)** `withMooMoo` helper). it does one thing: react
+to game events and send game actions. this page walks through it with examples. every
+event and action is in the **[packet reference](./packets)**.
 
 ## register a mod
 
