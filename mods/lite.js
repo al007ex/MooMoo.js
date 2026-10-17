@@ -39,6 +39,11 @@
             for (const h of (data.hats || [])) HAT_BY_ID[h.id] = h;
             const hatImg = (id) => "/img/hats/hat_" + id + ".png";
             const hatName = (id) => !id ? "None" : (HAT_BY_ID[id] ? HAT_BY_ID[id].name : "Hat " + id);
+            // accessory ("tail") catalog + icons (served at /img/accessories/access_<id>.png)
+            const ACC_BY_ID = {};
+            for (const a of (data.accessories || [])) ACC_BY_ID[a.id] = a;
+            const accImg = (id) => "/img/accessories/access_" + id + ".png";
+            const accName = (id) => !id ? "None" : (ACC_BY_ID[id] ? ACC_BY_ID[id].name : "Acc " + id);
 
             // ---- config ----
             // The four spammers are fixed jobs; their key / item / speed / on are yours.
@@ -53,7 +58,7 @@
                 spammers: {},
                 heal: { on: true, healAt: 70, legit: true, showInHand: 90, jitter: 40, maxPerSec: 6, shameSafe: true },
                 humanize: { on: true, jitter: 25, pauseChance: 8, pauseMax: 350 },
-                insta: { key: "r", mode: "packet", swapDelay: 100, switchBack: true, autoAim: true, primaryHat: 7, secondaryHat: 53 },
+                insta: { key: "r", mode: "packet", swapDelay: 100, switchBack: true, autoAim: true, primaryHat: 7, secondaryHat: 53, primaryAcc: 0, secondaryAcc: 0 },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -207,19 +212,22 @@
                 if (primary == null) return;
                 instaBusy = true;
                 const prevHat = (ctx.store && ctx.store.hat) || 0;   // restore it after the combo
-                const equipCombo = (id) => {
-                    if (!id) return;
-                    if (ctx.store && ctx.store.ownsHat && !ctx.store.ownsHat(id)) return;  // skip hats you don't own (the server would ignore them)
-                    ctx.setHat(id);
+                const prevAcc = (ctx.store && ctx.store.tail) || 0;  // the accessory you were wearing (0 = none)
+                let touchedAcc = false;
+                const ownsHat = (id) => !(ctx.store && ctx.store.ownsHat) || ctx.store.ownsHat(id);
+                const ownsAcc = (id) => !(ctx.store && ctx.store.ownsTail) || ctx.store.ownsTail(id);
+                const equipCombo = (hatId, accId) => {
+                    if (hatId && ownsHat(hatId)) ctx.setHat(hatId);                 // a slot's hat (0 = leave as is)
+                    if (accId && ctx.setTail && ownsAcc(accId)) { ctx.setTail(accId); touchedAcc = true; }  // + its accessory
                 };
                 const aimDir = () => {
                     const fb = (ctx.input && ctx.input.aimAngle) ? ctx.input.aimAngle() : (self().dir || 0);
                     if (cfg.autoAim && ctx.nearestEnemy) { const en = ctx.nearestEnemy(); if (en) return ctx.angleTo(self(), en); }
                     return fb;
                 };
-                const fire = (weaponId, hatId) => {
+                const fire = (weaponId, hatId, accId) => {
                     if (!self() || !self().alive) return false;
-                    equipCombo(hatId);                                 // c (equip)
+                    equipCombo(hatId, accId);                          // c (equip hat + accessory)
                     if (weaponId != null) MooMoo.send.selectItem(weaponId, true);   // z (weapon)
                     MooMoo.send.mouse(true, aimDir());                 // F down -> queues one swing, sets aim
                     return true;
@@ -228,15 +236,16 @@
                     MooMoo.send.mouse(false);
                     if (cfg.switchBack && primary != null && self() && self().alive) MooMoo.send.selectItem(primary, true);
                     ctx.setHat(prevHat);                               // back to the hat you had on
+                    if (touchedAcc && ctx.setTail) ctx.setTail(prevAcc);  // and the accessory you had (0 = none)
                     instaBusy = false;
                 };
                 const END_HOLD = 160;                                  // hold briefly so the secondary shot goes out
                 const secondAndEnd = () => {
                     if (!self() || !self().alive) { finish(); return; }
-                    fire(secondary != null ? secondary : primary, cfg.secondaryHat);
+                    fire(secondary != null ? secondary : primary, cfg.secondaryHat, cfg.secondaryAcc);
                     ctx.after(END_HOLD, finish);
                 };
-                if (!fire(primary, cfg.primaryHat)) { instaBusy = false; return; }
+                if (!fire(primary, cfg.primaryHat, cfg.primaryAcc)) { instaBusy = false; return; }
                 if (cfg.mode === "packet") waitForOwnSwing(secondAndEnd, 350);
                 else ctx.after(Math.max(40, cfg.swapDelay | 0), secondAndEnd);
             }
@@ -338,6 +347,7 @@
             .mml-panel .selwrap::after{content:"";position:absolute;right:9px;top:45%;width:6px;height:6px;border-right:2px solid var(--sub);border-bottom:2px solid var(--sub);transform:translateY(-50%) rotate(45deg);pointer-events:none}
             .mml-panel .hatrow{display:flex;flex-wrap:wrap;gap:8px;padding:3px 0 2px}
             .mml-panel .hatcell{display:flex;flex-direction:column;align-items:center;gap:3px}
+            .mml-panel .accpair{display:flex;gap:5px}
             .mml-panel .hatbox{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:var(--ctrl);cursor:pointer}
             .mml-panel .hatbox img{width:30px;height:30px;object-fit:contain}
             .mml-panel .hatph{color:var(--muted);font-size:16px}
@@ -403,30 +413,34 @@
                 sel.addEventListener("keydown", (e) => e.stopPropagation());
                 wrap.appendChild(sel); return wrap;
             }
-            function hatSlot(get, set) {
+            // a slot renders a hat (kind omitted) or an accessory (kind === "acc")
+            const slotImg = (kind, id) => kind === "acc" ? accImg(id) : hatImg(id);
+            const slotName = (kind, id) => kind === "acc" ? accName(id) : hatName(id);
+            const slotList = (kind) => (kind === "acc" ? data.accessories : data.hats) || [];
+            function hatSlot(get, set, kind) {
                 const box = mk("div", "hatbox");
                 const paint = () => {
                     box.textContent = "";
                     const id = get();
-                    if (id) { const img = mk("img"); img.src = hatImg(id); img.alt = hatName(id); img.onerror = () => { img.replaceWith(mk("div", "hatph", "—")); }; box.appendChild(img); }
+                    if (id) { const img = mk("img"); img.src = slotImg(kind, id); img.alt = slotName(kind, id); img.onerror = () => { img.replaceWith(mk("div", "hatph", "—")); }; box.appendChild(img); }
                     else box.appendChild(mk("div", "hatph", "+"));
-                    box.title = hatName(id);
+                    box.title = slotName(kind, id);
                 };
-                box.addEventListener("click", () => openHatPicker(get(), (id) => { set(id); save(); paint(); }));
+                box.addEventListener("click", () => openHatPicker(get(), (id) => { set(id); save(); paint(); }, kind));
                 paint(); return box;
             }
-            function openHatPicker(cur, onPick) {
+            function openHatPicker(cur, onPick, kind) {
                 if (!gui) return;
                 const old = gui.querySelector(".mml-pick"); if (old) old.remove();
                 const pick = mk("div", "mml-pick");
                 const panel = mk("div", "pickpanel");
-                panel.appendChild(mk("div", "picktitle", "Choose a hat"));
+                panel.appendChild(mk("div", "picktitle", kind === "acc" ? "Choose an accessory" : "Choose a hat"));
                 const grid = mk("div", "pickgrid");
                 const close = () => pick.remove();
-                const list = [{ id: 0, name: "None" }].concat(data.hats || []);
+                const list = [{ id: 0, name: "None" }].concat(slotList(kind));
                 for (const h of list) {
                     const t = mk("div", "ptile" + (h.id === cur ? " sel" : ""));
-                    if (h.id) { const img = mk("img"); img.src = hatImg(h.id); img.alt = h.name; img.onerror = () => { img.style.visibility = "hidden"; }; t.appendChild(img); }
+                    if (h.id) { const img = mk("img"); img.src = slotImg(kind, h.id); img.alt = h.name; img.onerror = () => { img.style.visibility = "hidden"; }; t.appendChild(img); }
                     else t.appendChild(mk("div", "pnone", "none"));
                     t.appendChild(mk("div", "pcap", h.name));
                     t.title = h.name + (h.desc ? " — " + h.desc : "");
@@ -496,9 +510,17 @@
                 m.body.appendChild(row("Switch back", toggleSwitch(() => ik.switchBack, (v) => { ik.switchBack = v; })));
                 m.body.appendChild(sliderRow("Swap ms", 40, 300, 10, () => ik.swapDelay, (x) => { ik.swapDelay = x; }, (n) => n + "ms"));
                 const hats = mk("div", "hatrow");
-                const cell = (label, get, set) => { const c = mk("div", "hatcell"); c.appendChild(hatSlot(get, set)); c.appendChild(mk("span", "hatcap", label)); return c; };
-                hats.appendChild(cell("Primary", () => ik.primaryHat, (id) => { ik.primaryHat = id; }));
-                hats.appendChild(cell("Secondary", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }));
+                const cell = (label, getH, setH, getA, setA) => {
+                    const c = mk("div", "hatcell");
+                    const pair = mk("div", "accpair");
+                    pair.appendChild(hatSlot(getH, setH));            // hat
+                    pair.appendChild(hatSlot(getA, setA, "acc"));     // accessory
+                    c.appendChild(pair);
+                    c.appendChild(mk("span", "hatcap", label));
+                    return c;
+                };
+                hats.appendChild(cell("Primary", () => ik.primaryHat, (id) => { ik.primaryHat = id; }, () => ik.primaryAcc, (id) => { ik.primaryAcc = id; }));
+                hats.appendChild(cell("Secondary", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }, () => ik.secondaryAcc, (id) => { ik.secondaryAcc = id; }));
                 m.body.appendChild(hats);
                 return m.card;
             };
