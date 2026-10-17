@@ -431,7 +431,7 @@
         // LIVE right before the "T" is encoded (so they are the values as they stand just before
         // the T body, which is exactly what the server compares against).
         function telemetryCtx(st) {
-            const ctx = { sealReport: st.session && st.session.sealReport, probeSalt: st.lastProbeSalt };
+            const ctx = { sealReport: st.session && st.session.sealReport, probeSalt: st.lastProbeSalt, probes: st.lastProbes };
             if (st.session && st.session.pinned) { ctx.seq = st.session.lastSeq; ctx.ledger = st.session.ledger; }
             return ctx;
         }
@@ -502,7 +502,7 @@
             if (notice) notice.recordS2C(dec.name, dec.id);
             // Remember the latest integrity-probe salt so the telemetry answer can echo it
             // even if the client's own "T" ever arrives without it.
-            if (dec.name === "q" && Array.isArray(dec.args)) st.lastProbeSalt = dec.args[0];
+            if (dec.name === "q" && Array.isArray(dec.args)) { st.lastProbeSalt = dec.args[0]; st.lastProbes = dec.args[1]; }
             const bind = binding.incoming[dec.name];
             tapRaw("in", dec.name, dec.args);
             if (!bind) return; // unknown packet: still visible via raw tap
@@ -626,6 +626,12 @@
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;
         MooMooLoader.net = out;
+        // Live crypto / transport envelope of the adopted socket, read-only — for debug panels
+        // (the seal the server bound us to, the running frame sequence + ledger hash, seal mode).
+        MooMooLoader.transport = () => {
+            const s = active && active.session;
+            return s ? { pinned: !!s.pinned, sealMode: s.sealMode | 0, seal: s.sealReport, seq: s.lastSeq, ledger: s.ledger >>> 0, probeSalt: active.lastProbeSalt } : null;
+        };
         MooMooLoader.store = store;
         MooMooLoader.combat = combat;
         MooMooLoader.render = render;

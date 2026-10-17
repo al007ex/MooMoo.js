@@ -1,16 +1,18 @@
 // ==UserScript==
 // @name         MooMoo Debug (dev)
 // @namespace    moomoo.js
-// @version      1.2.0
-// @description  Dev debug panel (top-left, leaderboard look): net + player stats, the server's anti-cheat probes, what you'd be flagged for, the detection packets the loader cancels, and real kicks / shame.
+// @version      1.3.1
+// @description  Compact live "behind the scenes" panel (top-left): transport (frames encrypted/decrypted), crypto (sequence + ledger + seal), the server's anti-cheat integrity probes decoded live, what the client reports vs what the loader actually sends, and real kicks / shame.
 // @author       you
 // @match        *://*/*
-// @require      https://pastebin.com/raw/jWDq3mmF?v=1.3.3
+// @require      https://pastebin.com/raw/jWDq3mmF?v=1.3.4
 // @grant        none
 // @run-at       document-start
 // ==/UserScript==
 //
-// Read-only: it never sends or changes a packet, so it can't affect detection.
+// Read-only: it never sends or changes a packet, so it can't affect detection. Everything it
+// shows is ground truth from the loader (onRaw frames, transport(), antiDetect, the probe
+// rounds), not a guess of its own.
 
 (function () {
     "use strict";
@@ -19,8 +21,8 @@
         MooMoo.register({
             id: "debug-panel",
             name: "Debug panel (dev)",
-            version: "1.2.0",
-            description: "Net/player stats + anti-cheat probes, flags and penalties.",
+            version: "1.3.1",
+            description: "Compact live transport / crypto / anti-cheat panel.",
             menu: false,
             defaultEnabled: true
         }, function (ctx) {
@@ -28,97 +30,73 @@
             const doc = win.document;
             if (!doc) return;
             const self = () => MooMoo.self;
-            const net = () => (MooMooLoader && MooMooLoader.net) || null;
-            // The loader's detection-packet canceller (loader 1.3.3+).
             const antiDetect = () => (MooMooLoader && MooMooLoader.antiDetect) || null;
+            const transport = () => { try { return MooMooLoader.transport ? MooMooLoader.transport() : null; } catch (e) { return null; } };
 
-            // ---- FNV salted hash — identical to the server/loader, so probe checks match ----
-            const FNV_OFFSET = 2166136261, FNV_PRIME = 16777619, FNV_FINAL_MULT = 739982445;
-            const fnvStep = (h, b) => Math.imul(h ^ b, FNV_PRIME);
-            function fnvFinish(h) { h ^= h >>> 15; h = Math.imul(h, FNV_FINAL_MULT); h ^= h >>> 12; return h >>> 0; }
-            function saltedHash(text, salt) { let h = (FNV_OFFSET ^ salt) >>> 0; for (let i = 0; i < text.length; i++) h = fnvStep(h, text.charCodeAt(i) & 255); return fnvFinish(h); }
-
-            const PROBE_NAME = {
-                "WebSocket.prototype.send": "SOCKET_SEND", "EventTarget.prototype.addEventListener": "LISTENER",
-                "EventTarget.prototype.dispatchEvent": "DISPATCH", "requestAnimationFrame": "RAF",
-                "CanvasRenderingContext2D.prototype.drawImage": "CANVAS", "CanvasRenderingContext2D.prototype.fillText": "CANVAS",
-                "WebGLRenderingContext.prototype.drawElements": "WEBGL", "Function.prototype.toString": "TOSTRING",
-                "Object.defineProperty": "DEFINEPROP", "JSON.parse": "JSON", "Math.random": "RANDOM",
-                "performance.now": "PERF", "Date.now": "DATE",
-                "WebSocket": "SOCKET_WRAP", "MouseEvent": "MOUSE_WRAP", "KeyboardEvent": "KEY_WRAP",
-                "XMLHttpRequest": "XHR_WRAP", "Worker": "WORKER_WRAP"
-            };
-
-            function resolve(path) { try { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), win); } catch (e) { return undefined; } }
-            function isNative(fn) { try { return typeof fn === "function" && /\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(fn)); } catch (e) { return false; } }
-            function firstHashMatch(list, salt, hash, fmt) { for (const it of list) { const s = fmt(it); if (s != null && saltedHash(s, salt) === hash) return s; } return null; }
-            function evalProbe(kind, path, hash, salt) {
-                try {
-                    if (kind === 7) { const fn = resolve(path); return { m: (typeof fn === "function") && !isNative(fn), n: PROBE_NAME[path] || path }; }
-                    if (kind === 5) { const o = resolve(path); return { m: !!(o && o.prototype && o.prototype.constructor !== o), n: PROBE_NAME[path] || path }; }
-                    if (kind === 1) { const o = resolve(path || "window") || win; const hit = firstHashMatch(Object.getOwnPropertyNames(o), salt, hash, (n) => n); return { m: !!hit, n: hit || "winprop" }; }
-                    if (kind === 2) { const o = resolve(path || "window") || win; const hit = firstHashMatch(Object.getOwnPropertyNames(o), salt, hash, (n) => { try { const v = o[n], t = typeof v; return (t === "number" || t === "string" || t === "boolean") ? n + "=" + v : null; } catch (e) { return null; } }); return { m: !!hit, n: hit || "propval" }; }
-                    if (kind === 3) { let k = []; try { k = Object.keys(win.localStorage); } catch (e) {} const hit = firstHashMatch(k, salt, hash, (x) => x); return { m: !!hit, n: hit || "lskey" }; }
-                    if (kind === 4) { let e = []; try { e = Array.prototype.slice.call(doc.querySelectorAll("[id]")); } catch (x) {} const hit = firstHashMatch(e, salt, hash, (el) => el.tagName.toLowerCase() + "#" + el.id); return { m: !!hit, n: hit || "element" }; }
-                    if (kind === 6) { const o = resolve(path || "window") || win; let s = []; try { s = Object.getOwnPropertySymbols(o); } catch (e) {} const hit = firstHashMatch(s, salt, hash, (x) => x.description || ""); return { m: !!hit, n: hit || "symbol" }; }
-                } catch (e) {}
-                return { m: false, n: "k" + kind };
-            }
+            const isNative = (fn) => { try { return typeof fn === "function" && /\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(fn)); } catch (e) { return false; } };
+            const bitCount = (n) => { n = (n || 0) >>> 0; let c = 0; while (n) { c += n & 1; n >>>= 1; } return c; };
+            const hex = (n, w) => "0x" + ((n || 0) >>> 0).toString(16).padStart(w || 0, "0");
             function userscriptGlobals() { for (const k of ["unsafeWindow", "GM_info", "GM", "GM_getValue", "GM_xmlhttpRequest"]) { try { if (k in win) return k; } catch (e) {} } return null; }
             function renderHooked() {
                 const C = win.CanvasRenderingContext2D && win.CanvasRenderingContext2D.prototype, G = win.WebGLRenderingContext && win.WebGLRenderingContext.prototype;
                 for (const fn of [C && C.drawImage, C && C.fillText, win.HTMLCanvasElement && win.HTMLCanvasElement.prototype.getContext, win.requestAnimationFrame, G && G.drawElements]) if (fn && !isNative(fn)) return true;
                 return false;
             }
-            const socketHooked = () => { const s = win.WebSocket && win.WebSocket.prototype && win.WebSocket.prototype.send; return !isNative(s); };
-            // The loader cancels the client's "T" and sends an empty one while antiDetect is on,
-            // so nothing a probe matched is ever reported. Off -> the real "T" would be sent.
-            const spoofing = () => { const a = antiDetect(); return !!(a && a.enabled); };
+            const socketHooked = () => !isNative(win.WebSocket && win.WebSocket.prototype && win.WebSocket.prototype.send);
+
+            const KIND = { 1: "win", 2: "val", 3: "ls", 4: "el", 5: "ctor", 6: "sym", 7: "fn" };
+            const SEALMODE = { 0: "off", 1: "report", 2: "bind" };
+            const shortPath = (p) => !p ? null : String(p).replace(/\.prototype\./g, ".").replace(/^WebSocket/, "WS").replace(/^CanvasRenderingContext2D/, "Canvas").replace(/^WebGLRenderingContext/, "WebGL").replace(/^EventTarget/, "ET").replace(/^requestAnimationFrame/, "rAF");
 
             // =================================================================
-            // UI — leaderboard look: big title, grey label / white value rows.
+            // UI — a compact, live, dark panel (leaderboard look).
             // =================================================================
             const CSS = `
-            .mdbg{position:fixed;top:12px;left:12px;z-index:100000;width:216px;max-height:88vh;overflow-y:auto;
-              padding:6px 12px 9px;border-radius:5px;background:rgba(0,0,0,.4);color:#fff;
+            .mdbg{position:fixed;top:12px;left:12px;z-index:100000;width:204px;max-height:84vh;overflow-y:auto;
+              padding:6px 11px 8px;border-radius:6px;background:rgba(6,8,12,.52);color:#fff;backdrop-filter:blur(2px);
               font-family:"Hammersmith One",sans-serif;-webkit-user-select:none;user-select:none;pointer-events:auto}
             .mdbg::-webkit-scrollbar{width:0}
-            .mdbg .ttl{font-size:28px;line-height:1.15;cursor:pointer}
+            .mdbg .ttl{font-size:22px;line-height:1.1;cursor:pointer;display:flex;align-items:baseline;justify-content:space-between}
+            .mdbg .ttl .dot{font-size:11px;color:#8ecc51}
             .mdbg.min .bd{display:none}
-            .mdbg .bd{margin-top:2px}
-            .mdbg .r{display:flex;align-items:baseline;font-size:17px;line-height:1.42}
-            .mdbg .r .k{flex:0 0 auto;color:#c0c0c0}
+            .mdbg .bd{margin-top:3px}
+            .mdbg .sec{font-size:10px;color:#8a909c;letter-spacing:.07em;margin:6px 0 1px;text-transform:uppercase}
+            .mdbg .r{display:flex;align-items:baseline;font-size:15px;line-height:1.36}
+            .mdbg .r .k{flex:0 0 auto;color:#bdc2cc}
             .mdbg .r .v{flex:1 1 auto;text-align:right;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:8px}
-            .mdbg .r .v.y{color:#ffe24d}.mdbg .r .v.r{color:#ec6a55}.mdbg .r .v.d{color:#8f8f8f}
-            .mdbg .div{height:1px;background:#ffffff26;margin:5px 0}
-            .mdbg .log{margin-top:5px}
-            .mdbg .log .e{font-size:13.5px;line-height:1.5;color:#c9c9c9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-            .mdbg .log .e .t{color:#7d7d7d;margin-right:5px}
-            .mdbg .log .e.y{color:#ffe24d}.mdbg .log .e.r{color:#ec6a55}
+            .mdbg .r .v.g{color:#8ecc51}.mdbg .r .v.y{color:#ffe24d}.mdbg .r .v.r{color:#ec6a55}.mdbg .r .v.d{color:#7f858f}.mdbg .r .v.c{color:#6fd3e6}
+            .mdbg .div{height:1px;background:#ffffff1f;margin:5px 0}
+            .mdbg .log{margin-top:4px}
+            .mdbg .log .e{font-size:12px;line-height:1.45;color:#c3c7cf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .mdbg .log .e .t{color:#6f747d;margin-right:5px}
+            .mdbg .log .e.g{color:#8ecc51}.mdbg .log .e.y{color:#ffe24d}.mdbg .log .e.r{color:#ec6a55}.mdbg .log .e.c{color:#6fd3e6}
             `;
             const el = (t, c, x) => { const n = doc.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 
-            let panel, body, logEl, V = {};
+            let panel, body, logEl, dot, V = {};
             function stat(label) { const r = el("div", "r"); r.appendChild(el("span", "k", label)); const v = el("span", "v", "–"); r.appendChild(v); body.appendChild(r); return v; }
-            function div() { body.appendChild(el("div", "div")); }
-            function set(v, text, cls) { v.textContent = text; v.className = "v" + (cls ? " " + cls : ""); }
+            function head(label) { body.appendChild(el("div", "sec", label)); }
+            function set(v, text, cls) { if (!v) return; v.textContent = text; v.className = "v" + (cls ? " " + cls : ""); }
 
             function build() {
                 const style = el("style"); style.textContent = CSS; doc.head.appendChild(style);
                 panel = el("div", "mdbg");
-                const ttl = el("div", "ttl", "Debug");
+                const ttl = el("div", "ttl"); ttl.appendChild(el("span", null, "Debug")); dot = el("span", "dot", "live"); ttl.appendChild(dot);
                 ttl.addEventListener("click", () => panel.classList.toggle("min"));
                 panel.appendChild(ttl);
                 body = el("div", "bd"); panel.appendChild(body);
 
-                V.ping = stat("ping"); V.fps = stat("fps"); V.players = stat("players");
-                V.pos = stat("pos"); V.hp = stat("hp"); V.out = stat("out/s"); V.drop = stat("drops");
-                div();
-                V.probes = stat("probes"); V.flags = stat("flags"); V.report = stat("reported");
-                V.cancel = stat("cancelled");
-                V.socket = stat("socket"); V.render = stat("render"); V.script = stat("script");
-                V.shame = stat("shame"); V.kick = stat("kick");
-                div();
+                head("transport");
+                V.enc = stat("enc/s"); V.dec = stat("dec/s");
+                head("crypto");
+                V.seq = stat("seq"); V.ledger = stat("ledger"); V.seal = stat("seal"); V.mode = stat("mode");
+                head("probes");
+                V.probes = stat("count"); V.kinds = stat("kinds"); V.salt = stat("salt");
+                head("anti-cheat");
+                V.flags = stat("client"); V.sent = stat("sent"); V.hidden = stat("hidden");
+                head("status");
+                V.hooks = stat("hooks"); V.penalty = stat("penalty");
+                body.appendChild(el("div", "div"));
                 logEl = el("div", "log"); body.appendChild(logEl);
 
                 (doc.body || doc.documentElement).appendChild(panel);
@@ -133,92 +111,88 @@
                 e.appendChild(el("span", "t", stamp()));
                 e.appendChild(doc.createTextNode(msg));
                 logEl.insertBefore(e, logEl.firstChild);
-                while (logEl.childElementCount > 7) logEl.removeChild(logEl.lastChild);
+                while (logEl.childElementCount > 5) logEl.removeChild(logEl.lastChild);
             }
 
-            // ---- live stats ----
-            let frames = 0, lastFps = performance.now(), running = true, rafId = 0;
-            function raf() { frames++; if (running) rafId = win.requestAnimationFrame(raf); }
-            function updateNet() {
-                const n = net(), me = self();
-                if (n) {
-                    const p = n.avgPing ? n.avgPing() : (n.ping || 0);
-                    set(V.ping, p ? Math.round(p) + "ms" : "–", p ? "" : "d");
-                    set(V.out, "" + (n.perSecond ? n.perSecond() : 0));
-                    const dr = n.stats && n.stats.refused || 0;
-                    set(V.drop, "" + dr, dr ? "y" : "");
-                } else { set(V.ping, "–", "d"); set(V.out, "–", "d"); set(V.drop, "–", "d"); }
-                const now = performance.now(), dt = (now - lastFps) / 1000;
-                if (dt > 0) { set(V.fps, "" + Math.round(frames / dt)); frames = 0; lastFps = now; }
-                set(V.players, "" + (ctx.players ? ctx.players.size : 0));
-                if (me && me.alive) { set(V.pos, Math.round(me.x) + " " + Math.round(me.y)); set(V.hp, "" + (me.health == null ? "–" : Math.round(me.health)), me.health < 40 ? "r" : ""); }
-                else { set(V.pos, "–", "d"); set(V.hp, "dead", "d"); }
+            // ---- live data sources (all ground truth from the loader) ----
+            let encWin = 0, decWin = 0;   // frames encrypted (out) / decrypted (in) this window
+            function onRaw(dir) { if (dir === "out") encWin++; else decWin++; }
+
+            function updateTransport(dt) {
+                set(V.enc, Math.round(encWin / dt) + "/s"); set(V.dec, Math.round(decWin / dt) + "/s"); encWin = decWin = 0;
             }
-            function updateChecks() {
-                const s = socketHooked(); set(V.socket, s ? "HOOK" : "native", s ? "r" : "");
-                const r = renderHooked(); set(V.render, r ? "HOOK" : "native", r ? "r" : "");
-                const u = userscriptGlobals(); set(V.script, u ? u : "clean", u ? "r" : "");
-                const a = antiDetect();
-                if (a) set(V.cancel, a.count + (a.caughtCount ? " (" + a.caughtCount + " caught)" : ""), a.caughtCount ? "y" : "");
-                else set(V.cancel, "off", "d");
+            function updateCrypto() {
+                const t = transport();
+                if (!t) { set(V.seq, "–", "d"); set(V.ledger, "–", "d"); set(V.seal, "–", "d"); set(V.mode, "–", "d"); return; }
+                set(V.seq, "" + t.seq, "c");
+                set(V.ledger, t.pinned ? hex(t.ledger, 8) : "off", t.pinned ? "c" : "d");
+                set(V.seal, t.seal != null ? hex(t.seal) : "none", t.seal != null ? "c" : "d");
+                set(V.mode, (SEALMODE[t.sealMode] || t.sealMode) + (t.pinned ? " +ledger" : ""), "");
+            }
+            function updateAC() {
+                const a = antiDetect(), last = a && a.last;
+                if (!last) { set(V.flags, "–", "d"); set(V.sent, "–", "d"); set(V.hidden, "–", "d"); return; }
+                const cf = last.flagNames.length ? last.flagNames.join(" ") : (last.probeResult ? "probe×" + bitCount(last.probeResult) : "none");
+                set(V.flags, cf, last.flagNames.length ? "y" : "d");
+                const canary = bitCount(last.sentProbeResult);
+                set(V.sent, canary ? canary + " canary" : "clean", "g");
+                const hid = bitCount(last.strippedProbe) + (last.flags ? 1 : 0) + (last.untrusted ? 1 : 0);
+                set(V.hidden, hid ? "" + hid + " ✓" : "0", hid ? "g" : "d");
+            }
+            let shamed = false, kicked = false;
+            function setPenalty() { set(V.penalty, kicked ? "KICKED" : shamed ? "SHAMED" : "none", (kicked || shamed) ? "r" : "g"); }
+            function updateStatus() {
+                const h = [];
+                if (socketHooked()) h.push("socket");
+                if (renderHooked()) h.push("render");
+                const u = userscriptGlobals(); if (u) h.push(u);
+                set(V.hooks, h.length ? h.join(" ") : "clean", h.length ? "r" : "g");
             }
 
-            let rounds = 0;
             function onProbes(pk) {
-                rounds++;
-                const salt = pk.salt >>> 0, probes = pk.probes || [];
-                const names = [];
-                for (const pr of probes) { const r = evalProbe(pr[0], pr[1] || "", pr[2] >>> 0, salt); if (r.m) names.push(r.n); }
-                if (socketHooked()) names.push("SOCKET_HOOK");
-                const u = userscriptGlobals(); if (u) names.push("USERSCRIPT");
-                if (renderHooked()) names.push("RENDER");
+                const probes = pk.probes || [], counts = {};
+                for (const p of probes) { const k = KIND[p[0]] || ("k" + p[0]); counts[k] = (counts[k] || 0) + 1; }
                 set(V.probes, "" + probes.length);
-                if (names.length) {
-                    set(V.flags, names.length > 1 ? names[0] + " +" + (names.length - 1) : names[0], "y");
-                    const sent = !spoofing();
-                    set(V.report, sent ? "YES" : "no", sent ? "r" : "");
-                    log((sent ? "SENT " : "flag ") + names.join(" "), sent ? "r" : "y");
-                } else {
-                    set(V.flags, "none", "d");
-                    set(V.report, "no");
-                    log("probe #" + rounds + " clean", "");
-                }
+                set(V.kinds, Object.keys(counts).map((k) => k + "×" + counts[k]).join(" ") || "–", "");
+                set(V.salt, hex(pk.salt, 8), "c");
+                const targets = probes.filter((p) => p[0] === 7 || p[0] === 5).map((p) => shortPath(p[1])).filter(Boolean);
+                log("q ×" + probes.length + " · " + (targets.slice(0, 2).join(" ") || "env scan"), "c");
             }
 
-            let lastHat = 0, shamed = false;
             function tick() {
-                updateNet(); updateChecks();
+                updateTransport(0.5); updateCrypto(); updateAC(); updateStatus();
+                if (dot) dot.style.color = socketHooked() || renderHooked() || userscriptGlobals() ? "#ec6a55" : "#8ecc51";
                 const me = self(), hat = me && me.hat;
-                if (hat === 45 && lastHat !== 45 && !shamed) { shamed = true; set(V.shame, "SHAMED", "r"); log("SHAMED (hat 45)", "r"); }
-                else if (hat !== 45 && shamed && hat != null) { shamed = false; set(V.shame, "no"); log("shame off", "y"); }
-                if (hat != null) lastHat = hat;
+                if (hat === 45 && !shamed) { shamed = true; setPenalty(); log("SHAMED (hat 45)", "r"); }
+                else if (hat !== 45 && shamed && hat != null) { shamed = false; setPenalty(); log("shame off", "y"); }
             }
             function onDisconnect(p) {
-                const reason = p && p.reason, kicked = reason === "kicked";
-                set(V.kick, kicked ? "KICKED" : (reason == null ? "bye" : String(reason)), "r");
-                log(kicked ? "KICKED (anti-cheat)" : ("disconnect: " + reason), "r");
+                const reason = p && p.reason, k = reason === "kicked";
+                if (k) { kicked = true; setPenalty(); }
+                log(k ? "KICKED (anti-cheat)" : ("disconnect: " + reason), "r");
             }
 
             function start() {
                 build();
-                set(V.shame, "no"); set(V.kick, "no"); set(V.report, "no"); set(V.probes, "–", "d"); set(V.flags, "–", "d");
-                updateNet(); updateChecks();
-                rafId = win.requestAnimationFrame(raf);
+                setPenalty();
+                const unRaw = MooMooLoader.onRaw ? MooMooLoader.onRaw(onRaw) : null;
                 ctx.on("probes", onProbes);
                 ctx.on("disconnect", onDisconnect);
                 ctx.every(500, tick);
-                ctx.onCleanup(() => { running = false; try { win.cancelAnimationFrame(rafId); } catch (e) {} });
-                // Ground truth from the loader: every client "T" it cancelled, and what that
-                // packet actually carried (vs. our own local probe guess above).
+                ctx.onCleanup(() => { if (unRaw) try { unRaw(); } catch (e) {} });
+                // Per "T": what the client reported, what was stripped, and the clean answer sent.
                 const a = antiDetect();
                 if (a && a.onDetection) {
                     ctx.onCleanup(a.onDetection((e) => {
-                        if (!e.caught) return;   // only the ones that really carried a detection
-                        const what = e.flagNames.length ? e.flagNames.join(" ") : ("probe " + e.probeResult + (e.untrusted ? " +untrusted" : ""));
-                        log("cancelled T: " + what + (e.neutralised ? " → empty" : " → SENT"), e.neutralised ? "y" : "r");
+                        const hid = e.flagNames.slice();
+                        if (e.strippedProbe) hid.push("probe×" + bitCount(e.strippedProbe));
+                        if (e.untrusted) hid.push("untrusted×" + e.untrusted);
+                        const sent = bitCount(e.sentProbeResult);
+                        log("T → " + (sent ? sent + " canary" : "clean") + (hid.length ? " · hid " + hid.join(",") : ""), hid.length ? "y" : "g");
                     }));
-                    log("antiDetect " + (a.enabled ? "on" : "OFF"), a.enabled ? "" : "r");
+                    log("antiDetect " + (a.enabled ? "on (blanking)" : "on (canary-safe)"), "g");
                 }
+                updateStatus(); updateCrypto();
                 log("debug ready", "");
             }
             if (doc.body) start();

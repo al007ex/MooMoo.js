@@ -85,6 +85,60 @@ ok("a clean client T is counted but not flagged as 'caught'", () => {
     assert.strictEqual(ad.last.caught, false);
 });
 
+console.log("\n== cleanProbeResult strips loader/mod footprint, keeps canaries ==");
+// FNV salted hash, identical to the server / client / binding.
+const sh = (text, salt) => { let h = (2166136261 ^ salt) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
+const SALT = 12345;
+// Set up a world with loader/mod artifacts AND clean "canary" equivalents for every probe kind.
+globalThis.__ad = {};
+globalThis.__ad.hooked = function hooked() {};          // kind 7: non-native fn (a hook)
+globalThis.__ad.nativeFn = Array.prototype.slice;       // kind 7: native (a real client has it)
+function Wrapped() {} Wrapped.prototype.constructor = Object;  // kind 5: swapped constructor
+globalThis.__ad.Wrapped = Wrapped;
+function Intact() {}                                     // kind 5: constructor intact
+globalThis.__ad.Intact = Intact;
+globalThis.localStorage = {};
+globalThis.localStorage["moomoojs:cfg:lite"] = "x";     // kind 3: a loader storage key
+globalThis.localStorage["playerName"] = "bob";          // kind 3: a normal key (canary)
+globalThis.document = { querySelectorAll: (s) => s === "[id]" ? [
+    { tagName: "DIV", id: "panel", className: "mdbg" },  // kind 4: a mod element (mdbg class)
+    { tagName: "DIV", id: "mainMenu", className: "menu" } // kind 4: a game element (canary)
+] : [] };
+// bit:  0 hook   1 native  2 swapped  3 intact  4 kind1-canary  5 loaderLS  6 LScanary  7 modEl  8 gameEl
+const PROBES = [
+    [7, "__ad.hooked", 0], [7, "__ad.nativeFn", 0], [5, "__ad.Wrapped", 0], [5, "__ad.Intact", 0],
+    [1, "window", sh("document", SALT)], [3, "", sh("moomoojs:cfg:lite", SALT)], [3, "", sh("playerName", SALT)],
+    [4, "", sh("div#panel", SALT)], [4, "", sh("div#mainMenu", SALT)]
+];
+const CLEARED = (1 << 0) | (1 << 2) | (1 << 5) | (1 << 7);   // the four loader/mod bits
+ok("clears exactly the loader/mod bits (hook, swap, our LS key, our element)", () => {
+    const outp = tel.cleanProbeResult(0x1FF, PROBES, SALT);     // client matched all 9
+    assert.strictEqual(outp, (0x1FF & ~CLEARED) >>> 0, "kept canaries, cleared the 4 loader bits");
+});
+ok("a canary-only answer passes through untouched", () => {
+    const canaries = (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 8);
+    assert.strictEqual(tel.cleanProbeResult(canaries, PROBES, SALT), canaries);
+});
+ok("no probe round -> unchanged (back-compat)", () => {
+    assert.strictEqual(tel.cleanProbeResult(0x1FF, undefined, SALT), 0x1FF);
+});
+ok("default handle() with a probe round sends the original-client answer (footprint stripped)", () => {
+    const ad = AntiDetect.create({ telemetry: tel });            // default: enabled = false
+    const out = ad.handle([3, 2, 0x1FF, 777, SALT, 5, 9], { sealReport: 1, probeSalt: SALT, probes: PROBES, seq: 5, ledger: 9 });
+    assert.deepStrictEqual(out, [0, 0, (0x1FF & ~CLEARED) >>> 0, 1, SALT, 5, 9]);
+    assert.strictEqual(ad.last.sentProbeResult, (0x1FF & ~CLEARED) >>> 0);
+    assert.strictEqual(ad.last.strippedProbe, CLEARED);
+    assert.ok(ad.last.caught, "masked flags + stripped bits count as a catch");
+});
+ok("a pure-canary client T is NOT counted as caught", () => {
+    const ad = AntiDetect.create({ telemetry: tel });
+    const canaries = (1 << 4) | (1 << 8);
+    ad.handle([0, 0, canaries, 0, SALT, 5, 9], { sealReport: 1, probeSalt: SALT, probes: PROBES, seq: 5, ledger: 9 });
+    assert.strictEqual(ad.last.caught, false, "canaries pass through, nothing neutralised");
+    assert.strictEqual(ad.last.sentProbeResult, canaries);
+});
+delete globalThis.__ad; delete globalThis.localStorage; delete globalThis.document;
+
 console.log("\n----------------------------------------");
 console.log("ANTIDETECT:  " + pass + " passed, " + fail + " failed");
 process.exit(fail === 0 ? 0 : 1);

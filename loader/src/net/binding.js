@@ -189,6 +189,77 @@
         };
     }
 
+    // --- probe-result sanitiser ------------------------------------------------
+    // The "q" round asks which integrity probes match; the client answers with a bitmask in
+    // "T". We want the reconstructed "T" to report ONLY what the original, unmodified client
+    // would — i.e. every CANARY it genuinely matches (things a real browser always has:
+    // window.document, a standard localStorage key, a built-in element id, native functions,
+    // intact constructors) — and NOTHING that exists only because of the loader or a mod.
+    // cleanProbeResult takes the bits the client set and clears exactly the ones a probe
+    // matched because of US: a hooked function (kind 7, reads non-native), a swapped
+    // constructor (kind 5), a loader/mod localStorage key (kind 3) or a loader/mod id'd
+    // element (kind 4). It only ever clears a bit it can positively tie to a loader/mod
+    // artifact, so a canary bit is never touched — the answer still looks like a real
+    // client's. (Blanking the whole field instead would fail a canary probe and get caught.)
+    function telemetryGlobal() {
+        if (typeof self !== "undefined") return self;
+        if (typeof window !== "undefined") return window;
+        if (typeof globalThis !== "undefined") return globalThis;
+        return {};
+    }
+    function telemetryResolve(path) {
+        try { const root = telemetryGlobal(); return String(path).split(".").reduce((o, k) => (o == null ? o : o[k]), root); }
+        catch (e) { return undefined; }
+    }
+    function telemetryNativeFn(fn) {
+        try { return typeof fn === "function" && /\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(fn)); }
+        catch (e) { return false; }
+    }
+    // FNV-1a with a seeded offset + final avalanche — identical to the server/client probe hash.
+    function telemetrySaltedHash(text, salt) {
+        let h = (2166136261 ^ salt) >>> 0;
+        for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619);
+        h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0;
+    }
+    const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js)/i;   // the loader's / mods' own storage keys
+    function loaderOwnedElement(el) {
+        try {
+            const cn = el.className, cls = (cn && cn.baseVal != null ? cn.baseVal : cn) || "";
+            return /\bmml-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mdbg|moomoojs/i.test(el.id || "");
+        } catch (e) { return false; }
+    }
+    // Is bit `i`'s probe a match that exists only because of the loader / a mod?
+    function loaderArtifactProbe(kind, path, hash, salt) {
+        try {
+            if (kind === 7) { const fn = telemetryResolve(path); return typeof fn === "function" && !telemetryNativeFn(fn); }
+            if (kind === 5) { const o = telemetryResolve(path); return !!(o && o.prototype && o.prototype.constructor !== o); }
+            if (kind === 3) {
+                const ls = telemetryGlobal().localStorage; if (!ls) return false;
+                const keys = Object.keys(ls);
+                for (let j = 0; j < keys.length; j++) if (LOADER_LS_KEY.test(keys[j]) && telemetrySaltedHash(keys[j], salt) === hash) return true;
+                return false;
+            }
+            if (kind === 4) {
+                const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
+                const els = doc.querySelectorAll("[id]");
+                for (let j = 0; j < els.length; j++) { const e = els[j]; if (loaderOwnedElement(e) && telemetrySaltedHash(e.tagName.toLowerCase() + "#" + e.id, salt) === hash) return true; }
+                return false;
+            }
+        } catch (e) {}
+        return false;   // kinds 1, 2, 6: the loader/mods add no window props or symbols, so never ours
+    }
+    function cleanProbeResult(clientResult, probes, salt) {
+        let result = clientResult | 0;
+        if (!Array.isArray(probes)) return result >>> 0;
+        salt = salt >>> 0;
+        for (let i = 0; i < probes.length && i < 32; i++) {
+            if (!(result & (1 << i))) continue;      // only a bit the client set can be ours to clear
+            const p = probes[i]; if (!p) continue;
+            if (loaderArtifactProbe(p[0], p[1] || "", p[2] >>> 0, salt)) result &= ~(1 << i);
+        }
+        return result >>> 0;
+    }
+
     // Build a "T" the exact way the client does — the crypto/transport envelope (seal, probe
     // salt, seq, ledger) carries the real values the server validates, while the three detection
     // fields come from `det` (flags / untrusted / probeResult). With no `det` they are all 0, i.e.
@@ -233,6 +304,8 @@
             wire: "T",
             inspect: telemetryInspect,
             construct: telemetryConstruct,
+            // Strip loader/mod footprint bits from the client's probe answer, keeping canaries.
+            cleanProbeResult,
             // Back-compat shim: an empty "T" built from ctx (same as construct(ctx)).
             scrub: (args, ctx) => telemetryConstruct(ctx)
         }
