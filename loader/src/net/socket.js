@@ -52,36 +52,20 @@
     function installWebSocketProxy(win, onSocket, onError) {
         const NativeWebSocket = win.WebSocket;
         if (!NativeWebSocket) throw new Error("no WebSocket to hook");
-        // Idempotent: if we already installed, don't double-wrap.
-        if (NativeWebSocket.__moomooWrapped) return NativeWebSocket.__moomooNative || NativeWebSocket;
-
         const report = (e) => { try { onError && onError(e); } catch (_) {} };
 
-        // Per-socket outgoing transform, kept in a WeakMap so nothing is added to
-        // the socket that a page probe could enumerate. The loader installs a
-        // socket's transform (via ws.__moomooSetTransform) once its session is ready.
+        // Per-socket outgoing transform + native-send, kept in WeakMaps. NOTHING is
+        // ever written to the socket object — no own properties, no symbols — so the
+        // client's "own properties/symbols were added to the socket" integrity check
+        // (SOCKET_TAMPERED) finds a pristine socket. The loader drives a socket through
+        // the setTransform / nativeSend helpers returned below, keyed by the socket.
         const transforms = new WeakMap();
         const NativeProtoSend = NativeWebSocket.prototype && NativeWebSocket.prototype.send;
-
-        // Native send bound to a specific socket (used by the loader to put its own
-        // already-encoded frames on the wire WITHOUT re-entering the trap).
-        const nativeSendFor = (ws) => (d) => Reflect.apply(NativeProtoSend, ws, [d]);
-
-        // Give each new socket the loader's hooks. Stored non-enumerable so a
-        // for..in / Object.keys on the socket doesn't reveal them.
-        function tagSocket(ws) {
-            const def = (name, value) => {
-                try { Object.defineProperty(ws, name, { value, writable: true, configurable: true, enumerable: false }); }
-                catch (e) { ws[name] = value; }
-            };
-            def("__moomooNativeSend", nativeSendFor(ws));
-            def("__moomooSetTransform", (fn) => transforms.set(ws, fn));
-        }
 
         // Replace WebSocket.prototype.send with a Proxy of the native send. The
         // client's `dl.call(socket, frame)` lands here; we hand the frame to that
         // socket's transform (re-encode + scrub) and send the result natively.
-        if (NativeProtoSend && !NativeProtoSend.__moomooWrapped) {
+        if (NativeProtoSend) {
             const sendProxy = new Proxy(NativeProtoSend, {
                 apply(target, ws, args) {
                     const transform = ws && transforms.get(ws);
@@ -109,21 +93,17 @@
             } catch (e) {
                 try { NativeWebSocket.prototype.send = sendProxy; } catch (_) { report(e); }
             }
-            try { Object.defineProperty(NativeProtoSend, "__moomooWrapped", { value: true, enumerable: false }); } catch (_) {}
         }
 
         const handler = {
             construct(target, args, newTarget) {
                 const ws = Reflect.construct(target, args, newTarget === Proxied ? target : newTarget);
-                try { tagSocket(ws); } catch (e) { report(e); }
                 try { onSocket && onSocket(ws, args && args[0]); } catch (e) { report(e); }
                 return ws;
             },
             // Pass-through for everything. receiver=target keeps native getter
             // semantics and avoids proxy-as-receiver edge cases.
             get(target, prop, receiver) {
-                if (prop === "__moomooWrapped") return true;
-                if (prop === "__moomooNative") return NativeWebSocket;
                 return Reflect.get(target, prop, target);
             },
             set(target, prop, value) { return Reflect.set(target, prop, value); },
@@ -178,8 +158,50 @@
             report(new Error("could not replace window.WebSocket (read-only in this realm). " +
                 "Run the userscript in page context: Violentmonkey -> @inject-into page, Tampermonkey -> @grant none."));
         }
-        return NativeWebSocket;
+        // The loader drives sockets through these, keyed by the socket object, so the
+        // socket itself stays untouched (nothing to enumerate on it).
+        return {
+            native: NativeWebSocket,
+            setTransform: (ws, fn) => { try { transforms.set(ws, fn); } catch (e) { report(e); } },
+            nativeSend: (ws, data) => Reflect.apply(NativeProtoSend, ws, [data])
+        };
     }
 
-    return { installWebSocketProxy };
+    /*
+     * Hide a set of property NAMES on the global object from reflection, so the
+     * client's own integrity scan can't see them. The named props still work by
+     * direct access (window.MooMoo etc. — mods need that); they just stop showing up
+     * in Object.getOwnPropertyNames / Reflect.ownKeys / getOwnPropertyDescriptor on
+     * the global, which is how the integrity probes enumerate. (They're also defined
+     * non-enumerable, so Object.keys / for..in never listed them.) Each hook is a Proxy
+     * of the native function, so Function.prototype.toString still reports "[native
+     * code]" and the probe that looks for a non-native reflection method finds nothing.
+     */
+    function hideGlobalNames(win, names) {
+        const hidden = new Set(names);
+        const Obj = win.Object, Refl = win.Reflect;
+        const isHidden = (k) => typeof k === "string" && hidden.has(k);
+        const swap = (owner, key, trap) => {
+            try {
+                const real = owner[key];
+                if (typeof real !== "function") return;
+                const proxy = new win.Proxy(real, { apply: trap });
+                Obj.defineProperty(owner, key, { value: proxy, writable: true, configurable: true, enumerable: false });
+            } catch (e) { /* leave the native in place */ }
+        };
+        // enumeration of the global's own keys -> drop the hidden names
+        swap(Obj, "getOwnPropertyNames", (t, thisArg, args) => {
+            const out = Reflect.apply(t, thisArg, args);
+            return args[0] === win ? out.filter((n) => !isHidden(n)) : out;
+        });
+        if (Refl) swap(Refl, "ownKeys", (t, thisArg, args) => {
+            const out = Reflect.apply(t, thisArg, args);
+            return args[0] === win ? out.filter((n) => !isHidden(n)) : out;
+        });
+        // descriptor lookups on the global for a hidden name -> undefined (not present)
+        swap(Obj, "getOwnPropertyDescriptor", (t, thisArg, args) =>
+            (args[0] === win && isHidden(args[1])) ? undefined : Reflect.apply(t, thisArg, args));
+    }
+
+    return { installWebSocketProxy, hideGlobalNames };
 });

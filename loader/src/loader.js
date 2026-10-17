@@ -576,16 +576,18 @@
             const st = {
                 ws, handshaked: false, ready: false, failed: false, ignore: false,
                 session: null, inQueue: [], outQueue: [],
-                nativeSend: (d) => ws.__moomooNativeSend ? ws.__moomooNativeSend(d) : ws.send(d)
+                nativeSend: (d) => sock.nativeSend(ws, d)
             };
             // passive read hook
             try { ws.addEventListener("message", (ev) => handleIncoming(st, ev.data)); }
             catch (e) { errorSink(e); }
-            // active send hook (installed by anticheat.wrapSend)
-            if (ws.__moomooSetTransform) ws.__moomooSetTransform(makeSendTransform(st));
+            // active send hook — the transform is kept in a WeakMap keyed by the socket,
+            // never written to the socket object.
+            sock.setTransform(ws, makeSendTransform(st));
         }
 
-        const native = D.Socket.installWebSocketProxy(win, onSocket, errorSink);
+        const sock = D.Socket.installWebSocketProxy(win, onSocket, errorSink);
+        const native = sock.native;
 
         // ---- diagnostics surface ----
         const MooMooLoader = {
@@ -608,6 +610,9 @@
         } catch (e) {
             win.MooMoo = MooMoo; win.MooMooLoader = MooMooLoader;
         }
+        // Hide the two names from reflection too, so the client's integrity scan can't
+        // enumerate them off the global (they stay reachable by direct access for mods).
+        try { if (D.Socket.hideGlobalNames) D.Socket.hideGlobalNames(win, ["MooMoo", "MooMooLoader"]); } catch (e) { errorSink(e); }
 
         MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
         MooMooLoader.input = input;

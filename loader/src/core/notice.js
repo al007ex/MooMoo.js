@@ -249,10 +249,12 @@
         }
 
         // ---- DOM helpers ----
+        let styleInjected = false;
         function ensureStyle() {
-            if (!doc || doc.getElementById(STYLE_ID)) return;
+            if (!doc || styleInjected) return;
+            styleInjected = true;
             const s = doc.createElement("style");
-            s.id = STYLE_ID; s.textContent = CSS;
+            s.textContent = CSS;   // no id: nothing for a tag#id probe to find
             (doc.head || doc.documentElement).appendChild(s);
         }
         function el(tag, cls, html) {

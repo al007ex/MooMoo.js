@@ -32,30 +32,30 @@
     /* The client captures the tab bar's <a> list once at startup and hides any
        tab it doesn't know about, so force ours to stay visible regardless. */
     #gameMenuTabs a.mmj-tab{ display:flex !important; align-items:center; justify-content:center; }
-    #gameModsBody.mmj-body{ color:#5a5a5a; max-height:340px; overflow-y:auto; overflow-x:hidden; margin:0 -4px; padding:0 4px; }
-    #gameModsBody .mmj-empty{ padding:26px 8px; text-align:center; color:#9a9a9a; font-size:15px; line-height:1.5; }
-    #gameModsBody .mmj-empty code{ background:#f0f0f0; border-radius:4px; padding:1px 5px; color:#6cc24a; }
-    #gameModsBody .mmj-mod{ border-bottom:1px solid #eee; }
-    #gameModsBody .mmj-row{ display:flex; align-items:center; gap:10px; padding:11px 4px; }
-    #gameModsBody .mmj-head{ cursor:default; }
-    #gameModsBody .mmj-head.mmj-has-settings{ cursor:pointer; border-radius:6px; }
-    #gameModsBody .mmj-head.mmj-has-settings:hover{ background:#f3f3f3; }
-    #gameModsBody .mmj-name{ flex:1 1 auto; min-width:0; font-size:16px; color:#2f2f2f; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #gameModsBody .mmj-ver{ font-size:11px; color:#b4b4b4; margin-left:6px; }
-    #gameModsBody .mmj-chev{ width:10px; height:10px; border-right:2px solid #c0c0c0; border-bottom:2px solid #c0c0c0; transform:rotate(-45deg); transition:transform .18s ease; flex:0 0 auto; margin-right:2px; }
-    #gameModsBody .mmj-mod.mmj-open .mmj-chev{ transform:rotate(45deg); }
-    #gameModsBody .mmj-settings{ display:none; padding:2px 6px 12px 6px; }
-    #gameModsBody .mmj-mod.mmj-open .mmj-settings{ display:block; }
-    #gameModsBody .mmj-set{ display:flex; align-items:center; gap:10px; padding:7px 0; font-size:14px; color:#6a6a6a; }
-    #gameModsBody .mmj-set-label{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    #gameModsBody .mmj-set input[type=text], #gameModsBody .mmj-set input[type=number], #gameModsBody .mmj-set select{
+    .mmj-body{ color:#5a5a5a; max-height:340px; overflow-y:auto; overflow-x:hidden; margin:0 -4px; padding:0 4px; }
+    .mmj-body .mmj-empty{ padding:26px 8px; text-align:center; color:#9a9a9a; font-size:15px; line-height:1.5; }
+    .mmj-body .mmj-empty code{ background:#f0f0f0; border-radius:4px; padding:1px 5px; color:#6cc24a; }
+    .mmj-body .mmj-mod{ border-bottom:1px solid #eee; }
+    .mmj-body .mmj-row{ display:flex; align-items:center; gap:10px; padding:11px 4px; }
+    .mmj-body .mmj-head{ cursor:default; }
+    .mmj-body .mmj-head.mmj-has-settings{ cursor:pointer; border-radius:6px; }
+    .mmj-body .mmj-head.mmj-has-settings:hover{ background:#f3f3f3; }
+    .mmj-body .mmj-name{ flex:1 1 auto; min-width:0; font-size:16px; color:#2f2f2f; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .mmj-body .mmj-ver{ font-size:11px; color:#b4b4b4; margin-left:6px; }
+    .mmj-body .mmj-chev{ width:10px; height:10px; border-right:2px solid #c0c0c0; border-bottom:2px solid #c0c0c0; transform:rotate(-45deg); transition:transform .18s ease; flex:0 0 auto; margin-right:2px; }
+    .mmj-body .mmj-mod.mmj-open .mmj-chev{ transform:rotate(45deg); }
+    .mmj-body .mmj-settings{ display:none; padding:2px 6px 12px 6px; }
+    .mmj-body .mmj-mod.mmj-open .mmj-settings{ display:block; }
+    .mmj-body .mmj-set{ display:flex; align-items:center; gap:10px; padding:7px 0; font-size:14px; color:#6a6a6a; }
+    .mmj-body .mmj-set-label{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .mmj-body .mmj-set input[type=text], .mmj-body .mmj-set input[type=number], .mmj-body .mmj-set select{
         font-family:inherit; font-size:13px; color:#333; border:1px solid #dcdcdc; border-radius:6px; padding:4px 7px; width:96px; background:#fff; }
-    #gameModsBody .mmj-set input[type=range]{ -webkit-appearance:none; appearance:none; width:110px; height:5px; border-radius:3px; background:#e2e2e2; outline:none; }
-    #gameModsBody .mmj-set input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:#6cc24a; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.25); }
-    #gameModsBody .mmj-set input[type=range]::-moz-range-thumb{ width:15px; height:15px; border:none; border-radius:50%; background:#6cc24a; cursor:pointer; }
-    #gameModsBody .mmj-set-val{ font-size:12px; color:#9a9a9a; min-width:30px; text-align:right; }
-    #gameModsBody .mmj-hint{ padding:9px 2px 3px; font-size:12.5px; color:#9a9a9a; line-height:1.5; }
-    #gameModsBody .mmj-hint b{ color:#6cc24a; font-weight:bold; }
+    .mmj-body .mmj-set input[type=range]{ -webkit-appearance:none; appearance:none; width:110px; height:5px; border-radius:3px; background:#e2e2e2; outline:none; }
+    .mmj-body .mmj-set input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:15px; height:15px; border-radius:50%; background:#6cc24a; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    .mmj-body .mmj-set input[type=range]::-moz-range-thumb{ width:15px; height:15px; border:none; border-radius:50%; background:#6cc24a; cursor:pointer; }
+    .mmj-body .mmj-set-val{ font-size:12px; color:#9a9a9a; min-width:30px; text-align:right; }
+    .mmj-body .mmj-hint{ padding:9px 2px 3px; font-size:12.5px; color:#9a9a9a; line-height:1.5; }
+    .mmj-body .mmj-hint b{ color:#6cc24a; font-weight:bold; }
     /* toggle switch */
     .mmj-switch{ position:relative; display:inline-block; width:40px; height:22px; flex:0 0 auto; }
     .mmj-switch input{ opacity:0; width:0; height:0; position:absolute; }
@@ -79,13 +79,15 @@
             return n;
         }
 
+        let styleInjected = false;
         function ensureStyle() {
-            if (doc.getElementById("mmj-style")) return;
-            const s = el("style"); s.id = "mmj-style"; s.textContent = STYLE;
+            if (styleInjected) return;
+            styleInjected = true;
+            const s = el("style"); s.textContent = STYLE;   // no id/class: nothing for a tag#id probe to find
             (doc.head || doc.documentElement).appendChild(s);
         }
 
-        let panel = null;      // #gameModsBody
+        let panel = null;      // our injected mods body (class .mmj-body, no id)
         let tab = null;        // our <a data-tab="mods">
         const openState = {};  // id -> expanded?
 
@@ -106,7 +108,7 @@
         function inject() {
             const bar = doc.querySelector(SEL.tabs);
             const card = doc.querySelector(SEL.card);
-            if (!bar || !card || doc.getElementById("gameModsBody")) return Boolean(doc.getElementById("gameModsBody"));
+            if (!bar || !card || panel) return Boolean(panel);   // `panel` is our body; no id to look up
 
             ensureStyle();
 
@@ -122,8 +124,7 @@
             }, true);
             bar.appendChild(tab);
 
-            panel = el("div", "mmj-body");
-            panel.id = "gameModsBody";
+            panel = el("div", "mmj-body");   // class only, no id
             panel.style.display = "none";
             // place it right after the last native body so close button stays last
             card.appendChild(panel);
