@@ -79,22 +79,22 @@
             // UI — leaderboard look: big title, grey label / white value rows.
             // =================================================================
             const CSS = `
-            #mdbg{position:fixed;top:12px;left:12px;z-index:100000;width:216px;max-height:88vh;overflow-y:auto;
+            .mdbg{position:fixed;top:12px;left:12px;z-index:100000;width:216px;max-height:88vh;overflow-y:auto;
               padding:6px 12px 9px;border-radius:5px;background:rgba(0,0,0,.4);color:#fff;
               font-family:"Hammersmith One",sans-serif;-webkit-user-select:none;user-select:none;pointer-events:auto}
-            #mdbg::-webkit-scrollbar{width:0}
-            #mdbg .ttl{font-size:28px;line-height:1.15;cursor:pointer}
-            #mdbg.min .bd{display:none}
-            #mdbg .bd{margin-top:2px}
-            #mdbg .r{display:flex;align-items:baseline;font-size:17px;line-height:1.42}
-            #mdbg .r .k{flex:0 0 auto;color:#c0c0c0}
-            #mdbg .r .v{flex:1 1 auto;text-align:right;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:8px}
-            #mdbg .r .v.y{color:#ffe24d}#mdbg .r .v.r{color:#ec6a55}#mdbg .r .v.d{color:#8f8f8f}
-            #mdbg .div{height:1px;background:#ffffff26;margin:5px 0}
-            #mdbg .log{margin-top:5px}
-            #mdbg .log .e{font-size:13.5px;line-height:1.5;color:#c9c9c9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-            #mdbg .log .e .t{color:#7d7d7d;margin-right:5px}
-            #mdbg .log .e.y{color:#ffe24d}#mdbg .log .e.r{color:#ec6a55}
+            .mdbg::-webkit-scrollbar{width:0}
+            .mdbg .ttl{font-size:28px;line-height:1.15;cursor:pointer}
+            .mdbg.min .bd{display:none}
+            .mdbg .bd{margin-top:2px}
+            .mdbg .r{display:flex;align-items:baseline;font-size:17px;line-height:1.42}
+            .mdbg .r .k{flex:0 0 auto;color:#c0c0c0}
+            .mdbg .r .v{flex:1 1 auto;text-align:right;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:8px}
+            .mdbg .r .v.y{color:#ffe24d}.mdbg .r .v.r{color:#ec6a55}.mdbg .r .v.d{color:#8f8f8f}
+            .mdbg .div{height:1px;background:#ffffff26;margin:5px 0}
+            .mdbg .log{margin-top:5px}
+            .mdbg .log .e{font-size:13.5px;line-height:1.5;color:#c9c9c9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+            .mdbg .log .e .t{color:#7d7d7d;margin-right:5px}
+            .mdbg .log .e.y{color:#ffe24d}.mdbg .log .e.r{color:#ec6a55}
             `;
             const el = (t, c, x) => { const n = doc.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 
@@ -105,7 +105,7 @@
 
             function build() {
                 const style = el("style"); style.textContent = CSS; doc.head.appendChild(style);
-                panel = el("div"); panel.id = "mdbg";
+                panel = el("div", "mdbg");
                 const ttl = el("div", "ttl", "Debug");
                 ttl.addEventListener("click", () => panel.classList.toggle("min"));
                 panel.appendChild(ttl);

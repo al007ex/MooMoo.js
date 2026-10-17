@@ -59,6 +59,12 @@
                 heal: { on: true, healAt: 70, legit: true, showInHand: 90, jitter: 40, maxPerSec: 6, shameSafe: true },
                 humanize: { on: true, jitter: 25, pauseChance: 8, pauseMax: 350 },
                 insta: { key: "r", mode: "packet", swapDelay: 100, switchBack: true, autoAim: true, primaryHat: 7, secondaryHat: 53, primaryAcc: 0, secondaryAcc: 0 },
+                // hold a mouse button to wear a hat+accessory, optionally swapping to a
+                // second combo during each shot's reload. left = primary, right = secondary.
+                clicks: {
+                    left: { on: false, hat: 7, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 },
+                    right: { on: false, hat: 40, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 }
+                },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -72,6 +78,10 @@
                     if (got.heal && typeof got.heal === "object") Object.assign(prefs.heal, got.heal);
                     if (got.humanize && typeof got.humanize === "object") Object.assign(prefs.humanize, got.humanize);
                     if (got.insta && typeof got.insta === "object") Object.assign(prefs.insta, got.insta);
+                    if (got.clicks && typeof got.clicks === "object") {
+                        if (got.clicks.left) Object.assign(prefs.clicks.left, got.clicks.left);
+                        if (got.clicks.right) Object.assign(prefs.clicks.right, got.clicks.right);
+                    }
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -283,6 +293,64 @@
                 ctx.onCleanup(() => { win.removeEventListener("keydown", onKeyDown, true); win.removeEventListener("keyup", onKeyUp, true); });
             }
 
+            // ---- hold a mouse button to wear a hat + accessory (with a reload swap) ----
+            // Hold a configured button and it wears that button's combo; let go and it
+            // puts back whatever you had on. With "reload swap" on, each of your own
+            // swings wears the reload combo for that shot's cooldown, then swaps the
+            // main combo back in just before the next swing lands. Purely additive —
+            // the client still does the actual aiming and attacking.
+            const RELOAD_MARGIN = 120;          // swap the main combo back this long before the weapon is ready
+            const mouse = { prevHat: 0, prevAcc: 0, active: null, order: [], gen: 0 };
+            const clickCfg = (btn) => btn === 2 ? prefs.clicks.right : prefs.clicks.left;
+            const canHat = (id) => !id || !(ctx.store && ctx.store.ownsHat) || ctx.store.ownsHat(id);
+            const canAcc = (id) => !id || !(ctx.store && ctx.store.ownsTail) || ctx.store.ownsTail(id);
+            function wear(hat, acc) {
+                if (ctx.setHat && canHat(hat)) ctx.setHat(hat | 0);     // 0 = no hat
+                if (ctx.setTail && canAcc(acc)) ctx.setTail(acc | 0);   // 0 = no accessory
+            }
+            function wearActive() { if (mouse.active != null) { const c = clickCfg(mouse.active); wear(c.hat, c.acc); } }
+            function setActive(btn) { mouse.active = btn; mouse.gen++; wearActive(); }   // gen++ voids any pending reload swap
+            function pressButton(btn) {
+                if (mouse.order.indexOf(btn) >= 0) return;
+                if (!mouse.order.length) { mouse.prevHat = (ctx.store && ctx.store.hat) || 0; mouse.prevAcc = (ctx.store && ctx.store.tail) || 0; }
+                mouse.order.push(btn);
+                setActive(btn);
+            }
+            function releaseButton(btn) {
+                const i = mouse.order.indexOf(btn);
+                if (i < 0) return;
+                mouse.order.splice(i, 1);
+                mouse.gen++;
+                if (!mouse.order.length) { mouse.active = null; wear(mouse.prevHat, mouse.prevAcc); }
+                else setActive(mouse.order[mouse.order.length - 1]);
+            }
+            function releaseAll() { if (mouse.order.length) { mouse.order.length = 0; mouse.active = null; mouse.gen++; wear(mouse.prevHat, mouse.prevAcc); } }
+            function onMouseDown(e) {
+                if (e.isTrusted === false || open) return;
+                if (e.button !== 0 && e.button !== 2) return;
+                if (!clickCfg(e.button).on) return;
+                const me = self(); if (!me || !me.alive) return;
+                pressButton(e.button);
+            }
+            function onMouseUp(e) { if (e.button === 0 || e.button === 2) releaseButton(e.button); }
+            if (doc) {
+                // our own swing registered -> we just shot, so dip into the reload combo
+                ctx.on("gatherAnimation", (pk) => {
+                    const a = pk && pk.args, me = self();
+                    if (!a || !me || a[0] !== me.sid || mouse.active == null) return;
+                    const c = clickCfg(mouse.active);
+                    if (!c.reload) return;
+                    wear(c.reloadHat, c.reloadAcc);
+                    const gen = mouse.gen, w = data.weapon(a[2]);
+                    const back = Math.max(40, ((w && w.speed) || 300) - RELOAD_MARGIN);
+                    ctx.after(back, () => { if (gen === mouse.gen) wearActive(); });   // main combo back on before the next swing
+                });
+                win.addEventListener("mousedown", onMouseDown, true);
+                win.addEventListener("mouseup", onMouseUp, true);
+                win.addEventListener("blur", releaseAll);
+                ctx.onCleanup(() => { win.removeEventListener("mousedown", onMouseDown, true); win.removeEventListener("mouseup", onMouseUp, true); win.removeEventListener("blur", releaseAll); });
+            }
+
             // =================================================================
             // MENU — a dark, moomoo-styled client panel (sidebar + module cards).
             // =================================================================
@@ -452,6 +520,16 @@
                 pick.addEventListener("mousedown", (e) => { e.stopPropagation(); if (e.target === pick) close(); });
                 gui.appendChild(pick);
             }
+            // a captioned hat-slot + accessory-slot pair (insta slots, click combos)
+            function comboCell(label, getH, setH, getA, setA) {
+                const c = mk("div", "hatcell");
+                const pair = mk("div", "accpair");
+                pair.appendChild(hatSlot(getH, setH));            // hat
+                pair.appendChild(hatSlot(getA, setA, "acc"));     // accessory
+                c.appendChild(pair);
+                c.appendChild(mk("span", "hatcap", label));
+                return c;
+            }
             function doGrab(e) {
                 const done = grab; grab = null; const el = grabEl; grabEl = null;
                 if (/^(Shift|Control|Alt|Meta|CapsLock|OS)$/.test(e.key)) { grab = done; grabEl = el; return; }
@@ -479,7 +557,8 @@
                 grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>',
                 combat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7.5"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
                 hat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h18"/><path d="M5.5 17c0-5.2 2.6-9 6.5-9s6.5 3.8 6.5 9"/></svg>',
-                gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>'
+                gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
+                mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><line x1="12" y1="6.5" x2="12" y2="11"/></svg>'
             };
             const MODULES = {};
             for (const s of SPAMMERS) {
@@ -510,20 +589,24 @@
                 m.body.appendChild(row("Switch back", toggleSwitch(() => ik.switchBack, (v) => { ik.switchBack = v; })));
                 m.body.appendChild(sliderRow("Swap ms", 40, 300, 10, () => ik.swapDelay, (x) => { ik.swapDelay = x; }, (n) => n + "ms"));
                 const hats = mk("div", "hatrow");
-                const cell = (label, getH, setH, getA, setA) => {
-                    const c = mk("div", "hatcell");
-                    const pair = mk("div", "accpair");
-                    pair.appendChild(hatSlot(getH, setH));            // hat
-                    pair.appendChild(hatSlot(getA, setA, "acc"));     // accessory
-                    c.appendChild(pair);
-                    c.appendChild(mk("span", "hatcap", label));
-                    return c;
-                };
-                hats.appendChild(cell("Primary", () => ik.primaryHat, (id) => { ik.primaryHat = id; }, () => ik.primaryAcc, (id) => { ik.primaryAcc = id; }));
-                hats.appendChild(cell("Secondary", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }, () => ik.secondaryAcc, (id) => { ik.secondaryAcc = id; }));
+                hats.appendChild(comboCell("Primary", () => ik.primaryHat, (id) => { ik.primaryHat = id; }, () => ik.primaryAcc, (id) => { ik.primaryAcc = id; }));
+                hats.appendChild(comboCell("Secondary", () => ik.secondaryHat, (id) => { ik.secondaryHat = id; }, () => ik.secondaryAcc, (id) => { ik.secondaryAcc = id; }));
                 m.body.appendChild(hats);
                 return m.card;
             };
+            function clickCard(title, cfg) {
+                const m = modCard(title, { get: () => cfg.on, set: (v) => { cfg.on = v; } });
+                const hold = mk("div", "hatrow");
+                hold.appendChild(comboCell("On hold", () => cfg.hat, (id) => { cfg.hat = id; }, () => cfg.acc, (id) => { cfg.acc = id; }));
+                m.body.appendChild(hold);
+                m.body.appendChild(row("Reload swap", toggleSwitch(() => cfg.reload, (v) => { cfg.reload = v; })));
+                const rel = mk("div", "hatrow");
+                rel.appendChild(comboCell("Reloading", () => cfg.reloadHat, (id) => { cfg.reloadHat = id; }, () => cfg.reloadAcc, (id) => { cfg.reloadAcc = id; }));
+                m.body.appendChild(rel);
+                return m.card;
+            }
+            MODULES.clickLeft = () => clickCard("Left click", prefs.clicks.left);
+            MODULES.clickRight = () => clickCard("Right click", prefs.clicks.right);
             MODULES.heal = () => {
                 const h = prefs.heal;
                 const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
@@ -565,6 +648,7 @@
             const CATEGORIES = [
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
                 { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
+                { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
                 { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
             ];
