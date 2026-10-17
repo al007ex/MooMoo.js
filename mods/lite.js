@@ -300,19 +300,30 @@
             // main combo back in just before the next swing lands. Purely additive —
             // the client still does the actual aiming and attacking.
             const RELOAD_MARGIN = 120;          // swap the main combo back this long before the weapon is ready
-            const mouse = { prevHat: 0, prevAcc: 0, active: null, order: [], gen: 0 };
+            const mouse = { prevHat: 0, prevAcc: 0, curHat: 0, curAcc: 0, active: null, order: [], gen: 0 };
             const clickCfg = (btn) => btn === 2 ? prefs.clicks.right : prefs.clicks.left;
             const canHat = (id) => !id || !(ctx.store && ctx.store.ownsHat) || ctx.store.ownsHat(id);
             const canAcc = (id) => !id || !(ctx.store && ctx.store.ownsTail) || ctx.store.ownsTail(id);
-            function wear(hat, acc) {
-                if (ctx.setHat && canHat(hat)) ctx.setHat(hat | 0);     // 0 = no hat
-                if (ctx.setTail && canAcc(acc)) ctx.setTail(acc | 0);   // 0 = no accessory
+            // put on a combo. 0 in a slot leaves that slot as it is (so a reload hat can
+            // swap while the accessory stays). dedupes, so an unchanged slot sends nothing.
+            function put(hat, acc) {
+                if (hat && hat !== mouse.curHat && canHat(hat) && ctx.setHat) { ctx.setHat(hat); mouse.curHat = hat; }
+                if (acc && acc !== mouse.curAcc && canAcc(acc) && ctx.setTail) { ctx.setTail(acc); mouse.curAcc = acc; }
             }
-            function wearActive() { if (mouse.active != null) { const c = clickCfg(mouse.active); wear(c.hat, c.acc); } }
+            // put the loadout you had before the first press back on (bare slots included).
+            function restorePrev() {
+                if (mouse.prevHat !== mouse.curHat && canHat(mouse.prevHat) && ctx.setHat) ctx.setHat(mouse.prevHat | 0);
+                if (mouse.prevAcc !== mouse.curAcc && canAcc(mouse.prevAcc) && ctx.setTail) ctx.setTail(mouse.prevAcc | 0);
+                mouse.curHat = mouse.prevHat; mouse.curAcc = mouse.prevAcc;
+            }
+            function wearActive() { if (mouse.active != null) { const c = clickCfg(mouse.active); put(c.hat, c.acc); } }
             function setActive(btn) { mouse.active = btn; mouse.gen++; wearActive(); }   // gen++ voids any pending reload swap
             function pressButton(btn) {
                 if (mouse.order.indexOf(btn) >= 0) return;
-                if (!mouse.order.length) { mouse.prevHat = (ctx.store && ctx.store.hat) || 0; mouse.prevAcc = (ctx.store && ctx.store.tail) || 0; }
+                if (!mouse.order.length) {
+                    mouse.prevHat = mouse.curHat = (ctx.store && ctx.store.hat) || 0;
+                    mouse.prevAcc = mouse.curAcc = (ctx.store && ctx.store.tail) || 0;
+                }
                 mouse.order.push(btn);
                 setActive(btn);
             }
@@ -321,10 +332,10 @@
                 if (i < 0) return;
                 mouse.order.splice(i, 1);
                 mouse.gen++;
-                if (!mouse.order.length) { mouse.active = null; wear(mouse.prevHat, mouse.prevAcc); }
+                if (!mouse.order.length) { mouse.active = null; restorePrev(); }
                 else setActive(mouse.order[mouse.order.length - 1]);
             }
-            function releaseAll() { if (mouse.order.length) { mouse.order.length = 0; mouse.active = null; mouse.gen++; wear(mouse.prevHat, mouse.prevAcc); } }
+            function releaseAll() { if (mouse.order.length) { mouse.order.length = 0; mouse.active = null; mouse.gen++; restorePrev(); } }
             function onMouseDown(e) {
                 if (e.isTrusted === false || open) return;
                 if (e.button !== 0 && e.button !== 2) return;
@@ -340,7 +351,7 @@
                     if (!a || !me || a[0] !== me.sid || mouse.active == null) return;
                     const c = clickCfg(mouse.active);
                     if (!c.reload) return;
-                    wear(c.reloadHat, c.reloadAcc);
+                    put(c.reloadHat, c.reloadAcc);                     // reload hat (accessory stays unless you set one)
                     const gen = mouse.gen, w = data.weapon(a[2]);
                     const back = Math.max(40, ((w && w.speed) || 300) - RELOAD_MARGIN);
                     ctx.after(back, () => { if (gen === mouse.gen) wearActive(); });   // main combo back on before the next swing
