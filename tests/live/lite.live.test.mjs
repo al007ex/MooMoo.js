@@ -153,6 +153,12 @@ try {
     const placeFrames = await page.evaluate((s) => window.__raw.filter(f => f.t >= s && (f.name === "F" || f.name === "z")).length, mark);
     check("spike spammer puts frames on the wire while held", placeFrames >= 4, "frames=" + placeFrames);
 
+    // 6b. item counter: placing spikes puts a count on the spike action-bar icon (slot 16+6),
+    //     as a class-only badge with no id (so a kind-4 probe never sees it).
+    await tick(500);
+    const spikeBadge = await page.evaluate(() => { const s = document.getElementById("actionBarItem22"); const b = s && s.querySelector(".mml-cnt"); return { n: b ? +b.textContent : null, id: b ? !!b.id : null, shown: b ? b.style.display !== "none" : null }; });
+    check("item counter shows on the spike icon (no id)", spikeBadge.n > 0 && spikeBadge.id === false && spikeBadge.shown === true, JSON.stringify(spikeBadge));
+
     // 7. hat hotkey K: equip toggle 51
     await page.keyboard.press("k"); await tick(350);
     const kOn = (await worn()).hat;

@@ -71,6 +71,8 @@
                 arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
                 // two reload bars under every player's health bar (primary + secondary cooldown)
                 reloads: { on: true, self: true, enemies: true },
+                // running count of each item you've placed, shown on its action-bar icon
+                counter: { on: true },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -93,6 +95,7 @@
                     }
                     if (got.arrows && typeof got.arrows === "object") Object.assign(prefs.arrows, got.arrows);
                     if (got.reloads && typeof got.reloads === "object") Object.assign(prefs.reloads, got.reloads);
+                    if (got.counter && typeof got.counter === "object") Object.assign(prefs.counter, got.counter);
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -484,6 +487,46 @@
             }
             applyReloads();
 
+            // ---- item placement counter: a white count in the top-right of each placeable
+            // item's action-bar icon. The server already reports your per-group placed count
+            // (the "S" packet); we keep the running TOTAL (sum of its increases), so it never
+            // drops when a build is destroyed. The badge is a class-only element with no id,
+            // so an integrity probe scanning id'd elements never sees it.
+            const placed = {}, lastCnt = {};
+            const NW = (data.weapons || []).length;   // weapons take the first action-bar slots
+            ctx.on("itemCount", (pk) => {
+                const a = pk && pk.args; if (!a) return;
+                const g = a[0], c = a[1] | 0, prev = lastCnt[g] || 0;
+                if (c > prev) placed[g] = (placed[g] || 0) + (c - prev);
+                lastCnt[g] = c;
+            });
+            function slotBadge(slot) {
+                let b = slot.querySelector(".mml-cnt");
+                if (!b) {
+                    try { if (win.getComputedStyle(slot).position === "static") slot.style.position = "relative"; } catch (e) { slot.style.position = "relative"; }
+                    b = doc.createElement("div"); b.className = "mml-cnt";
+                    b.style.cssText = "position:absolute;top:0;right:4px;color:#fff;font-family:'Hammersmith One',sans-serif;font-size:15px;line-height:1.1;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none;z-index:2";
+                    slot.appendChild(b);
+                }
+                return b;
+            }
+            function updateCounter() {
+                if (!doc) return;
+                const items = data.items || [];
+                for (let k = 0; k < items.length; k++) {
+                    const slot = doc.getElementById("actionBarItem" + (NW + k));
+                    if (!slot) continue;
+                    const grp = items[k].group, g = grp == null ? null : (typeof grp === "object" ? grp.id : grp);
+                    const n = (prefs.counter.on && slot.style.display !== "none" && g != null) ? (placed[g] || 0) : 0;
+                    if (n > 0) { const b = slotBadge(slot); b.textContent = n; b.style.display = ""; }
+                    else { const b = slot.querySelector(".mml-cnt"); if (b) b.style.display = "none"; }
+                }
+            }
+            if (doc) {
+                ctx.every(150, updateCounter);
+                ctx.onCleanup(() => { try { const bs = doc.querySelectorAll(".mml-cnt"); for (let i = 0; i < bs.length; i++) bs[i].remove(); } catch (e) {} });
+            }
+
             // =================================================================
             // MENU — a dark, moomoo-styled client panel (sidebar + module cards).
             // =================================================================
@@ -758,6 +801,11 @@
                 m.body.appendChild(row("Enemies", toggleSwitch(() => r.enemies, (v) => { r.enemies = v; })));
                 return m.card;
             };
+            MODULES.counter = () => {
+                const c = prefs.counter;
+                const m = modCard("Item counter", { get: () => c.on, set: (v) => { c.on = v; updateCounter(); } });
+                return m.card;
+            };
             MODULES.heal = () => {
                 const h = prefs.heal;
                 const m = modCard("Auto heal", { get: () => h.on, set: (v) => { h.on = v; } });
@@ -800,7 +848,7 @@
                 { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
                 { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal"] },
                 { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
-                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads"] },
+                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads", "counter"] },
                 { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
                 { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
             ];
