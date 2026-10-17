@@ -70,7 +70,7 @@
                 // teammates green, animals blue, all at a fixed distance from you.
                 arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
                 // two reload bars under every player's health bar (primary + secondary cooldown)
-                reloads: { on: true, self: true },
+                reloads: { on: true, self: true, enemies: true },
                 hats: [{ key: "", id: 7 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
             };
             for (const s of SPAMMERS) DEFAULTS.spammers[s.id] = { key: s.key, item: s.item, speed: s.speed, on: true };
@@ -464,7 +464,8 @@
                 g.globalAlpha = 1; g.lineJoin = "round";
                 for (const [sid, p] of ctx.render.players) {
                     if (!p.visible) continue;
-                    if (!prefs.reloads.self && me && sid === me.sid) continue;
+                    const isSelf = !!(me && sid === me.sid);
+                    if (isSelf ? !prefs.reloads.self : !prefs.reloads.enemies) continue;
                     const s = swings.get(sid);
                     const x = p.x - left, y0 = (p.y - top) + (p.scale || 35) + NAMEY + HBH + GAP;
                     drawBar(g, x, y0, reloadOf(s, "pAt", "pDur", now), RL.primary);
@@ -749,7 +750,8 @@
             MODULES.reloads = () => {
                 const r = prefs.reloads;
                 const m = modCard("Reload bars", { get: () => r.on, set: (v) => { r.on = v; applyReloads(); } });
-                m.body.appendChild(row("Show on self", toggleSwitch(() => r.self, (v) => { r.self = v; })));
+                m.body.appendChild(row("Yourself", toggleSwitch(() => r.self, (v) => { r.self = v; })));
+                m.body.appendChild(row("Enemies", toggleSwitch(() => r.enemies, (v) => { r.enemies = v; })));
                 return m.card;
             };
             MODULES.heal = () => {
