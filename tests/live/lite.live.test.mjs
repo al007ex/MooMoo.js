@@ -5,8 +5,7 @@
  * they run:
  *   - instakill equips a hat + accessory for the primary & secondary, then restores
  *   - hold-a-mouse-button (left / right) wears a hat+accessory combo and reverts on
- *     release; with "reload swap" on, each of your own swings dips to the reload hat
- *     and back while the accessory stays put   (driven with REAL trusted mouse events)
+ *     release   (driven with REAL trusted mouse events)
  *   - auto heal recovers from an admin bot's hits with no shame
  *   - a place spammer, a hat hotkey, and the menu's new Clicks tab
  *   - the loader's telemetry keeps its flags masked and matches no integrity probe
@@ -36,8 +35,8 @@ const LITE_CFG = {
     insta: { key: "r", mode: "timed", swapDelay: 70, autoAim: false, switchBack: true,
              primaryHat: 51, secondaryHat: 28, primaryAcc: 9, secondaryAcc: 12 },
     clicks: {
-        left:  { on: true, hat: 51, acc: 9,  reload: true,  reloadHat: 28, reloadAcc: 0 },
-        right: { on: true, hat: 28, acc: 12, reload: false, reloadHat: 51, reloadAcc: 0 }
+        left:  { on: true, hat: 51, acc: 9 },
+        right: { on: true, hat: 28, acc: 12 }
     },
     heal: { on: true, legit: true, healAt: 75, showInHand: 0, jitter: 0, maxPerSec: 10, shameSafe: true },
     autogg: { on: true, message: "gg ez" },
@@ -117,8 +116,8 @@ try {
     const instaWorn = await worn();
     check("insta restored the previous loadout (none)", instaWorn.hat === 0 && instaWorn.tail === 0, JSON.stringify(instaWorn));
 
-    // 4. CLICKS LEFT — hold the left button (trusted mouse): wears hat 51 + acc 9, dips to
-    //    reload hat 28 on each swing (accessory stays), then back; release restores the loadout.
+    // 4. CLICKS LEFT — hold the left button (trusted mouse): wears hat 51 + acc 9 for the
+    //    whole hold, then restores the loadout on release.
     await page.mouse.move(640, 360);
     mark = Date.now();
     await page.mouse.down({ button: "left" });
@@ -129,12 +128,10 @@ try {
     fr = await storeSince(mark);
     const leftHats = fr.filter(f => f.action === 0 && !f.acc).map(f => f.id);
     const leftAccs = fr.filter(f => f.action === 0 && f.acc).map(f => f.id);
-    const swapsTo28 = leftHats.filter(id => id === 28).length;
-    const backTo51 = leftHats.filter(id => id === 51).length;
     check("left-hold wears the hold hat (51)", leftHats.includes(51), "hats=" + JSON.stringify(leftHats));
     check("left-hold wears the hold accessory (9)", leftAccs.includes(9), "accs=" + JSON.stringify(leftAccs));
-    check("left-hold keeps the accessory on during reload (no flicker)", leftAccs.filter(id => id === 9).length === 1 && !leftAccs.slice(0, -1).includes(0), "accs=" + JSON.stringify(leftAccs));
-    check("left-hold reload-swaps to the reload hat (28) and back", swapsTo28 >= 1 && backTo51 >= 2, `to28=${swapsTo28} to51=${backTo51}`);
+    check("left-hold wears the combo once, no mid-hold flicker", leftHats.filter(id => id === 51).length === 1 && leftAccs.filter(id => id === 9).length === 1 && !leftHats.slice(0, -1).includes(0), "hats=" + JSON.stringify(leftHats) + " accs=" + JSON.stringify(leftAccs));
+    check("left-hold keeps the hold hat on the whole time (no reload swap)", duringWorn.hat === 51, "during=" + JSON.stringify(duringWorn));
     const afterLeft = await worn();
     check("left release restored the previous loadout", afterLeft.hat === 0 && afterLeft.tail === 0, JSON.stringify(afterLeft) + " during=" + JSON.stringify(duringWorn));
 

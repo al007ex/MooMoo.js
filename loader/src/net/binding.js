@@ -294,6 +294,59 @@
         return result >>> 0;
     }
 
+    // ---- self-protection -----------------------------------------------------
+    // The sanitiser above can only hide footprint it UNDERSTANDS. Two things have
+    // silently defeated it before, and both would leak footprint with no error:
+    //   * the anti-cheat adds a brand-new probe KIND the sanitiser has no rule for
+    //     (kinds 8 + 9 were added in index-332036b9), so a bit it matched on our
+    //     footprint sails through unstripped;
+    //   * the sanitiser loses sight of the real page — the bundle wrapper shadows
+    //     self/globalThis, so telemetryGlobal() once resolved to {} and every
+    //     DOM/storage/function lookup went dead while still "succeeding".
+    // auditProbeResult detects exactly those so the loader can shout instead of
+    // quietly getting its players kicked. It NEVER changes what is sent; it only
+    // reports what the sanitiser could not account for.
+    const KNOWN_PROBE_KINDS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    // Is telemetryGlobal() actually looking at the page? We cross-check against the
+    // window/document reachable DIRECTLY (the wrapper shadows self/globalThis but NOT
+    // window/document), so this catches the "{}" bug without trusting the same path.
+    function telemetryGlobalHealthy() {
+        try {
+            let realDoc = false;
+            try { if (typeof document !== "undefined" && document) realDoc = true; } catch (e) {}
+            try { if (!realDoc && typeof window !== "undefined" && window && window.document) realDoc = true; } catch (e) {}
+            if (!realDoc) return true;                       // no DOM reachable (node / tests) -> nothing to strip
+            const g = telemetryGlobal();
+            return !!(g && (g.document || g.localStorage));  // the sanitiser must be able to see the DOM / storage
+        } catch (e) { return true; }
+    }
+    // clientResult = what the client answered; cleaned = what cleanProbeResult produced.
+    // Returns a (usually empty) list of problems the sanitiser could not handle.
+    function auditProbeResult(clientResult, cleaned, probes, salt) {
+        const warnings = [];
+        if (!telemetryGlobalHealthy()) warnings.push({ type: "dom-blind", detail: "telemetryGlobal() cannot see the page document/localStorage — DOM/function footprint cannot be stripped" });
+        if (Array.isArray(probes)) {
+            salt = salt >>> 0;
+            const client = clientResult | 0, clean = cleaned | 0;
+            for (let i = 0; i < probes.length && i < 32; i++) {
+                const p = probes[i]; if (!p) continue;
+                const kind = p[0], bit = 1 << i;
+                if (KNOWN_PROBE_KINDS.indexOf(kind) < 0) {
+                    // A kind we have no rule for: if the client matched it we cannot tell whether
+                    // that bit is our footprint or a canary, so we leave it — but we must flag it.
+                    warnings.push({ type: "unknown-kind", kind: kind, index: i, path: String(p[1] || ""), matched: !!(client & bit) });
+                    continue;
+                }
+                // A bit we positively tie to our own footprint is STILL set in the answer: the
+                // strip silently failed (the telemetryGlobal bug did exactly this for kinds 3/4/8).
+                if ((clean & bit) && loaderArtifactProbe(kind, p[1] || "", p[2] >>> 0, salt)) {
+                    warnings.push({ type: "residual-footprint", kind: kind, index: i });
+                }
+            }
+        }
+        return warnings;
+    }
+
     // Build a "T" the exact way the client does — the crypto/transport envelope (seal, probe
     // salt, seq, ledger) carries the real values the server validates, while the three detection
     // fields come from `det` (flags / untrusted / probeResult). With no `det` they are all 0, i.e.
@@ -340,6 +393,12 @@
             construct: telemetryConstruct,
             // Strip loader/mod footprint bits from the client's probe answer, keeping canaries.
             cleanProbeResult,
+            // Self-protection: flags anything the sanitiser could NOT account for (a brand-new
+            // probe kind, a strip that silently failed, a blinded telemetry global). Detection
+            // only — it never changes what is sent. core/antidetect.js runs it on every "T".
+            auditProbeResult,
+            telemetryGlobalHealthy,
+            knownProbeKinds: KNOWN_PROBE_KINDS.slice(),
             // Back-compat shim: an empty "T" built from ctx (same as construct(ctx)).
             scrub: (args, ctx) => telemetryConstruct(ctx)
         }

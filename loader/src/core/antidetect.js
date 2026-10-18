@@ -29,6 +29,13 @@
 
     const LOG_LIMIT = 50;
 
+    function describeWarning(w) {
+        if (w.type === "unknown-kind") return "an unknown integrity-probe KIND " + w.kind + " (probe #" + w.index + (w.path ? ", path '" + w.path + "'" : "") + ") the sanitiser has no rule for" + (w.matched ? " — and the client MATCHED it, so loader footprint may be leaking. Add a rule for kind " + w.kind + " in binding.js cleanProbeResult." : " (not matched this round, but add a rule before it is).");
+        if (w.type === "residual-footprint") return "a bit the sanitiser should have stripped (kind " + w.kind + ", probe #" + w.index + ") is STILL set in the sent answer — stripping silently failed.";
+        if (w.type === "dom-blind") return w.detail || "the telemetry sanitiser cannot see the page.";
+        return "an unaccounted-for condition (" + w.type + ").";
+    }
+
     function create(opts) {
         const telemetry = opts && opts.telemetry;
         const subs = new Set();
@@ -52,6 +59,33 @@
             last: null,
             // A rolling list of the last LOG_LIMIT entries.
             log: [],
+
+            // ---- self-protection ----
+            // Problems the sanitiser could NOT account for on recent "T" rounds: a brand-new
+            // integrity-probe kind with no strip rule, a strip that silently failed, or a
+            // telemetry global that has gone blind to the page. Each is also console.warn'd
+            // once (so it is impossible to miss) and offered to onDetection subscribers (the
+            // debug panel renders them). `healthy` is false while the sanitiser is compromised.
+            warnings: [],
+            warningCount: 0,
+            lastWarnings: null,
+            healthy: true,
+            _warned: null,
+
+            _recordWarnings(list) {
+                if (!this._warned) this._warned = {};
+                for (const w of list) {
+                    const stamped = Object.assign({ at: Date.now() }, w);
+                    this.warnings.push(stamped);
+                    if (this.warnings.length > LOG_LIMIT) this.warnings.shift();
+                    this.warningCount++;
+                    const sig = w.type + ":" + (w.kind != null ? w.kind : "") + ":" + (w.index != null ? w.index : "");
+                    if (!this._warned[sig]) {
+                        this._warned[sig] = true;
+                        try { (console.warn || console.log).call(console, "[moomoo.js] anti-cheat SELF-PROTECTION tripped — " + describeWarning(w)); } catch (e) {}
+                    }
+                }
+            },
 
             setEnabled(on) { this.enabled = !!on; return this.enabled; },
 
@@ -96,6 +130,14 @@
                     : seen.probeResult;
                 const sentProbe = this.enabled ? 0 : clean;
                 const stripped = (seen.probeResult & ~clean) >>> 0;   // probe bits that were the loader's / a mod's
+                // Self-protection: detect anything the sanitiser could not account for (a new
+                // probe kind, a failed strip, a blinded global). Detection only — `sentProbe` is
+                // already fixed above; this never changes what goes out, it just raises the alarm.
+                let warnings = [];
+                try { if (telemetry.auditProbeResult) warnings = telemetry.auditProbeResult(seen.probeResult, clean, env.probes, env.probeSalt) || []; } catch (e) { warnings = []; }
+                this.healthy = !warnings.some((w) => w.type === "dom-blind");
+                this.lastWarnings = warnings.length ? warnings : null;
+                if (warnings.length) this._recordWarnings(warnings);
                 // "caught" = we actually neutralised loader/mod footprint — a masked flag, a refused
                 // input, or a stripped probe bit. A canary the client legitimately reports is NOT a
                 // catch: it passes straight through, exactly as a real client would send it.
@@ -105,7 +147,8 @@
                     flags: seen.flags, flagNames: seen.flagNames,
                     untrusted: seen.untrusted, probeResult: seen.probeResult,
                     sentProbeResult: sentProbe, strippedProbe: stripped,
-                    caught, neutralised: this.enabled
+                    caught, neutralised: this.enabled,
+                    warnings: warnings.length ? warnings : null
                 };
                 this.count++;
                 if (caught) this.caughtCount++;

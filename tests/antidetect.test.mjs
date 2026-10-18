@@ -160,6 +160,68 @@ ok("a pure-canary client T is NOT counted as caught", () => {
     assert.strictEqual(ad.last.caught, false, "canaries pass through, nothing neutralised");
     assert.strictEqual(ad.last.sentProbeResult, canaries);
 });
+console.log("\n== self-protection: auditProbeResult flags what the sanitiser cannot handle ==");
+ok("a clean round (all known kinds, properly stripped) raises no warning", () => {
+    const clean = tel.cleanProbeResult(0x1FF, PROBES, SALT);
+    const w = tel.auditProbeResult(0x1FF, clean, PROBES, SALT);
+    assert.strictEqual(w.length, 0, JSON.stringify(w));
+});
+ok("a brand-new probe KIND the sanitiser has no rule for is flagged (matched)", () => {
+    const P = [[10, "future.path", sh("x", SALT)]];
+    const w = tel.auditProbeResult(0b1, 0b1, P, SALT);     // client matched the unknown probe
+    assert.strictEqual(w.length, 1);
+    assert.strictEqual(w[0].type, "unknown-kind");
+    assert.strictEqual(w[0].kind, 10);
+    assert.strictEqual(w[0].matched, true);
+});
+ok("an unknown kind present but not matched this round is still flagged (warn early)", () => {
+    const w = tel.auditProbeResult(0, 0, [[11, "", 0]], SALT);
+    assert.strictEqual(w.length, 1);
+    assert.strictEqual(w[0].type, "unknown-kind");
+    assert.strictEqual(w[0].matched, false);
+});
+ok("a strip that SILENTLY FAILED (our footprint bit still set) is flagged as residual", () => {
+    // simulate cleanProbeResult having left bit 0 (our hooked fn) set — the telemetryGlobal bug
+    const w = tel.auditProbeResult(0b1, 0b1, [[7, "__ad.hooked", 0]], SALT);
+    assert.strictEqual(w.length, 1);
+    assert.strictEqual(w[0].type, "residual-footprint");
+    assert.strictEqual(w[0].index, 0);
+});
+ok("a canary bit left set is NOT a residual-footprint warning", () => {
+    const w = tel.auditProbeResult(0b1, 0b1, [[7, "__ad.nativeFn", 0]], SALT);   // native fn = canary
+    assert.strictEqual(w.length, 0);
+});
+ok("telemetryGlobalHealthy() is true when the sanitiser can see the page", () => {
+    assert.strictEqual(tel.telemetryGlobalHealthy(), true);
+});
+ok("knownProbeKinds covers 1..9", () => {
+    assert.deepStrictEqual(tel.knownProbeKinds.slice().sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+console.log("\n== self-protection: handle() surfaces warnings WITHOUT changing what is sent ==");
+ok("handle() warns on an unknown kind, exposes it, still sends the honest answer", () => {
+    const ad = AntiDetect.create({ telemetry: tel });
+    const probes = [[7, "__ad.hooked", 0], [10, "future", sh("x", SALT)]];
+    const warns = [];
+    const origWarn = console.warn;
+    console.warn = (m) => warns.push(String(m));
+    try {
+        // client matched our hooked fn (bit 0) + the unknown kind (bit 1)
+        const out = ad.handle([3, 0, 0b11, 0, SALT, 5, 9], { sealReport: 1, probeSalt: SALT, probes, seq: 5, ledger: 9 });
+        assert.strictEqual(out[2], 0b10, "our hook bit stripped, the unknown bit passes through unchanged");
+        assert.ok(ad.warningCount >= 1 && ad.warnings.some((w) => w.type === "unknown-kind" && w.kind === 10), "exposed on ad.warnings");
+        assert.ok(ad.last.warnings && ad.last.warnings.length >= 1, "attached to the log entry");
+        assert.ok(warns.some((m) => /SELF-PROTECTION/.test(m) && /kind 10/i.test(m)), "console.warn fired: " + JSON.stringify(warns));
+    } finally { console.warn = origWarn; }
+});
+ok("handle() stays healthy and warning-free on a normal known-kind round", () => {
+    const ad = AntiDetect.create({ telemetry: tel });
+    ad.handle([3, 2, 0x1FF, 0, SALT, 5, 9], { sealReport: 1, probeSalt: SALT, probes: PROBES, seq: 5, ledger: 9 });
+    assert.strictEqual(ad.healthy, true);
+    assert.strictEqual(ad.warningCount, 0);
+    assert.strictEqual(ad.last.warnings, null);
+});
+
 delete globalThis.__ad; delete globalThis.localStorage; delete globalThis.document;
 
 console.log("\n----------------------------------------");

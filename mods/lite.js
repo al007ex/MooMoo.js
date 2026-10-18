@@ -1,5 +1,5 @@
 /*
- * MooMoo Lite (MML) — a small, friendly mod on the moomoo.js API.
+ * MooMod — a small, friendly mod on the moomoo.js API.
  * ==============================================================
  * Everything it does is ADDITIVE: it never takes over the client's own movement,
  * aim or attacking, so it drops in next to normal play (and is a tidy worked
@@ -24,11 +24,11 @@
     function boot(MooMoo, MooMooLoader) {
         MooMoo.register({
             id: "moomoo-lite",
-            name: "MooMoo Lite",
+            name: "MooMod",
             version: "1.0.0",
             description: "Place spammers, legit auto heal and hat hotkeys. Press the menu key (default O).",
             menu: true,
-            menuHint: "Open MooMoo Lite's menu with its key (default O) to set everything up.",
+            menuHint: "Open MooMod's menu with its key (default O) to set everything up.",
             liveSettings: true,
             defaultEnabled: true
         }, function (ctx) {
@@ -60,15 +60,19 @@
                 spammers: {},
                 heal: { on: true, healAt: 70, legit: true, showInHand: 90, jitter: 40, maxPerSec: 6, shameSafe: true },
                 humanize: { on: true, jitter: 25, pauseChance: 8, pauseMax: 350 },
-                insta: { key: "r", mode: "packet", swapDelay: 100, switchBack: true, autoAim: true, primaryHat: 7, secondaryHat: 53, primaryAcc: 0, secondaryAcc: 0 },
-                // hold a mouse button to wear a hat+accessory, optionally swapping to a
-                // second combo during each shot's reload. left = primary, right = secondary.
+                // reverse: shoot the secondary weapon first, then the primary (the normal
+                // insta is primary then secondary). autoAim always aims at the closest enemy.
+                insta: { key: "r", mode: "packet", swapDelay: 100, switchBack: true, autoAim: true, reverse: false, primaryHat: 7, secondaryHat: 53, primaryAcc: 0, secondaryAcc: 0 },
+                // hold a mouse button to wear a hat + accessory. left = primary, right = secondary.
                 clicks: {
-                    left: { on: false, hat: 7, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 },
-                    right: { on: false, hat: 40, acc: 0, reload: false, reloadHat: 6, reloadAcc: 0 }
+                    left: { on: false, hat: 7, acc: 0 },
+                    right: { on: false, hat: 40, acc: 0 }
                 },
                 // auto GG: send a custom chat message each time you get a kill
                 autogg: { on: false, message: "gg" },
+                // biome gear: auto-swap your hat to match the biome you're standing in
+                // (snow -> Winter Cap, river -> Flipper, everywhere else -> Booster).
+                biomegear: { on: false, snow: 15, normal: 12, river: 31 },
                 // on-screen arrows ringing your player, pointing at others: enemies red,
                 // teammates green, animals blue, all at a fixed distance from you.
                 arrows: { on: true, players: true, animals: true, offscreen: true, radius: 110, size: 15 },
@@ -104,6 +108,7 @@
                     if (got.reloads && typeof got.reloads === "object") Object.assign(prefs.reloads, got.reloads);
                     if (got.counter && typeof got.counter === "object") Object.assign(prefs.counter, got.counter);
                     if (got.minimap && typeof got.minimap === "object") Object.assign(prefs.minimap, got.minimap);
+                    if (got.biomegear && typeof got.biomegear === "object") Object.assign(prefs.biomegear, got.biomegear);
                     if (Array.isArray(got.hats)) got.hats.forEach((h, i) => { if (prefs.hats[i] && h) Object.assign(prefs.hats[i], h); });
                     if (got.spammers) for (const s of SPAMMERS) if (got.spammers[s.id]) Object.assign(prefs.spammers[s.id], got.spammers[s.id]);
                     if (prefs.spammers.trap.item === "trap") prefs.spammers.trap.item = "trap|booster";   // old saves
@@ -267,18 +272,29 @@
                     if (hatId && ownsHat(hatId)) ctx.setHat(hatId);                 // a slot's hat (0 = leave as is)
                     if (accId && ctx.setTail && ownsAcc(accId)) { ctx.setTail(accId); touchedAcc = true; }  // + its accessory
                 };
+                // Always aim at the CLOSEST visible enemy. We use the combat engine's own
+                // enemy list (ctx.combat.vn, sorted nearest-first by the PREDICTED x2/y2 the
+                // game actually renders) and its angle helper, so the shot points where the
+                // target is drawn — not at the stale server-tick position MooMoo.players holds.
                 const aimDir = () => {
                     const fb = (ctx.input && ctx.input.aimAngle) ? ctx.input.aimAngle() : (self().dir || 0);
-                    if (cfg.autoAim && ctx.nearestEnemy) { const en = ctx.nearestEnemy(); if (en) return ctx.angleTo(self(), en); }
+                    if (!cfg.autoAim) return fb;
+                    const C = ctx.combat;
+                    if (C && C.z && C.vn && C.vn.length && C.B) return C.B(C.z, C.vn[0]);   // nearest enemy, render-space angle
+                    if (ctx.nearestEnemy) { const en = ctx.nearestEnemy(); if (en) return ctx.angleTo(self(), en); }  // fallback
                     return fb;
                 };
                 const fire = (weaponId, hatId, accId) => {
                     if (!self() || !self().alive) return false;
                     equipCombo(hatId, accId);                          // c (equip hat + accessory)
                     if (weaponId != null) MooMoo.send.selectItem(weaponId, true);   // z (weapon)
-                    MooMoo.send.mouse(true, aimDir());                 // F down -> queues one swing, sets aim
+                    MooMoo.send.mouse(true, aimDir());                 // F down -> queues one swing, aims at the closest enemy
                     return true;
                 };
+                // which weapon fires first / second. reverse = secondary then primary.
+                const altW = secondary != null ? secondary : primary;
+                const firstW = cfg.reverse ? altW : primary, firstHat = cfg.reverse ? cfg.secondaryHat : cfg.primaryHat, firstAcc = cfg.reverse ? cfg.secondaryAcc : cfg.primaryAcc;
+                const secondW = cfg.reverse ? primary : altW, secondHat = cfg.reverse ? cfg.primaryHat : cfg.secondaryHat, secondAcc = cfg.reverse ? cfg.primaryAcc : cfg.secondaryAcc;
                 const finish = () => {
                     MooMoo.send.mouse(false);
                     if (cfg.switchBack && primary != null && self() && self().alive) MooMoo.send.selectItem(primary, true);
@@ -286,13 +302,13 @@
                     if (touchedAcc && ctx.setTail) ctx.setTail(prevAcc);  // and the accessory you had (0 = none)
                     instaBusy = false;
                 };
-                const END_HOLD = 160;                                  // hold briefly so the secondary shot goes out
+                const END_HOLD = 160;                                  // hold briefly so the second shot goes out
                 const secondAndEnd = () => {
                     if (!self() || !self().alive) { finish(); return; }
-                    fire(secondary != null ? secondary : primary, cfg.secondaryHat, cfg.secondaryAcc);
+                    fire(secondW, secondHat, secondAcc);               // second shot (also aims at the closest enemy)
                     ctx.after(END_HOLD, finish);
                 };
-                if (!fire(primary, cfg.primaryHat, cfg.primaryAcc)) { instaBusy = false; return; }
+                if (!fire(firstW, firstHat, firstAcc)) { instaBusy = false; return; }
                 if (cfg.mode === "packet") waitForOwnSwing(secondAndEnd, 350);
                 else ctx.after(Math.max(40, cfg.swapDelay | 0), secondAndEnd);
             }
@@ -332,13 +348,10 @@
                 ctx.onCleanup(() => { win.removeEventListener("keydown", onKeyDown, true); win.removeEventListener("keyup", onKeyUp, true); });
             }
 
-            // ---- hold a mouse button to wear a hat + accessory (with a reload swap) ----
+            // ---- hold a mouse button to wear a hat + accessory ----
             // Hold a configured button and it wears that button's combo; let go and it
-            // puts back whatever you had on. With "reload swap" on, each of your own
-            // swings wears the reload combo for that shot's cooldown, then swaps the
-            // main combo back in just before the next swing lands. Purely additive —
-            // the client still does the actual aiming and attacking.
-            const RELOAD_MARGIN = 120;          // swap the main combo back this long before the weapon is ready
+            // puts back whatever you had on. left = primary combo, right = secondary.
+            // Purely additive — the client still does the actual aiming and attacking.
             const mouse = { prevHat: 0, prevAcc: 0, curHat: 0, curAcc: 0, active: null, order: [], gen: 0 };
             const clickCfg = (btn) => btn === 2 ? prefs.clicks.right : prefs.clicks.left;
             const canHat = (id) => !id || !(ctx.store && ctx.store.ownsHat) || ctx.store.ownsHat(id);
@@ -388,41 +401,65 @@
             }
             function onMouseUp(e) { if (e.button === 0 || e.button === 2) releaseButton(e.button); }
             if (doc) {
-                // our own swing registered -> we just shot, so dip into the reload combo
-                ctx.on("gatherAnimation", (pk) => {
-                    const a = pk && pk.args, me = self();
-                    if (!a || !me || a[0] !== me.sid || mouse.active == null) return;
-                    const c = clickCfg(mouse.active);
-                    if (!c.reload) return;
-                    put(c.reloadHat, c.reloadAcc);                     // reload hat (accessory stays unless you set one)
-                    const gen = mouse.gen, w = data.weapon(a[2]);
-                    const back = Math.max(40, ((w && w.speed) || 300) - RELOAD_MARGIN);
-                    ctx.after(back, () => { if (gen === mouse.gen) wearActive(); });   // main combo back on before the next swing
-                });
                 win.addEventListener("mousedown", onMouseDown, true);
                 win.addEventListener("mouseup", onMouseUp, true);
                 win.addEventListener("blur", releaseAll);
                 ctx.onCleanup(() => { win.removeEventListener("mousedown", onMouseDown, true); win.removeEventListener("mouseup", onMouseUp, true); win.removeEventListener("blur", releaseAll); });
             }
 
+            // ---- biome gear: auto-swap your hat to match the biome you're standing in ----
+            // snow -> a cold hat (Winter Cap), the central river -> Flipper, everywhere else
+            // (grass + desert) -> your "normal" hat (Booster). Fires only when you cross INTO a
+            // new biome, so within a biome your hat keys / insta / click-hats stay in charge;
+            // it also waits while the insta or a click-hat is momentarily driving your hat, so
+            // it never fights them. Each hat id is configurable; 0 in a slot = leave the hat be.
+            const BG_MAPSCALE = (ctx.combat && ctx.combat.K && ctx.combat.K.mapScale) || 14400;
+            const BG_SNOW = 2400, BG_RIVER_HALF = 724 / 2, BG_RIVER_MID = BG_MAPSCALE / 2;
+            function biomeAt(y) {
+                if (y == null || isNaN(y)) return null;
+                if (y < BG_SNOW) return "snow";
+                if (y >= BG_RIVER_MID - BG_RIVER_HALF && y <= BG_RIVER_MID + BG_RIVER_HALF) return "river";
+                return "normal";
+            }
+            let bgBiome = null;
+            function biomeGearTick() {
+                const bg = prefs.biomegear;
+                if (!bg || !bg.on) { bgBiome = null; return; }
+                const me = self(); if (!me || !me.alive) return;
+                const q = ctx.combat && ctx.combat.Hg && ctx.combat.Hg(me.sid);
+                const y = q ? (q.y2 != null ? q.y2 : q.y) : me.y;   // predicted position the game renders
+                const b = biomeAt(y);
+                if (b == null || b === bgBiome) return;             // same biome -> leave the hat alone
+                if (instaBusy || mouse.active != null) return;      // a combat feature owns the hat now; retry next tick
+                bgBiome = b;
+                const want = b === "snow" ? bg.snow : b === "river" ? bg.river : bg.normal;
+                if (want && (!(ctx.store && ctx.store.ownsHat) || ctx.store.ownsHat(want)) && ctx.setHat) ctx.setHat(want);
+            }
+            ctx.every(150, biomeGearTick);
+
             // ---- player / animal arrows (a fixed-distance ring that points at others) ----
             // Drawn on the loader's transparent overlay (ctx.render.layer), in screen space
             // so every arrow sits the same distance from you. Enemies red, teammates green,
             // animals blue. Additive only — nothing the stock client draws is touched.
             const ARROW = { enemy: "#ff4747", teammate: "#49d170", animal: "#3ea6ff" };
+            // A minimal, see-through CHEVRON pointing outward at the entity (two thin arms
+            // meeting at the tip) — colour-coded (enemy red, teammate green, animal blue).
+            // Just one translucent stroke: no halo, no gloss, nothing to clutter the screen.
             function arrowAt(g, cx, cy, ang, color, size) {
                 const x = cx + prefs.arrows.radius * Math.cos(ang), y = cy + prefs.arrows.radius * Math.sin(ang);
+                const tip = size * 0.7, back = -size * 0.5, spread = size * 0.72;
                 g.save();
                 g.translate(x, y);
                 g.rotate(ang);                                 // point outward, toward the entity
+                g.lineJoin = "round"; g.lineCap = "round";
+                g.globalAlpha = 0.72;
+                g.lineWidth = Math.max(2, size * 0.24);
+                g.strokeStyle = color;
                 g.beginPath();
-                g.moveTo(size, 0);                             // tip
-                g.lineTo(-size * 0.72, size * 0.6);
-                g.lineTo(-size * 0.4, 0);                      // notch
-                g.lineTo(-size * 0.72, -size * 0.6);
-                g.closePath();
-                g.globalAlpha = 0.92; g.fillStyle = color; g.fill();
-                g.globalAlpha = 1; g.lineJoin = "round"; g.lineWidth = 1.5; g.strokeStyle = "rgba(0,0,0,.45)"; g.stroke();
+                g.moveTo(back, -spread);
+                g.lineTo(tip, 0);
+                g.lineTo(back, spread);
+                g.stroke();
                 g.restore();
             }
             function drawArrows(g, view) {
@@ -475,24 +512,37 @@
             // speed, so it stays smooth at any frame rate.
             const RL = { bg: "#3d3f42", primary: "#58c0ff", secondary: "#ffc24a" };
             const HW = 50, PAD = 4.5, NAMEY = 34, HBH = 17, BARH = 17, GAP = 3;   // game health-bar geometry (world units); reload bars match its height
-            const rdisp = new Map();   // sid -> { p, s, t }  smoothed primary/secondary reload + last frame time
+            const rdisp = new Map();   // sid -> per-weapon smoothing state
             ctx.every(5000, () => { for (const sid of rdisp.keys()) if (!ctx.render || !ctx.render.players.has(sid)) rdisp.delete(sid); });
-            const RSNAP = 0.12;        // an engine reload drop bigger than this = a fresh shot -> snap the bar down
-            function smoothReload(cur, eng, filling, dur, dt) {
-                if (eng < cur - RSNAP) return eng;                                                  // just shot -> snap down
-                if (filling && cur < 1 && dur > 0) return Math.min(1, Math.max(cur, eng) + dt / dur);  // selected + filling -> interpolate at the engine's rate
-                return Math.max(cur, Math.min(1, eng));                                             // frozen (swapped away) or full -> hold
+            // The combat engine advances a reload value (0..1) ONCE per server tick (~111ms),
+            // so drawing it raw is choppy. We smooth it without drift: anchor to the engine
+            // value and the wall-clock time it last changed, then show anchor + elapsed/dur.
+            // The extrapolation rate equals the engine's per-tick step, so each new tick
+            // re-anchors seamlessly (no accumulation, no jitter). Only the SELECTED weapon
+            // fills, so swapping away freezes the bar where it is (the game's own behaviour);
+            // a drop back toward 0 is a fresh shot and restarts the cycle. Shown value is
+            // monotonic within a cycle, so a late server tick never kicks the bar backwards.
+            function smoothWeapon(s, k, eng, filling, dur, now) {
+                const a = s[k] || (s[k] = { eng: eng, t: now, shown: eng, fill: filling });
+                const reset = eng < a.eng - 0.05;                        // a fresh shot dropped the value
+                if (eng !== a.eng || (filling && !a.fill)) { a.eng = eng; a.t = now; }  // re-anchor on change / when fill resumes
+                a.fill = filling;
+                const shown = (filling && dur > 0) ? Math.min(1, eng + (now - a.t) / dur) : eng;
+                a.shown = reset ? shown : Math.max(a.shown, Math.min(1, shown));
+                return a.shown;
             }
             function reloadState(sid, now) {
-                let d = rdisp.get(sid); if (!d) { d = { p: 1, s: 1, t: now }; rdisp.set(sid, d); }
-                const dt = Math.min(500, Math.max(0, now - d.t)); d.t = now;   // cap catch-up so a reappearing player doesn't jump
+                let s = rdisp.get(sid); if (!s) { s = {}; rdisp.set(sid, s); }
                 const q = ctx.combat && ctx.combat.Hg && ctx.combat.Hg(sid);
-                if (!q) { d.p = 1; d.s = 1; return d; }
+                if (!q) return { p: 1, s: 1 };
                 const ep = q.pr == null ? 1 : q.pr, es = q.sr == null ? 1 : q.sr, wi = q.weaponIndex | 0;
                 const pw = data.weapon(q.primary), sw = data.weapon(q.secondary);
-                d.p = smoothReload(d.p, ep, wi <= 8, (pw && pw.speed) ? pw.speed * (q.samRP || 1) : 0, dt);
-                d.s = smoothReload(d.s, es, wi > 8, (sw && sw.speed) ? sw.speed * (q.samRS || 1) : 0, dt);
-                return d;
+                const pdur = (pw && pw.speed) ? pw.speed * (q.samRP || 1) : 0;
+                const sdur = (sw && sw.speed) ? sw.speed * (q.samRS || 1) : 0;
+                return {
+                    p: smoothWeapon(s, "p", ep, wi <= 8 && ep < 1 && pdur > 0, pdur, now),
+                    s: smoothWeapon(s, "s", es, wi > 8 && es < 1 && sdur > 0, sdur, now)
+                };
             }
             function barRect(g, x, y, w, h, r) { if (w <= 0) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
             const FULLW = HW * 2 + PAD * 2;         // the health bar's width (world units)
@@ -727,18 +777,13 @@
             .mml-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;width:720px;max-width:94vw;height:522px;max-height:88vh;background:var(--panel);border-radius:16px;overflow:hidden;color:var(--text);box-shadow:0 22px 64px rgba(0,0,0,.55);font-size:14px}
             .mml-panel .side{flex:0 0 178px;background:var(--side);display:flex;flex-direction:column;padding:14px 10px}
             .mml-panel .brand{display:flex;align-items:center;gap:9px;padding:6px 8px 15px}
-            .mml-panel .logo{width:27px;height:27px;border-radius:8px;background:var(--acc);color:#153318;display:flex;align-items:center;justify-content:center;font-size:12px}
-            .mml-panel .bname{font-size:15px;color:var(--text)}
+            .mml-panel .bname{font-size:17px;font-weight:600;letter-spacing:.3px;color:var(--text)}
             .mml-panel .nav{flex:1 1 auto;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
             .mml-panel .navitem{display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:9px;color:var(--sub);cursor:pointer;transition:background .12s,color .12s}
             .mml-panel .navitem:hover{background:#1d2029;color:var(--text)}
             .mml-panel .navitem.active{background:#242834;color:var(--text)}
-            .mml-panel .navitem.active .ico{color:var(--acc)}
-            .mml-panel .ico{display:inline-flex;width:18px;height:18px;color:var(--muted);flex:0 0 auto}
-            .mml-panel .ico svg{width:18px;height:18px;display:block}
             .mml-panel .ntxt{font-size:14px}
             .mml-panel .user{display:flex;align-items:center;gap:9px;padding:11px 7px 2px;margin-top:8px;border-top:1px solid var(--border)}
-            .mml-panel .uava{width:29px;height:29px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#5f933a);flex:0 0 auto}
             .mml-panel .uinfo{display:flex;flex-direction:column;min-width:0}
             .mml-panel .uname{font-size:13px;color:var(--text)}
             .mml-panel .uver{font-size:11px;color:var(--muted);font-family:${SANS}}
@@ -802,7 +847,6 @@
             let activeCat = "placement", headTitle = null, contentEl = null;
 
             function mk(tag, cls, text) { const n = doc.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
-            function svgEl(markup) { const s = mk("span", "ico"); s.innerHTML = markup; return s; }
 
             // ---- components ----
             function toggleSwitch(get, set) {
@@ -916,15 +960,7 @@
                 return { card, body };
             }
 
-            // ---- icons / modules / categories ----
-            const ICON = {
-                grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/></svg>',
-                combat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7.5"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
-                hat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h18"/><path d="M5.5 17c0-5.2 2.6-9 6.5-9s6.5 3.8 6.5 9"/></svg>',
-                gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>',
-                mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="6"/><line x1="12" y1="6.5" x2="12" y2="11"/></svg>',
-                eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
-            };
+            // ---- modules / categories ----
             const MODULES = {};
             for (const s of SPAMMERS) {
                 const sid = s.id;
@@ -951,6 +987,7 @@
                 m.body.appendChild(row("Key", bindBtn(() => ik.key, (id) => { if (id) ik.key = id; })));
                 m.body.appendChild(row("Mode", selectBox([{ value: "packet", label: "Confirmed" }, { value: "timed", label: "Timed" }], () => ik.mode, (v) => { ik.mode = v; })));
                 m.body.appendChild(row("Auto aim", toggleSwitch(() => ik.autoAim, (v) => { ik.autoAim = v; })));
+                m.body.appendChild(row("Reverse (secondary first)", toggleSwitch(() => ik.reverse, (v) => { ik.reverse = v; })));
                 m.body.appendChild(row("Switch back", toggleSwitch(() => ik.switchBack, (v) => { ik.switchBack = v; })));
                 m.body.appendChild(sliderRow("Swap ms", 40, 300, 10, () => ik.swapDelay, (x) => { ik.swapDelay = x; }, (n) => n + "ms"));
                 const hats = mk("div", "hatrow");
@@ -964,14 +1001,28 @@
                 const hold = mk("div", "hatrow");
                 hold.appendChild(comboCell("On hold", () => cfg.hat, (id) => { cfg.hat = id; }, () => cfg.acc, (id) => { cfg.acc = id; }));
                 m.body.appendChild(hold);
-                m.body.appendChild(row("Reload swap", toggleSwitch(() => cfg.reload, (v) => { cfg.reload = v; })));
-                const rel = mk("div", "hatrow");
-                rel.appendChild(comboCell("Reloading", () => cfg.reloadHat, (id) => { cfg.reloadHat = id; }, () => cfg.reloadAcc, (id) => { cfg.reloadAcc = id; }));
-                m.body.appendChild(rel);
                 return m.card;
             }
             MODULES.clickLeft = () => clickCard("Left click", prefs.clicks.left);
             MODULES.clickRight = () => clickCard("Right click", prefs.clicks.right);
+            MODULES.biomegear = () => {
+                const bg = prefs.biomegear;
+                const m = modCard("Biome gear", { get: () => bg.on, set: (v) => { bg.on = v; } });
+                const cell = (label, key) => {
+                    const c = mk("div", "hatcell");
+                    const pair = mk("div", "accpair");
+                    pair.appendChild(hatSlot(() => bg[key], (id) => { bg[key] = id; }));
+                    c.appendChild(pair);
+                    c.appendChild(mk("span", "hatcap", label));
+                    return c;
+                };
+                const hats = mk("div", "hatrow");
+                hats.appendChild(cell("Snow", "snow"));
+                hats.appendChild(cell("Normal", "normal"));
+                hats.appendChild(cell("River", "river"));
+                m.body.appendChild(hats);
+                return m.card;
+            };
             MODULES.arrows = () => {
                 const a = prefs.arrows;
                 const m = modCard("Player arrows", { get: () => a.on, set: (v) => { a.on = v; applyArrows(); } });
@@ -1040,7 +1091,7 @@
                 m.body.appendChild(row("Menu key", bindBtn(() => prefs.menuKey, (id) => { if (id) prefs.menuKey = id; })));
                 const reset = mk("div", "btn", "Reset to defaults");
                 reset.addEventListener("click", () => {
-                    if (win.confirm && !win.confirm("Reset all MooMoo Lite settings?")) return;
+                    if (win.confirm && !win.confirm("Reset all MooMod settings?")) return;
                     const d = JSON.parse(JSON.stringify(DEFAULTS));
                     for (const k of Object.keys(prefs)) delete prefs[k];
                     Object.assign(prefs, d);
@@ -1051,12 +1102,12 @@
                 return m.card;
             };
             const CATEGORIES = [
-                { id: "placement", label: "Placement", icon: ICON.grid, mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
-                { id: "combat", label: "Combat", icon: ICON.combat, mods: ["insta", "heal", "autogg"] },
-                { id: "clicks", label: "Clicks", icon: ICON.mouse, mods: ["clickLeft", "clickRight"] },
-                { id: "visual", label: "Visual", icon: ICON.eye, mods: ["arrows", "reloads", "counter", "minimap"] },
-                { id: "hats", label: "Hats", icon: ICON.hat, mods: ["hats"] },
-                { id: "config", label: "Config", icon: ICON.gear, mods: ["general"] }
+                { id: "placement", label: "Placement", mods: SPAMMERS.map((s) => "spam_" + s.id).concat(["humanize"]) },
+                { id: "combat", label: "Combat", mods: ["insta", "heal", "autogg"] },
+                { id: "clicks", label: "Clicks", mods: ["clickLeft", "clickRight"] },
+                { id: "visual", label: "Visual", mods: ["arrows", "reloads", "counter", "minimap"] },
+                { id: "hats", label: "Hats", mods: ["hats", "biomegear"] },
+                { id: "config", label: "Config", mods: ["general"] }
             ];
 
             function renderContent(content) {
@@ -1073,14 +1124,12 @@
                 const panel = mk("div", "mml-panel");
                 const side = mk("div", "side");
                 const brand = mk("div", "brand");
-                brand.appendChild(mk("span", "logo", "ML"));
-                brand.appendChild(mk("span", "bname", "MooMoo Lite"));
+                brand.appendChild(mk("span", "bname", "MooMod"));
                 side.appendChild(brand);
                 const nav = mk("div", "nav");
                 const navItems = {};
                 for (const c of CATEGORIES) {
                     const it = mk("div", "navitem" + (c.id === activeCat ? " active" : ""));
-                    it.appendChild(svgEl(c.icon));
                     it.appendChild(mk("span", "ntxt", c.label));
                     it.addEventListener("click", () => {
                         activeCat = c.id;
@@ -1091,9 +1140,8 @@
                 }
                 side.appendChild(nav);
                 const user = mk("div", "user");
-                user.appendChild(mk("span", "uava"));
                 const ui = mk("div", "uinfo");
-                ui.appendChild(mk("span", "uname", "MooMoo Lite"));
+                ui.appendChild(mk("span", "uname", "MooMod"));
                 ui.appendChild(mk("span", "uver", "menu · " + keyLabel(prefs.menuKey)));
                 user.appendChild(ui);
                 side.appendChild(user);
@@ -1128,7 +1176,7 @@
             function toggleMenu() { open ? closeMenu() : openMenu(); }
             if (doc) (function wait() { if (!built) { build() || win.setTimeout(wait, 100); } })();
 
-            ctx.log("MooMoo Lite ready — press " + keyLabel(prefs.menuKey) + " for the menu");
+            ctx.log("MooMod ready — press " + keyLabel(prefs.menuKey) + " for the menu");
         });
     }
 

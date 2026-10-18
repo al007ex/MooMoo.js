@@ -1,5 +1,5 @@
 /*
- * Builds the MooMoo Lite mod: wraps mods/lite.js (the readable source) into
+ * Builds the MooMod mod: wraps mods/lite.js (the readable source) into
  * mods/lite.user.js, an installable Tampermonkey userscript that @requires the
  * loader and is mangled so it is not easily read.
  * Run:  node mods/build-lite.mjs [loaderUrl]
@@ -16,7 +16,7 @@ const loaderUrl = process.argv[2] || "https://pastebin.com/raw/jWDq3mmF";
 const src = fs.readFileSync(path.join(here, "lite.js"), "utf8");
 
 const HEADER = `// ==UserScript==
-// @name         MooMoo Lite (MML)
+// @name         MooMod
 // @namespace    moomoo.js
 // @version      ${LOADER_MIN}
 // @description  Place spammers, legit auto heal and hat hotkeys. Press the menu key (default O).
