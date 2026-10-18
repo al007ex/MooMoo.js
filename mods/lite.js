@@ -17,6 +17,7 @@
  * Config is edited entirely from the menu and persisted through the loader's hidden
  * store (MooMooLoader.config) — no localStorage key of its own.
  */
+
 (function () {
     "use strict";
 
@@ -376,6 +377,10 @@
             function releaseAll() { if (mouse.order.length) { mouse.order.length = 0; mouse.active = null; mouse.gen++; restorePrev(); } }
             function onMouseDown(e) {
                 if (e.isTrusted === false || open) return;
+                // only real in-game clicks (the game canvas, or the touch-input overlay when it's
+                // shown) — never the menu, store/hat shop, action bar or any other UI element
+                const tid = e.target && e.target.id;
+                if (!tid || (tid !== "gameCanvas" && tid.indexOf("touch-controls") !== 0)) return;
                 if (e.button !== 0 && e.button !== 2) return;
                 if (!clickCfg(e.button).on) return;
                 const me = self(); if (!me || !me.alive) return;
@@ -462,24 +467,33 @@
             // secondary weapon cooldown). Drawn on the loader's overlay in the SAME
             // world-aligned space the game draws the health bar, with the game's exact
             // geometry, so they sit right under the health bar and move with the player.
-            // The fill is a continuous function of time since the last swing (the server
-            // broadcasts every player's swing) and that weapon's known reload speed, so
-            // it is smooth at any frame rate.
+            // The value comes from the loader's combat engine, which mirrors the client's
+            // native reload exactly: it fills ONLY the currently-selected weapon (so swapping
+            // to your other weapon PAUSES this one until you swap back), resets the primary on
+            // a melee swing and the SECONDARY on a projectile shot (so bows / crossbows move
+            // too). We smooth that per-tick value between frames with the weapon's known reload
+            // speed, so it stays smooth at any frame rate.
             const RL = { bg: "#3d3f42", primary: "#58c0ff", secondary: "#ffc24a" };
             const HW = 50, PAD = 4.5, NAMEY = 34, HBH = 17, BARH = 17, GAP = 3;   // game health-bar geometry (world units); reload bars match its height
-            const swings = new Map();   // sid -> { pAt, pDur, sAt, sDur }
-            ctx.on("gatherAnimation", (pk) => {
-                const a = pk && pk.args; if (!a) return;
-                const sid = a[0], wi = a[2];
-                const w = (wi != null) && data.weapon(wi);
-                if (!w || !w.speed) return;
+            const rdisp = new Map();   // sid -> { p, s, t }  smoothed primary/secondary reload + last frame time
+            ctx.every(5000, () => { for (const sid of rdisp.keys()) if (!ctx.render || !ctx.render.players.has(sid)) rdisp.delete(sid); });
+            const RSNAP = 0.12;        // an engine reload drop bigger than this = a fresh shot -> snap the bar down
+            function smoothReload(cur, eng, filling, dur, dt) {
+                if (eng < cur - RSNAP) return eng;                                                  // just shot -> snap down
+                if (filling && cur < 1 && dur > 0) return Math.min(1, Math.max(cur, eng) + dt / dur);  // selected + filling -> interpolate at the engine's rate
+                return Math.max(cur, Math.min(1, eng));                                             // frozen (swapped away) or full -> hold
+            }
+            function reloadState(sid, now) {
+                let d = rdisp.get(sid); if (!d) { d = { p: 1, s: 1, t: now }; rdisp.set(sid, d); }
+                const dt = Math.min(500, Math.max(0, now - d.t)); d.t = now;   // cap catch-up so a reappearing player doesn't jump
                 const q = ctx.combat && ctx.combat.Hg && ctx.combat.Hg(sid);
-                const dur = w.speed * ((q && q.skinIndex === 20) ? 0.78 : 1);   // samurai gear reloads faster
-                let s = swings.get(sid); if (!s) { s = {}; swings.set(sid, s); }
-                if (wi < 9) { s.pAt = Date.now(); s.pDur = dur; } else { s.sAt = Date.now(); s.sDur = dur; }
-            });
-            ctx.every(5000, () => { for (const sid of swings.keys()) if (!ctx.render || !ctx.render.players.has(sid)) swings.delete(sid); });
-            const reloadOf = (s, at, dur, now) => (s && s[at]) ? Math.min(1, (now - s[at]) / (s[dur] || 1)) : 1;
+                if (!q) { d.p = 1; d.s = 1; return d; }
+                const ep = q.pr == null ? 1 : q.pr, es = q.sr == null ? 1 : q.sr, wi = q.weaponIndex | 0;
+                const pw = data.weapon(q.primary), sw = data.weapon(q.secondary);
+                d.p = smoothReload(d.p, ep, wi <= 8, (pw && pw.speed) ? pw.speed * (q.samRP || 1) : 0, dt);
+                d.s = smoothReload(d.s, es, wi > 8, (sw && sw.speed) ? sw.speed * (q.samRS || 1) : 0, dt);
+                return d;
+            }
             function barRect(g, x, y, w, h, r) { if (w <= 0) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fill(); }
             const FULLW = HW * 2 + PAD * 2;         // the health bar's width (world units)
             const HALFW = (FULLW - GAP) / 2;        // each reload bar: half the health bar, side by side
@@ -497,11 +511,11 @@
                     if (!p.visible) continue;
                     const isSelf = !!(me && sid === me.sid);
                     if (isSelf ? !prefs.reloads.self : !prefs.reloads.enemies) continue;
-                    const s = swings.get(sid);
+                    const r = reloadState(sid, now);
                     const lx = (p.x - left) - (HW + PAD);   // same left edge as the health bar
                     const y0 = (p.y - top) + (p.scale || 35) + NAMEY + HBH + GAP;
-                    drawBar(g, lx, y0, HALFW, reloadOf(s, "pAt", "pDur", now), RL.primary);                 // primary (left half)
-                    drawBar(g, lx + HALFW + GAP, y0, HALFW, reloadOf(s, "sAt", "sDur", now), RL.secondary);  // secondary (right half)
+                    drawBar(g, lx, y0, HALFW, r.p, RL.primary);                 // primary (left half)
+                    drawBar(g, lx + HALFW + GAP, y0, HALFW, r.s, RL.secondary);  // secondary (right half)
                 }
             }
             let reloadsLayer = null;

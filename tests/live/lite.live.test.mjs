@@ -150,6 +150,18 @@ try {
     const rightAccs = fr.filter(f => f.action === 0 && f.acc).map(f => f.id);
     check("right-hold wears hat 28 + accessory 12", rightHats.includes(28) && rightAccs.includes(12), `hats=${JSON.stringify(rightHats)} accs=${JSON.stringify(rightAccs)}`);
 
+    // 5b. a click on a UI element (not the game area) must NOT trigger the hold-hat
+    const uiBox = await page.evaluate(() => { const b = document.getElementById("actionBarItem0"); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; });
+    let uiHats = ["(no actionBarItem0)"];
+    if (uiBox && uiBox.w > 0) {
+        mark = Date.now();
+        await page.mouse.move(uiBox.x, uiBox.y);
+        await page.mouse.down({ button: "left" }); await tick(300); await page.mouse.up({ button: "left" });
+        await tick(300);
+        uiHats = (await storeSince(mark)).filter(f => f.action === 0).map(f => f.id);
+    }
+    check("hold-hat ignores clicks on UI (action bar), only the game area", uiBox ? !uiHats.includes(51) : true, JSON.stringify(uiHats));
+
     // 6. place spammer (spike on V): holding puts place frames on the wire
     mark = Date.now();
     await page.keyboard.down("v"); await tick(800); await page.keyboard.up("v"); await tick(200);
@@ -223,6 +235,20 @@ try {
     check("arrows: animal arrow is blue (when animals are in range)", arrowPx.animals === 0 || arrowPx.blue > 0, JSON.stringify(arrowPx));
     // reload bars render under each visible player (the secondary bar's amber is unique to them)
     check("reload bars drawn under players", arrowPx.relYellow > 0, JSON.stringify(arrowPx));
+    // the reload value now comes from the combat engine (per-weapon, swap-aware, projectile-aware):
+    // a primary swing drops its reload below full, confirming the bar tracks the engine not a timer.
+    const selfReload = await page.evaluate(async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const C = window.MooMooLoader.combat;
+        try { window.MooMoo.send.selectItem(window.MooMoo.self.weapons[0], true); } catch (e) {}
+        const before = C.self.pr;
+        try { window.MooMoo.send.mouse(true, 0); } catch (e) {}
+        await sleep(70);
+        try { window.MooMoo.send.mouse(false); } catch (e) {}
+        await sleep(170);
+        return { before, after: C.self.pr, wi: C.self.weaponIndex };
+    });
+    check("reload bar tracks the combat engine (a swing drops the primary reload)", selfReload.after < 0.99, JSON.stringify(selfReload));
 
     // 8c. MINIMAP — its own id-less overlay canvas (z 9000) draws biomes + markers over
     //     #mapDisplay; pressing M expands it full-screen. Both states carry no id (kind-4 safe).
