@@ -201,11 +201,17 @@
     // element (kind 4). It only ever clears a bit it can positively tie to a loader/mod
     // artifact, so a canary bit is never touched — the answer still looks like a real
     // client's. (Blanking the whole field instead would fail a canary probe and get caught.)
+    // The real global object (with the DOM + localStorage). The loader's bundle wrapper
+    // shadows `self` and `globalThis` with a private {} to keep the window surface empty, so
+    // we must NOT trust them — we pick whichever candidate actually carries a document /
+    // localStorage (the real `window`), falling back to any defined global otherwise.
     function telemetryGlobal() {
-        if (typeof self !== "undefined") return self;
-        if (typeof window !== "undefined") return window;
-        if (typeof globalThis !== "undefined") return globalThis;
-        return {};
+        const cands = [];
+        try { if (typeof window !== "undefined" && window) cands.push(window); } catch (e) {}
+        try { if (typeof self !== "undefined" && self) cands.push(self); } catch (e) {}
+        try { if (typeof globalThis !== "undefined" && globalThis) cands.push(globalThis); } catch (e) {}
+        for (let i = 0; i < cands.length; i++) { const c = cands[i]; try { if (c.document || c.localStorage) return c; } catch (e) {} }
+        return cands[0] || {};
     }
     function telemetryResolve(path) {
         try { const root = telemetryGlobal(); return String(path).split(".").reduce((o, k) => (o == null ? o : o[k]), root); }
@@ -228,23 +234,51 @@
             return /\bmml-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mdbg|moomoojs/i.test(el.id || "");
         } catch (e) { return false; }
     }
+    // Each hash-based match is its own small function with a clean (hashVal, saltVal) scope:
+    // inside one big function the minifier could rename a local (els/keys) to the same name as
+    // the `hash` param and shadow it — which silently broke the comparison.
+    function hashHitsLoaderKey(hashVal, saltVal) {   // kind 3: one of our localStorage keys
+        const ls = telemetryGlobal().localStorage; if (!ls) return false;
+        const keys = Object.keys(ls);
+        for (let j = 0; j < keys.length; j++) if (LOADER_LS_KEY.test(keys[j]) && telemetrySaltedHash(keys[j], saltVal) === hashVal) return true;
+        return false;
+    }
+    function hashHitsLoaderId(hashVal, saltVal) {     // kind 4: one of our id'd elements, as "tag#id"
+        const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
+        const list = doc.querySelectorAll("[id]");
+        for (let j = 0; j < list.length; j++) { const el = list[j]; if (loaderOwnedElement(el) && telemetrySaltedHash(el.tagName.toLowerCase() + "#" + el.id, saltVal) === hashVal) return true; }
+        return false;
+    }
+    function hashHitsLoaderClass(hashVal, saltVal) {  // kind 8: one of our classed elements, as "tag.class"
+        const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
+        const list = doc.querySelectorAll("[class*='mml-'],[class*='mdbg'],[class*='moomoo']");
+        for (let j = 0; j < list.length; j++) {
+            const el = list[j]; if (!loaderOwnedElement(el)) continue;
+            const tag = (el.tagName || "").toLowerCase();
+            const cn = el.className, raw = String((cn && cn.baseVal != null ? cn.baseVal : cn) || "");
+            const toks = raw.split(/\s+/).filter(Boolean);
+            // try each class token, the raw className and the dotted form, so we match whatever
+            // "tag.class" shape the client enumerates — but only on OUR OWN classes, never a
+            // game class (which could be a canary).
+            for (let k = 0; k < toks.length; k++) if (telemetrySaltedHash(tag + "." + toks[k], saltVal) === hashVal) return true;
+            if (raw && telemetrySaltedHash(tag + "." + raw, saltVal) === hashVal) return true;
+            if (toks.length > 1 && telemetrySaltedHash(tag + "." + toks.join("."), saltVal) === hashVal) return true;
+        }
+        return false;
+    }
     // Is bit `i`'s probe a match that exists only because of the loader / a mod?
     function loaderArtifactProbe(kind, path, hash, salt) {
         try {
             if (kind === 7) { const fn = telemetryResolve(path); return typeof fn === "function" && !telemetryNativeFn(fn); }
             if (kind === 5) { const o = telemetryResolve(path); return !!(o && o.prototype && o.prototype.constructor !== o); }
-            if (kind === 3) {
-                const ls = telemetryGlobal().localStorage; if (!ls) return false;
-                const keys = Object.keys(ls);
-                for (let j = 0; j < keys.length; j++) if (LOADER_LS_KEY.test(keys[j]) && telemetrySaltedHash(keys[j], salt) === hash) return true;
-                return false;
-            }
-            if (kind === 4) {
-                const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
-                const els = doc.querySelectorAll("[id]");
-                for (let j = 0; j < els.length; j++) { const e = els[j]; if (loaderOwnedElement(e) && telemetrySaltedHash(e.tagName.toLowerCase() + "#" + e.id, salt) === hash) return true; }
-                return false;
-            }
+            if (kind === 3) return hashHitsLoaderKey(hash, salt);
+            if (kind === 4) return hashHitsLoaderId(hash, salt);
+            if (kind === 8) return hashHitsLoaderClass(hash, salt);
+            // kind 9: a probe that dispatches a CustomEvent and watches for a listener to resolve
+            // it. The loader's API handshake ("moomoo.js:api") is the only event it resolves, and
+            // the name travels in clear in `path`; a clean client resolves no such event, so
+            // clearing it can never fail a canary.
+            if (kind === 9) return /moomoo/i.test(String(path));
         } catch (e) {}
         return false;   // kinds 1, 2, 6: the loader/mods add no window props or symbols, so never ours
     }

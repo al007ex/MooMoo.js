@@ -100,10 +100,17 @@ globalThis.__ad.Intact = Intact;
 globalThis.localStorage = {};
 globalThis.localStorage["moomoojs:cfg:lite"] = "x";     // kind 3: a loader storage key
 globalThis.localStorage["playerName"] = "bob";          // kind 3: a normal key (canary)
-globalThis.document = { querySelectorAll: (s) => s === "[id]" ? [
-    { tagName: "DIV", id: "panel", className: "mdbg" },  // kind 4: a mod element (mdbg class)
-    { tagName: "DIV", id: "mainMenu", className: "menu" } // kind 4: a game element (canary)
-] : [] };
+globalThis.document = { querySelectorAll: (s) => {
+    if (s === "[id]") return [
+        { tagName: "DIV", id: "panel", className: "mdbg" },   // kind 4: a mod element (mdbg class)
+        { tagName: "DIV", id: "mainMenu", className: "menu" } // kind 4: a game element (canary)
+    ];
+    if (/class/.test(s)) return [                              // kind 8: our classed elements
+        { tagName: "DIV", id: "", className: "mml-gui open" },
+        { tagName: "DIV", id: "", className: "mdbg" }
+    ];
+    return [];
+} };
 // bit:  0 hook   1 native  2 swapped  3 intact  4 kind1-canary  5 loaderLS  6 LScanary  7 modEl  8 gameEl
 const PROBES = [
     [7, "__ad.hooked", 0], [7, "__ad.nativeFn", 0], [5, "__ad.Wrapped", 0], [5, "__ad.Intact", 0],
@@ -121,6 +128,22 @@ ok("a canary-only answer passes through untouched", () => {
 });
 ok("no probe round -> unchanged (back-compat)", () => {
     assert.strictEqual(tel.cleanProbeResult(0x1FF, undefined, SALT), 0x1FF);
+});
+// kind 8 (elements by class) + kind 9 (CustomEvent handshake) — the updated anticheat's new probes
+ok("kind 8: clears our class signatures, keeps a game class (canary)", () => {
+    const P = [
+        [8, "", sh("div.mml-gui", SALT)],   // bit 0: our menu class -> clear
+        [8, "", sh("div.gameUI", SALT)],    // bit 1: a game class -> keep
+        [8, "", sh("div.mdbg", SALT)]       // bit 2: our panel class -> clear
+    ];
+    assert.strictEqual(tel.cleanProbeResult(0b111, P, SALT), 0b010);
+});
+ok("kind 9: clears the loader handshake event, keeps another event", () => {
+    const P = [
+        [9, "moomoo.js:api", 0],   // bit 0: the loader's handshake -> clear
+        [9, "some.other.evt", 0]   // bit 1: unrelated event -> keep
+    ];
+    assert.strictEqual(tel.cleanProbeResult(0b11, P, SALT), 0b10);
 });
 ok("default handle() with a probe round sends the original-client answer (footprint stripped)", () => {
     const ad = AntiDetect.create({ telemetry: tel });            // default: enabled = false

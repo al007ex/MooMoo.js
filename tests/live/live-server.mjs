@@ -57,10 +57,20 @@ function makeIsolatedCopy() {
     return dir;
 }
 
+// Append extra integrity probes to the isolated copy's anticheat config (e.g. kind 8/9
+// signatures targeting the loader/mods), so a test can verify the loader neutralises them.
+function patchAnticheatProbes(dir, probes) {
+    const cfg = path.join(dir, "server", "src", "anticheat", "config.js");
+    const extra = probes.map((p) => JSON.stringify(p)).join(",");
+    fs.writeFileSync(cfg, fs.readFileSync(cfg, "utf8") + "\nANTICHEAT_CONFIG.probes.list.push(" + extra + ");\n");
+}
+
 // Start an isolated server. opts.env adds env vars (e.g. OWNER_EMAIL, DEBUG_PACKETS).
+// opts.anticheatProbes appends probes (each {kind, path?, value?, name, action}) to the config.
 export async function startServer(opts = {}) {
     const port = await freePort();
     const dir = makeIsolatedCopy();
+    if (opts.anticheatProbes && opts.anticheatProbes.length) patchAnticheatProbes(dir, opts.anticheatProbes);
     const lines = [];
     const taps = new Set();
     const child = spawn(process.execPath, [path.join(dir, "server", "src", "index.js")], {
