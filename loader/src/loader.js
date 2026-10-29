@@ -632,6 +632,28 @@
             const s = active && active.session;
             return s ? { pinned: !!s.pinned, sealMode: s.sealMode | 0, seal: s.sealReport, seq: s.lastSeq, ledger: s.ledger >>> 0, probeSalt: active.lastProbeSalt } : null;
         };
+        // For advanced mods that open their OWN connections (e.g. multi-box bots that speak the
+        // protocol themselves): the page's code seal (raw bytes, for bind mode), the resolved
+        // per-deploy protocol module (ClientSession etc. live on _deps.Protocol), and the adopted
+        // game socket's endpoint. These are the page's own public bundle facts — reached through
+        // the event handshake like the rest of the API, so they add no window global and no probe
+        // footprint. The mod opens native (MooMooLoader.native) sockets so the loader's own
+        // re-encode transform never touches the bots' frames.
+        MooMooLoader.seal = () => getSeal();
+        MooMooLoader.protocolModule = () => getProtocolModule();
+        MooMooLoader.endpoint = () => {
+            try {
+                const u = active && active.ws && active.ws.url;
+                if (!u) return null;
+                const url = new URL(u);
+                const m = /\/s\/([^/?]+)/.exec(url.pathname) || [];
+                return {
+                    host: url.host, secure: url.protocol === "wss:", serverKey: m[1] || "",
+                    buildId: url.searchParams.get("b") || diag.buildId || null,
+                    stem: url.searchParams.get("u") || ""
+                };
+            } catch (e) { return null; }
+        };
         MooMooLoader.store = store;
         MooMooLoader.combat = combat;
         MooMooLoader.render = render;

@@ -139,8 +139,13 @@ const iife = `(function bootstrap(){
 })();
 `;
 
-// Mangle + compress the body (the UserScript header must stay verbatim for Tampermonkey).
-const body = await obfuscate(iife, { label: "loader", toplevel: true });
+// The body is left READABLE by default so the delivered userscript can be read and
+// audited. Set MOOMOO_MANGLE=1 to minify + mangle it instead (smaller, and a little
+// harder to eyeball on the page). Either way the UserScript header stays verbatim for
+// Tampermonkey, and only local identifiers are ever crushed, so the API is unaffected.
+const body = process.env.MOOMOO_MANGLE === "1"
+    ? await obfuscate(iife, { label: "loader", toplevel: true })
+    : iife;
 const bootstrap = `${HEADER}\n${body}\n`;
 
 fs.mkdirSync(distDir, { recursive: true });
