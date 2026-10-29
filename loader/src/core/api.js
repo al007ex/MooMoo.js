@@ -201,6 +201,10 @@
         // The ctxExtensions function the runtime calls for each mod. `ctx` already
         // has on/every/etc. that auto-tear-down, so onTick piggybacks on ctx.on.
         return function (ctx /*, rec, active */) {
+            // Clear any freecam camera override exactly once when this mod is torn down,
+            // however many times overrideCamera() was called while it ran.
+            let camCleanupArmed = false;
+            const armCamCleanup = () => { if (!camCleanupArmed && render) { camCleanupArmed = true; ctx.onCleanup(() => render.setCameraOverride(null)); } };
             return {
                 // data + input + constants
                 data, gameData: data, input, SERVER_TICK,
@@ -226,7 +230,12 @@
                     get replacing() { return render.replacing; },
                     layer(id, draw, opts) { const un = render.addLayer(id, draw, opts); ctx.onCleanup(un); return un; },
                     replace(spec) { const un = render.setReplacer(spec); ctx.onCleanup(un); return un; },
-                    onFrame(fn) { const un = render.onFrame(fn); ctx.onCleanup(un); return un; }
+                    onFrame(fn) { const un = render.onFrame(fn); ctx.onCleanup(un); return un; },
+                    // Freecam: aim the overlay camera at a world spot (null = back to your
+                    // player). Cleared automatically when the mod is torn down.
+                    overrideCamera(x, y) { armCamCleanup(); render.setCameraOverride(x == null ? null : { x, y }); },
+                    clearCameraOverride() { render.setCameraOverride(null); },
+                    get cameraOverride() { return render.cameraOverride; }
                 },
                 // A* pathfinder (worker pool). ctx.path.find({player,target,buildings,clan})
                 // -> Promise<{ok, path, reason}>. Null in environments without one.

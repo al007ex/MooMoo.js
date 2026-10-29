@@ -10,3 +10,5 @@ moomoo-server/client-official/
 moomoo-server/client/
 moomoo-server/dist/
 moomoo-server/server/data/
+# live-test screenshot artifact
+freecam-shot.png

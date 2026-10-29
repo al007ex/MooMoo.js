@@ -72,7 +72,10 @@
             for (const cb of Array.from(downCbs)) { try { cb(e, toks); } catch (err) { /* ignore */ } }
             // auto-repeat shouldn't re-trigger binds
             if (e.repeat) return;
-            for (const t of toks) {
+            // tokensFor can yield the SAME token twice (e.g. e.key "f" and e.code "KeyF" both
+            // normalise to "f"), so dedupe before firing or a single press runs each bind twice
+            // (which would, e.g., toggle a feature on then straight back off).
+            for (const t of new Set(toks)) {
                 const set = binds.get(t);
                 if (!set) continue;
                 for (const b of Array.from(set)) {

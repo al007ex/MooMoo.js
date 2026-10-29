@@ -68,6 +68,10 @@
         const animals = new Map();      // sid -> mirror
         let me = null;                  // the stock client's `S` (your own player)
         const camera = { x: MAP / 2, y: MAP / 2 };
+        // A mod (freecam) can point the overlay camera at a world spot of its own
+        // instead of `me`, so our overlays keep lining up with the stock picture when
+        // the stock camera has been pushed off your real position. null = follow `me`.
+        let camOverride = null;
 
         MooMoo.on("playerAdd", (pk) => {
             const d = pk && pk.data;
@@ -162,17 +166,23 @@
             const now = Date.now();
             const delta = now - lastNow;
             lastNow = now;
-            // camera follow (uses your position from the previous frame, like the stock)
-            if (me) {
-                const dist = Math.hypot(me.x - camera.x, me.y - camera.y);
-                const dir = Math.atan2(me.y - camera.y, me.x - camera.x);
+            // camera follow (uses your position from the previous frame, like the stock).
+            // A freecam override takes the place of `me` with the exact same eased follow,
+            // so the overlay camera and the stock camera (which the mod drives in lock-step)
+            // track the same spot and the overlays stay aligned.
+            const follow = camOverride || me;
+            if (follow) {
+                const dist = Math.hypot(follow.x - camera.x, follow.y - camera.y);
+                const dir = Math.atan2(follow.y - camera.y, follow.x - camera.x);
                 const move = Math.min(dist * 0.01 * delta, dist);
                 if (dist > 0.05) { camera.x += move * Math.cos(dir); camera.y += move * Math.sin(dir); }
-                else { camera.x = me.x; camera.y = me.y; }
+                else { camera.x = follow.x; camera.y = follow.y; }
             } else { camera.x = MAP / 2; camera.y = MAP / 2; }
             for (const p of players.values()) interpolate(p, delta);
             for (const p of animals.values()) interpolate(p, delta);
-            if (cameraLock() && me && MooMoo.self && MooMoo.self.alive) { camera.x = me.x; camera.y = me.y; }
+            // The stock "camera lock" setting pins the camera to you — but not while a
+            // freecam override is active (the whole point is to leave your body behind).
+            if (!camOverride && cameraLock() && me && MooMoo.self && MooMoo.self.alive) { camera.x = me.x; camera.y = me.y; }
             // the stock view size for this window
             const w = win.innerWidth || MAX_W, h = win.innerHeight || MAX_H;
             const scale = Math.max(w / MAX_W, h / (MAX_H * 1.15), Math.sqrt(w * h / (MAX_W * MAX_H)));
@@ -310,6 +320,9 @@
             animal: (sid) => animals.get(sid),
             get me() { return me; },
             addLayer, setReplacer,
+            // Point the overlay camera at {x, y} (freecam), or null to follow your player again.
+            setCameraOverride: (pt) => { camOverride = (pt && typeof pt.x === "number" && typeof pt.y === "number") ? { x: pt.x, y: pt.y } : null; return camOverride; },
+            get cameraOverride() { return camOverride; },
             onFrame: (fn) => { frameHooks.add(fn); return () => frameHooks.delete(fn); },
             worldToScreen: (x, y) => ({ x: (x - view.left) * view.scale, y: (y - view.top) * view.scale }),
             get replacing() { return !!replacer; },

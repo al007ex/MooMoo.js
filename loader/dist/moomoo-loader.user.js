@@ -2495,7 +2495,10 @@
             for (const cb of Array.from(downCbs)) { try { cb(e, toks); } catch (err) { /* ignore */ } }
             // auto-repeat shouldn't re-trigger binds
             if (e.repeat) return;
-            for (const t of toks) {
+            // tokensFor can yield the SAME token twice (e.g. e.key "f" and e.code "KeyF" both
+            // normalise to "f"), so dedupe before firing or a single press runs each bind twice
+            // (which would, e.g., toggle a feature on then straight back off).
+            for (const t of new Set(toks)) {
                 const set = binds.get(t);
                 if (!set) continue;
                 for (const b of Array.from(set)) {
@@ -4224,6 +4227,10 @@
         const animals = new Map();      // sid -> mirror
         let me = null;                  // the stock client's `S` (your own player)
         const camera = { x: MAP / 2, y: MAP / 2 };
+        // A mod (freecam) can point the overlay camera at a world spot of its own
+        // instead of `me`, so our overlays keep lining up with the stock picture when
+        // the stock camera has been pushed off your real position. null = follow `me`.
+        let camOverride = null;
 
         MooMoo.on("playerAdd", (pk) => {
             const d = pk && pk.data;
@@ -4318,17 +4325,23 @@
             const now = Date.now();
             const delta = now - lastNow;
             lastNow = now;
-            // camera follow (uses your position from the previous frame, like the stock)
-            if (me) {
-                const dist = Math.hypot(me.x - camera.x, me.y - camera.y);
-                const dir = Math.atan2(me.y - camera.y, me.x - camera.x);
+            // camera follow (uses your position from the previous frame, like the stock).
+            // A freecam override takes the place of `me` with the exact same eased follow,
+            // so the overlay camera and the stock camera (which the mod drives in lock-step)
+            // track the same spot and the overlays stay aligned.
+            const follow = camOverride || me;
+            if (follow) {
+                const dist = Math.hypot(follow.x - camera.x, follow.y - camera.y);
+                const dir = Math.atan2(follow.y - camera.y, follow.x - camera.x);
                 const move = Math.min(dist * 0.01 * delta, dist);
                 if (dist > 0.05) { camera.x += move * Math.cos(dir); camera.y += move * Math.sin(dir); }
-                else { camera.x = me.x; camera.y = me.y; }
+                else { camera.x = follow.x; camera.y = follow.y; }
             } else { camera.x = MAP / 2; camera.y = MAP / 2; }
             for (const p of players.values()) interpolate(p, delta);
             for (const p of animals.values()) interpolate(p, delta);
-            if (cameraLock() && me && MooMoo.self && MooMoo.self.alive) { camera.x = me.x; camera.y = me.y; }
+            // The stock "camera lock" setting pins the camera to you — but not while a
+            // freecam override is active (the whole point is to leave your body behind).
+            if (!camOverride && cameraLock() && me && MooMoo.self && MooMoo.self.alive) { camera.x = me.x; camera.y = me.y; }
             // the stock view size for this window
             const w = win.innerWidth || MAX_W, h = win.innerHeight || MAX_H;
             const scale = Math.max(w / MAX_W, h / (MAX_H * 1.15), Math.sqrt(w * h / (MAX_W * MAX_H)));
@@ -4466,6 +4479,9 @@
             animal: (sid) => animals.get(sid),
             get me() { return me; },
             addLayer, setReplacer,
+            // Point the overlay camera at {x, y} (freecam), or null to follow your player again.
+            setCameraOverride: (pt) => { camOverride = (pt && typeof pt.x === "number" && typeof pt.y === "number") ? { x: pt.x, y: pt.y } : null; return camOverride; },
+            get cameraOverride() { return camOverride; },
             onFrame: (fn) => { frameHooks.add(fn); return () => frameHooks.delete(fn); },
             worldToScreen: (x, y) => ({ x: (x - view.left) * view.scale, y: (y - view.top) * view.scale }),
             get replacing() { return !!replacer; },
@@ -4871,6 +4887,10 @@
         // The ctxExtensions function the runtime calls for each mod. `ctx` already
         // has on/every/etc. that auto-tear-down, so onTick piggybacks on ctx.on.
         return function (ctx /*, rec, active */) {
+            // Clear any freecam camera override exactly once when this mod is torn down,
+            // however many times overrideCamera() was called while it ran.
+            let camCleanupArmed = false;
+            const armCamCleanup = () => { if (!camCleanupArmed && render) { camCleanupArmed = true; ctx.onCleanup(() => render.setCameraOverride(null)); } };
             return {
                 // data + input + constants
                 data, gameData: data, input, SERVER_TICK,
@@ -4896,7 +4916,12 @@
                     get replacing() { return render.replacing; },
                     layer(id, draw, opts) { const un = render.addLayer(id, draw, opts); ctx.onCleanup(un); return un; },
                     replace(spec) { const un = render.setReplacer(spec); ctx.onCleanup(un); return un; },
-                    onFrame(fn) { const un = render.onFrame(fn); ctx.onCleanup(un); return un; }
+                    onFrame(fn) { const un = render.onFrame(fn); ctx.onCleanup(un); return un; },
+                    // Freecam: aim the overlay camera at a world spot (null = back to your
+                    // player). Cleared automatically when the mod is torn down.
+                    overrideCamera(x, y) { armCamCleanup(); render.setCameraOverride(x == null ? null : { x, y }); },
+                    clearCameraOverride() { render.setCameraOverride(null); },
+                    get cameraOverride() { return render.cameraOverride; }
                 },
                 // A* pathfinder (worker pool). ctx.path.find({player,target,buildings,clan})
                 // -> Promise<{ok, path, reason}>. Null in environments without one.

@@ -36,9 +36,12 @@ wire bytes ─(loader: hook + decode + binding)─▶ named events ─▶ your m
 your mod ─▶ named actions ─(loader: binding + encode + send)─▶ wire bytes
 ```
 
-and the mod that ships with it is **MooMoo Lite** — place spammers, legit auto heal,
-an instakill combo, hold-a-mouse-button hat/accessory loadouts, hat hotkeys and
-on-screen player / animal arrows, all in its own in-game menu.
+the mods that ship with it are **MooMoo Lite** — place spammers, legit auto heal, an
+instakill combo, hold-a-mouse-button hat/accessory loadouts, hat hotkeys and on-screen
+player / animal arrows, in its own in-game menu — **MooMod Bots**, multi-box bots that
+follow your mouse on your own server, and **Freecam + Zoom**, which detaches the camera
+and flies it around with WASD while your body stays parked (a ghost marks where it is),
+all configured from the native **Mods** tab.
 
 ---
 
@@ -58,6 +61,9 @@ mods/
   lite.js                     MooMoo Lite — the mod (place spammers, legit auto heal,
   build-lite.mjs              an instakill combo, mouse-button loadouts, hat hotkeys,
                               player / animal arrows, own menu) → lite.user.js
+  bots.js / build-bots.mjs    MooMod Bots — multi-box mouse-following bots → bots.user.js
+  freecam.js                  Freecam + Zoom — WASD freecam with a body ghost, menu
+  build-freecam.mjs           settings for speed/zoom → freecam.user.js
   ac-monitor.user.js          a small anti-cheat telemetry monitor (dev tool)
 build-common.mjs              the shared mangle step (esbuild)
 examples/                     a tiny standalone mod + a menu preview
@@ -123,6 +129,28 @@ test build can keep a debug view the delivered build compiles out.
 the loader drops a **Mods** tab into the game's pause menu. every registered mod
 gets an on/off toggle and its "basic" settings there; a mod with its own menu (like
 MooMoo Lite) points you at it. state sticks across reloads.
+
+---
+
+## Freecam + Zoom
+
+`mods/freecam.js` adds a free-flying camera. press **F** (rebindable in the Mods tab)
+and your view detaches from your body: **WASD** flies it around the map and your player
+glides with it, while your real body stays exactly where it was — drawn as a faint
+ghost with a tether so you can see where you actually are. It's entirely client-side:
+the camera is moved by overriding your own player object's render position, and the
+client's own movement frames are dropped while it's on, so the server keeps your body
+parked and sees nothing unusual (the loader reports clean telemetry throughout). Speed
+and the ghost's look are in the Mods tab.
+
+**Zoom.** The scroll wheel and the **Zoom %** slider are there too. True map-zoom
+changes the client's render scale, which lives in its renderer object — and the stock
+FRVR production build bakes its debug flag off, so it never publishes that object
+(`window.__renderer`) and snapshots the scale at load. A loader-only mod can't reach it
+there, so zoom currently just widens the view's cull box. To enable full zoom on your
+own server, un-gate the renderer in the served client (e.g. a bundle transform that
+turns `Fe&&(window.__renderer=P)` into `(window.__renderer=P)`); the mod then wraps its
+transform to scale about the screen centre, in and out.
 
 ---
 
