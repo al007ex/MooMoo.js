@@ -191,7 +191,10 @@ rebuild, re-host at the same url, done. see `docs/updating-the-loader.md`.
 the loader also checks itself against the server as it connects. on a clean join it
 shows a short notice; if the server has moved ahead of the binding it shows a
 mismatch report you can copy and send over, and if it's certain the loader can't keep
-up it stops the connection rather than let you get flagged. see `docs/anticheat.md`.
+up it stops the connection rather than let you get flagged. it's pinned to the client
+build it was made for, too — if the page is running a newer `index-<hash>.js` than the
+loader was built against, it warns that the loader may be out of date and points you at
+the newest one. see `docs/anticheat.md` and `docs/updating-the-loader.md`.
 
 ---
 

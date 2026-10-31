@@ -289,6 +289,14 @@
             // (binding.telemetry.construct): a clean client reports flags 0, untrusted 0, probeResult 0,
             // plus the seal report, the round's probe salt, and — because this connection is pinned —
             // the running seq + ledger. The bot's socket carries no footprint of its own, so 0s are honest.
+            //
+            // LIMITATION: a bot has no DOM/window, so it reports probeResult 0 for EVERY probe. That
+            // matches this server, whose integrity probes are all "footprint" checks a clean client
+            // also answers 0 (hooked natives, swapped constructors, userscript globals). It would NOT
+            // match a hypothetical "canary" probe — one a real browser must match (e.g. an element the
+            // stock page always has) — which a DOM-less bot can't answer truthfully. The server doesn't
+            // send those today (the live test confirms bots stay unflagged); a bot that had to survive
+            // them would need to run in a real page, not a bare socket.
             function sendTelemetry(bot, salt) {
                 const s = bot.session; if (!s) return false;
                 const tctx = { sealReport: s.sealReport, probeSalt: salt };

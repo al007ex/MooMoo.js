@@ -1381,10 +1381,18 @@
         h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0;
     }
     const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js)/i;   // the loader's / mods' own storage keys
+    const LOADER_CONTAINER_SEL = "[class*='mml-'],[class*='mmj-'],[class*='mdbg'],[class*='moomoo']";
     function loaderOwnedElement(el) {
         try {
             const cn = el.className, cls = (cn && cn.baseVal != null ? cn.baseVal : cn) || "";
-            return /\bmml-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mdbg|moomoojs/i.test(el.id || "");
+            // our own class/id prefixes: mml- (mods' GUIs), mmj- (the Mods tab + notice cards,
+            // mmj-* / mmj-nt-*), mdbg (debug), moomoojs.
+            if (/\bmml-|\bmmj-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mmj|mdbg|moomoojs/i.test(el.id || "")) return true;
+            // ...and anything INSIDE one of our containers — e.g. the bots panel's inner .bbtn /
+            // .bitem, which are scoped under .mml-bots in CSS and so carry no prefix of their own.
+            // Their classes are loader-made, never a game class (a game class could be a canary).
+            if (typeof el.closest === "function" && el.closest(LOADER_CONTAINER_SEL)) return true;
+            return false;
         } catch (e) { return false; }
     }
     // Each hash-based match is its own small function with a clean (hashVal, saltVal) scope:
@@ -1404,7 +1412,9 @@
     }
     function hashHitsLoaderClass(hashVal, saltVal) {  // kind 8: one of our classed elements, as "tag.class"
         const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
-        const list = doc.querySelectorAll("[class*='mml-'],[class*='mdbg'],[class*='moomoo']");
+        // our containers AND their descendants (so an unprefixed inner class like .bbtn, scoped
+        // under .mml-bots, is enumerated too). loaderOwnedElement below confirms each is ours.
+        const list = doc.querySelectorAll(LOADER_CONTAINER_SEL + ",[class*='mml-'] *,[class*='mmj-'] *,[class*='mdbg'] *,[class*='moomoo'] *");
         for (let j = 0; j < list.length; j++) {
             const el = list[j]; if (!loaderOwnedElement(el)) continue;
             const tag = (el.tagName || "").toLowerCase();
@@ -5304,6 +5314,17 @@
         const version = opts.version || "0";
         const contract = opts.contract || {};
         const onRefuse = typeof opts.onRefuse === "function" ? opts.onRefuse : function () {};
+        // The client build this loader was made for (a content-hash stem, or null when the
+        // loader wasn't pinned at build time), plus a live read of the one the page actually
+        // loaded. When they differ the game's client file changed under this loader.
+        const expectedBundle = opts.expectedBundle || null;
+        const readBundleStem = typeof opts.bundleStem === "function" ? opts.bundleStem : () => (opts.bundleStem || null);
+        function bundleMismatch() {
+            if (!expectedBundle) return null;
+            const actual = readBundleStem();
+            if (!actual || actual === expectedBundle) return null;
+            return { expected: expectedBundle, actual };
+        }
 
         // ---- observed state ----
         const obs = {
@@ -5404,16 +5425,18 @@
 
         function reportText(v) {
             const r = buildReport(v);
+            const bm = bundleMismatch();
             const lines = [
                 "MooMoo.js loader — mismatch report",
                 "loader   " + r.loader,
                 "build    " + (r.build || "?"),
-                "verdict  " + r.verdict,
+                "verdict  " + (bm ? (r.verdict === "ok" ? "outdated" : r.verdict + "+outdated") : r.verdict),
                 "when     " + r.at,
                 "url      " + (r.url || "?"),
                 "",
                 "what doesn't match:"
             ];
+            if (bm) lines.push("  [bundle] client is index-" + bm.actual + ", this loader was built for index-" + bm.expected);
             for (const s of r.signals) lines.push("  [" + s.level + "] " + s.text);
             lines.push("", "observed: io-init " + (r.observed.ioInitFields == null ? "?" : r.observed.ioInitFields) +
                 " fields, telemetry " + (r.observed.clientTelemetryFields == null ? "?" : r.observed.clientTelemetryFields) +
@@ -5448,6 +5471,9 @@
             try { if (win.navigator && win.navigator.webdriver) return; } catch (e) { /* ignore */ }
             // If it's already up (loader installed late), show at once.
             if (menuVisible()) { showMenuWelcome(); return; }
+            // No timers here (a headless/minimal environment) — the welcome is a UI nicety, so
+            // just skip the poll rather than throw. The connection-driven refusal path is separate.
+            if (typeof win.setInterval !== "function" || typeof win.clearInterval !== "function") return;
             let tries = 0;
             menuTimer = win.setInterval(function () {
                 if (welcomeShown || refused) { win.clearInterval(menuTimer); menuTimer = null; return; }
@@ -5463,7 +5489,13 @@
             const v = evaluate();
             if (v.verdict === "refuse") { doRefuse(v); return; }
             welcomeShown = true;
-            if (v.verdict === "warn") showWarn(v); else showThanks();
+            // A changed client bundle is its own warning — the loader may simply be out of date,
+            // independent of whether anything has failed to decode yet. It takes priority over the
+            // generic "something looks off" warn and the clean welcome.
+            const bm = bundleMismatch();
+            if (bm) showOutdated(v, bm);
+            else if (v.verdict === "warn") showWarn(v);
+            else showThanks();
         }
 
         function doRefuse(v) {
@@ -5588,6 +5620,33 @@
             join.onclick = close;
         }
 
+        // The client bundle changed under the loader — most likely the loader is just out of
+        // date. A soft, dismissible warning (you can still join): point the player at the newest
+        // loader on Discord, or let them copy a report to say it's outdated.
+        function showOutdated(v, bm) {
+            const card = el("div", "mmj-nt-card");
+            card.appendChild(el("div", "mmj-nt-kick warn", "new game version"));
+            card.appendChild(el("div", "mmj-nt-title", "This loader may be out of date"));
+            card.appendChild(el("div", "mmj-nt-body",
+                "The game's client changed since this build of MooMoo.js was made — the page is running " +
+                "<b>index-" + bm.actual + "</b>, but this loader was built for <b>index-" + bm.expected + "</b>. " +
+                "It'll probably still load, but the mods may act up or stop working. Grab the newest loader from the " +
+                "Discord, or copy the report below and let me know it's out of date."));
+            const rep = el("div", "mmj-nt-report");
+            rep.appendChild(el("div", "lbl", "› error report"));
+            const pre = el("pre"); pre.textContent = reportText(v); rep.appendChild(pre);
+            card.appendChild(rep);
+            card.appendChild(linksCard());
+            const btns = el("div", "mmj-nt-btns");
+            btns.appendChild(copyButton(() => reportText(v)));
+            const latest = el("button", "mmj-nt-btn green", "get the latest");
+            latest.onclick = function () { try { win.open(LINKS.discord, "_blank", "noopener"); } catch (e) { win.location.href = LINKS.discord; } };
+            btns.appendChild(latest);
+            card.appendChild(btns);
+            card.appendChild(el("div", "mmj-nt-foot", "MooMoo.js v" + version + " · by " + LINKS.author));
+            mount(card, true); // closeable (x / Esc / backdrop) = join anyway; you can still play
+        }
+
         function showRefuse(v) {
             const card = el("div", "mmj-nt-card");
             card.appendChild(el("div", "mmj-nt-kick bad", "can't connect"));
@@ -5613,9 +5672,10 @@
 
         return {
             recordIoInit, recordS2C, recordS2CError, recordClientTelemetry,
-            watchMenu, evaluate,
+            watchMenu, evaluate, bundleMismatch,
             // handy for diagnostics / the test harness
             _report: () => reportText(evaluate()),
+            _showOutdated: (bm) => showOutdated(evaluate(), bm || bundleMismatch() || { expected: expectedBundle || "?", actual: "?" }),
             _obs: obs
         };
     }
@@ -5843,6 +5903,17 @@
 
     const VERSION = "1.3.3";
 
+    // The client bundle this loader was BUILT against — its content-hash stem, i.e. the
+    // `<stem>` in the served `/assets/index-<stem>.js` (FRVR content-hashes the file name, so
+    // the stem changes whenever the client's bytes change). loader/build.mjs bakes the stem of
+    // the bundle it was built for here; left as this sentinel the check is OFF — the `%` makes it
+    // fail the stem pattern below — which is the case for the readable source and for Node/test
+    // runs that import loader.js directly. At runtime we read the stem the page actually loaded
+    // and, if it differs, warn that this loader may be out of date (see core/notice.js). The stem
+    // is immune to the server's IS_SANDBOX byte transform (that rewrites content, never the file
+    // name), so it never false-alarms on a sandbox/dev server.
+    const EXPECTED_BUNDLE = "993d072d";
+
     // The event a mod dispatches to fetch the API ({ detail: { resolve(MooMoo, MooMooLoader) } }),
     // and the signal the loader fires once that handshake is live so a mod that loaded first can
     // retry. Neither the event name nor the listener is visible to any integrity-probe kind, so
@@ -5931,6 +6002,18 @@
         return null;
     }
 
+    // The content-hash stem of the client bundle the page actually loaded (the `<stem>` in
+    // /assets/index-<stem>.js), or null if it isn't in the DOM yet. Used to tell whether the
+    // page is running the same client build this loader was made for (EXPECTED_BUNDLE).
+    function currentBundleStem(win) {
+        const url = findClientBundleUrl(win);
+        if (!url) return null;
+        const m = /\/assets\/index-([\w-]+)\.js(?:\?|$)/.exec(url);
+        return m ? m[1] : null;
+    }
+    // Did build.mjs bake a real stem here? (The unbaked sentinel contains a `%`, so it fails this.)
+    const bundleCheckEnabled = () => /^[\w-]+$/.test(EXPECTED_BUNDLE);
+
     // The code seal for this page: sealBytes (the "moomoo-seal" import's hex file name) XOR
     // SHA-256(bundle)[0..16]. Independent of the connection, so it is computed once and cached.
     // Resolves to a 16-byte Uint8Array, or null when it can't be built (then a bind-mode
@@ -5988,7 +6071,13 @@
             ? D.AntiDetect.create({ telemetry })
             : { enabled: true, handle: (args, ctx) => telemetry.scrub(args, ctx) };
 
-        const diag = { version: VERSION, buildId: null, resolvedProtocol: false, sockets: 0, failedProtocol: false };
+        const diag = {
+            version: VERSION, buildId: null, resolvedProtocol: false, sockets: 0, failedProtocol: false,
+            // The client build this loader was made for (null = not pinned at build time).
+            expectedBundle: bundleCheckEnabled() ? EXPECTED_BUNDLE : null,
+            get bundleStem() { return currentBundleStem(win); },
+            get bundleOutdated() { return bundleCheckEnabled() && currentBundleStem(win) != null && currentBundleStem(win) !== EXPECTED_BUNDLE; }
+        };
         const rawTaps = new Set();      // fn(dir, name, args)
         const errorSink = (e) => { try { console.error("%c[moomoo.js]", "color:#e66", "loader error:", e); } catch (_) {} };
 
@@ -6071,6 +6160,11 @@
                     version: VERSION,
                     diag,
                     contract: binding.contract,
+                    // The client build this loader was made for, and a live read of the one the page
+                    // is actually running, so the notice can warn when they differ (loader may be out
+                    // of date). Only armed once build.mjs has baked a real stem.
+                    expectedBundle: bundleCheckEnabled() ? EXPECTED_BUNDLE : null,
+                    bundleStem: () => currentBundleStem(win),
                     // Hard mismatch -> cut the connection so the player can't get flagged/banned.
                     onRefuse: () => { try { if (active && active.ws) active.ws.close(4999, "moomoo.js loader out of date"); } catch (e) { /* ignore */ } }
                 });

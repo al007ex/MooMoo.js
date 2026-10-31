@@ -34,6 +34,9 @@ const PLAYER = { email: "live-lite@moomoojs.test", password: "local-test" };
 const PROBES = [
     { kind: 8, path: "", value: "div.mml-gui", name: "MML_MENU", action: "kick" },
     { kind: 8, path: "", value: "div.mdbg", name: "MML_DEBUG", action: "kick" },
+    // the in-game Mods tab (<a class="mmj-tab"> in the pause menu) — present even with the lite
+    // menu closed; proves the loader strips the mmj- class family, not just mml-/mdbg.
+    { kind: 8, path: "", value: "a.mmj-tab", name: "MML_MODSTAB", action: "kick" },
     { kind: 9, path: "moomoo.js:api", name: "MML_LOADER", action: "kick" },
     // A probe KIND the loader has no rule for (a stand-in for the next anticheat trick). The
     // client can't evaluate it either, so it never matches — but the loader must still NOTICE it.
@@ -79,6 +82,7 @@ try {
         return {
             probedK8: rounds.some(r => r.k8 > 0), probedK9: rounds.some(r => r.k9 > 0), probedK10: rounds.some(r => r.k10 > 0),
             menu: !!document.querySelector(".mml-gui"), panel: !!document.querySelector(".mdbg"),
+            modsTab: !!document.querySelector(".mmj-tab"),
             seen: (ad.log || []).map(e => e.probeResult), sent: (ad.log || []).map(e => e.sentProbeResult),
             outT: (window.__t || []).map(a => a[2]),
             healthy: ad.healthy, warningCount: ad.warningCount,
@@ -89,7 +93,7 @@ try {
 
     check("server sends kind-8 probes (class signatures)", r.probedK8, JSON.stringify(r));
     check("server sends a kind-9 probe (handshake event)", r.probedK9);
-    check("our footprint is present (.mml-gui + .mdbg)", r.menu && r.panel);
+    check("our footprint is present (.mml-gui + .mdbg + the mmj- Mods tab)", r.menu && r.panel && r.modsTab, "menu=" + r.menu + " panel=" + r.panel + " modsTab=" + r.modsTab);
     check("the client DID match our footprint (test is meaningful)", r.seen.some((x) => x && x !== 0), "seen=" + JSON.stringify(r.seen));
     check("the loader strips it: every outgoing T probeResult is 0", r.outT.length > 0 && r.outT.every((p) => p === 0), "outT=" + JSON.stringify(r.outT));
     check("antiDetect reports a clean sent probe result", r.sent.every((p) => p === 0), "sent=" + JSON.stringify(r.sent));

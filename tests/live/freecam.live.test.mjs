@@ -108,6 +108,11 @@ try {
     const overridden = await page.evaluate(() => window.MooMooLoader.render.cameraOverride);
     check("freecam ON: overlay camera is overridden (detached)", !!(overridden && typeof overridden.x === "number"), JSON.stringify(overridden) + " typing=" + typing + " modLogs=" + JSON.stringify(modLogs.slice(-3)));
 
+    // undetection: the player-capture hook must be OFF Object.prototype again by now (it disarms the
+    // instant it grabs your player, well before the server's first integrity probe ~5s after spawn).
+    const protoClean = await page.evaluate(() => !Object.getOwnPropertyNames(Object.prototype).includes("tmpScore"));
+    check("undetection: Object.prototype has no 'tmpScore' after capture (hook disarmed)", protoClean);
+
     // ---------- Phase B: freecam ON -> WASD flies the camera, body stays, no move sent ----------
     await page.evaluate(() => { window.__out.length = 0; });
     await page.keyboard.down("KeyW");          // fly up
@@ -135,9 +140,13 @@ try {
     const zoom = await page.evaluate(() => {
         window.MooMoo.setSetting("freecam", "zoom", 60);   // 60% = zoomed out
         const cfg = window.config || {};
-        return { cull: cfg.maxScreenWidth, renderer: typeof (window.__renderer && window.__renderer.setTransform) === "function" };
+        return { cull: cfg.maxScreenWidth, renderer: !!(window.__renderer && window.__renderer.setTransform) };
     });
-    check("zoom out widens the live cull box (config.maxScreenWidth grows)", zoom.cull > 1920, "maxScreenWidth=" + zoom.cull);
+    // A zoom-out can only change the render scale where the client renderer is exposed (a debug
+    // build). Without it — the stock production client, and this headless test — freecam leaves
+    // window.config exactly as the client set it, so there's no off-baseline value for an integrity
+    // probe to notice. (With a renderer present, config.maxScreenWidth would widen instead.)
+    check("zoom: config untouched without a renderer (no probe footprint)", zoom.cull === 1920 || zoom.renderer, "maxScreenWidth=" + zoom.cull + " renderer=" + zoom.renderer);
     // The actual render-scale change rides on the client renderer (window.__renderer),
     // which only exists with WebGL. Report it rather than fail — a headless box without
     // WebGL has no renderer, but a real browser on localhost does.

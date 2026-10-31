@@ -47,6 +47,17 @@
 
     const VERSION = "1.3.3";
 
+    // The client bundle this loader was BUILT against — its content-hash stem, i.e. the
+    // `<stem>` in the served `/assets/index-<stem>.js` (FRVR content-hashes the file name, so
+    // the stem changes whenever the client's bytes change). loader/build.mjs bakes the stem of
+    // the bundle it was built for here; left as this sentinel the check is OFF — the `%` makes it
+    // fail the stem pattern below — which is the case for the readable source and for Node/test
+    // runs that import loader.js directly. At runtime we read the stem the page actually loaded
+    // and, if it differs, warn that this loader may be out of date (see core/notice.js). The stem
+    // is immune to the server's IS_SANDBOX byte transform (that rewrites content, never the file
+    // name), so it never false-alarms on a sandbox/dev server.
+    const EXPECTED_BUNDLE = "%BUNDLE_STEM%";
+
     // The event a mod dispatches to fetch the API ({ detail: { resolve(MooMoo, MooMooLoader) } }),
     // and the signal the loader fires once that handshake is live so a mod that loaded first can
     // retry. Neither the event name nor the listener is visible to any integrity-probe kind, so
@@ -135,6 +146,18 @@
         return null;
     }
 
+    // The content-hash stem of the client bundle the page actually loaded (the `<stem>` in
+    // /assets/index-<stem>.js), or null if it isn't in the DOM yet. Used to tell whether the
+    // page is running the same client build this loader was made for (EXPECTED_BUNDLE).
+    function currentBundleStem(win) {
+        const url = findClientBundleUrl(win);
+        if (!url) return null;
+        const m = /\/assets\/index-([\w-]+)\.js(?:\?|$)/.exec(url);
+        return m ? m[1] : null;
+    }
+    // Did build.mjs bake a real stem here? (The unbaked sentinel contains a `%`, so it fails this.)
+    const bundleCheckEnabled = () => /^[\w-]+$/.test(EXPECTED_BUNDLE);
+
     // The code seal for this page: sealBytes (the "moomoo-seal" import's hex file name) XOR
     // SHA-256(bundle)[0..16]. Independent of the connection, so it is computed once and cached.
     // Resolves to a 16-byte Uint8Array, or null when it can't be built (then a bind-mode
@@ -192,7 +215,13 @@
             ? D.AntiDetect.create({ telemetry })
             : { enabled: true, handle: (args, ctx) => telemetry.scrub(args, ctx) };
 
-        const diag = { version: VERSION, buildId: null, resolvedProtocol: false, sockets: 0, failedProtocol: false };
+        const diag = {
+            version: VERSION, buildId: null, resolvedProtocol: false, sockets: 0, failedProtocol: false,
+            // The client build this loader was made for (null = not pinned at build time).
+            expectedBundle: bundleCheckEnabled() ? EXPECTED_BUNDLE : null,
+            get bundleStem() { return currentBundleStem(win); },
+            get bundleOutdated() { return bundleCheckEnabled() && currentBundleStem(win) != null && currentBundleStem(win) !== EXPECTED_BUNDLE; }
+        };
         const rawTaps = new Set();      // fn(dir, name, args)
         const errorSink = (e) => { try { console.error("%c[moomoo.js]", "color:#e66", "loader error:", e); } catch (_) {} };
 
@@ -275,6 +304,11 @@
                     version: VERSION,
                     diag,
                     contract: binding.contract,
+                    // The client build this loader was made for, and a live read of the one the page
+                    // is actually running, so the notice can warn when they differ (loader may be out
+                    // of date). Only armed once build.mjs has baked a real stem.
+                    expectedBundle: bundleCheckEnabled() ? EXPECTED_BUNDLE : null,
+                    bundleStem: () => currentBundleStem(win),
                     // Hard mismatch -> cut the connection so the player can't get flagged/banned.
                     onRefuse: () => { try { if (active && active.ws) active.ws.close(4999, "moomoo.js loader out of date"); } catch (e) { /* ignore */ } }
                 });

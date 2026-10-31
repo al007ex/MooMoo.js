@@ -228,10 +228,18 @@
         h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0;
     }
     const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js)/i;   // the loader's / mods' own storage keys
+    const LOADER_CONTAINER_SEL = "[class*='mml-'],[class*='mmj-'],[class*='mdbg'],[class*='moomoo']";
     function loaderOwnedElement(el) {
         try {
             const cn = el.className, cls = (cn && cn.baseVal != null ? cn.baseVal : cn) || "";
-            return /\bmml-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mdbg|moomoojs/i.test(el.id || "");
+            // our own class/id prefixes: mml- (mods' GUIs), mmj- (the Mods tab + notice cards,
+            // mmj-* / mmj-nt-*), mdbg (debug), moomoojs.
+            if (/\bmml-|\bmmj-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mmj|mdbg|moomoojs/i.test(el.id || "")) return true;
+            // ...and anything INSIDE one of our containers — e.g. the bots panel's inner .bbtn /
+            // .bitem, which are scoped under .mml-bots in CSS and so carry no prefix of their own.
+            // Their classes are loader-made, never a game class (a game class could be a canary).
+            if (typeof el.closest === "function" && el.closest(LOADER_CONTAINER_SEL)) return true;
+            return false;
         } catch (e) { return false; }
     }
     // Each hash-based match is its own small function with a clean (hashVal, saltVal) scope:
@@ -251,7 +259,9 @@
     }
     function hashHitsLoaderClass(hashVal, saltVal) {  // kind 8: one of our classed elements, as "tag.class"
         const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
-        const list = doc.querySelectorAll("[class*='mml-'],[class*='mdbg'],[class*='moomoo']");
+        // our containers AND their descendants (so an unprefixed inner class like .bbtn, scoped
+        // under .mml-bots, is enumerated too). loaderOwnedElement below confirms each is ours.
+        const list = doc.querySelectorAll(LOADER_CONTAINER_SEL + ",[class*='mml-'] *,[class*='mmj-'] *,[class*='mdbg'] *,[class*='moomoo'] *");
         for (let j = 0; j < list.length; j++) {
             const el = list[j]; if (!loaderOwnedElement(el)) continue;
             const tag = (el.tagName || "").toLowerCase();

@@ -79,6 +79,17 @@
         const version = opts.version || "0";
         const contract = opts.contract || {};
         const onRefuse = typeof opts.onRefuse === "function" ? opts.onRefuse : function () {};
+        // The client build this loader was made for (a content-hash stem, or null when the
+        // loader wasn't pinned at build time), plus a live read of the one the page actually
+        // loaded. When they differ the game's client file changed under this loader.
+        const expectedBundle = opts.expectedBundle || null;
+        const readBundleStem = typeof opts.bundleStem === "function" ? opts.bundleStem : () => (opts.bundleStem || null);
+        function bundleMismatch() {
+            if (!expectedBundle) return null;
+            const actual = readBundleStem();
+            if (!actual || actual === expectedBundle) return null;
+            return { expected: expectedBundle, actual };
+        }
 
         // ---- observed state ----
         const obs = {
@@ -179,16 +190,18 @@
 
         function reportText(v) {
             const r = buildReport(v);
+            const bm = bundleMismatch();
             const lines = [
                 "MooMoo.js loader — mismatch report",
                 "loader   " + r.loader,
                 "build    " + (r.build || "?"),
-                "verdict  " + r.verdict,
+                "verdict  " + (bm ? (r.verdict === "ok" ? "outdated" : r.verdict + "+outdated") : r.verdict),
                 "when     " + r.at,
                 "url      " + (r.url || "?"),
                 "",
                 "what doesn't match:"
             ];
+            if (bm) lines.push("  [bundle] client is index-" + bm.actual + ", this loader was built for index-" + bm.expected);
             for (const s of r.signals) lines.push("  [" + s.level + "] " + s.text);
             lines.push("", "observed: io-init " + (r.observed.ioInitFields == null ? "?" : r.observed.ioInitFields) +
                 " fields, telemetry " + (r.observed.clientTelemetryFields == null ? "?" : r.observed.clientTelemetryFields) +
@@ -223,6 +236,9 @@
             try { if (win.navigator && win.navigator.webdriver) return; } catch (e) { /* ignore */ }
             // If it's already up (loader installed late), show at once.
             if (menuVisible()) { showMenuWelcome(); return; }
+            // No timers here (a headless/minimal environment) — the welcome is a UI nicety, so
+            // just skip the poll rather than throw. The connection-driven refusal path is separate.
+            if (typeof win.setInterval !== "function" || typeof win.clearInterval !== "function") return;
             let tries = 0;
             menuTimer = win.setInterval(function () {
                 if (welcomeShown || refused) { win.clearInterval(menuTimer); menuTimer = null; return; }
@@ -238,7 +254,13 @@
             const v = evaluate();
             if (v.verdict === "refuse") { doRefuse(v); return; }
             welcomeShown = true;
-            if (v.verdict === "warn") showWarn(v); else showThanks();
+            // A changed client bundle is its own warning — the loader may simply be out of date,
+            // independent of whether anything has failed to decode yet. It takes priority over the
+            // generic "something looks off" warn and the clean welcome.
+            const bm = bundleMismatch();
+            if (bm) showOutdated(v, bm);
+            else if (v.verdict === "warn") showWarn(v);
+            else showThanks();
         }
 
         function doRefuse(v) {
@@ -363,6 +385,33 @@
             join.onclick = close;
         }
 
+        // The client bundle changed under the loader — most likely the loader is just out of
+        // date. A soft, dismissible warning (you can still join): point the player at the newest
+        // loader on Discord, or let them copy a report to say it's outdated.
+        function showOutdated(v, bm) {
+            const card = el("div", "mmj-nt-card");
+            card.appendChild(el("div", "mmj-nt-kick warn", "new game version"));
+            card.appendChild(el("div", "mmj-nt-title", "This loader may be out of date"));
+            card.appendChild(el("div", "mmj-nt-body",
+                "The game's client changed since this build of MooMoo.js was made — the page is running " +
+                "<b>index-" + bm.actual + "</b>, but this loader was built for <b>index-" + bm.expected + "</b>. " +
+                "It'll probably still load, but the mods may act up or stop working. Grab the newest loader from the " +
+                "Discord, or copy the report below and let me know it's out of date."));
+            const rep = el("div", "mmj-nt-report");
+            rep.appendChild(el("div", "lbl", "› error report"));
+            const pre = el("pre"); pre.textContent = reportText(v); rep.appendChild(pre);
+            card.appendChild(rep);
+            card.appendChild(linksCard());
+            const btns = el("div", "mmj-nt-btns");
+            btns.appendChild(copyButton(() => reportText(v)));
+            const latest = el("button", "mmj-nt-btn green", "get the latest");
+            latest.onclick = function () { try { win.open(LINKS.discord, "_blank", "noopener"); } catch (e) { win.location.href = LINKS.discord; } };
+            btns.appendChild(latest);
+            card.appendChild(btns);
+            card.appendChild(el("div", "mmj-nt-foot", "MooMoo.js v" + version + " · by " + LINKS.author));
+            mount(card, true); // closeable (x / Esc / backdrop) = join anyway; you can still play
+        }
+
         function showRefuse(v) {
             const card = el("div", "mmj-nt-card");
             card.appendChild(el("div", "mmj-nt-kick bad", "can't connect"));
@@ -388,9 +437,10 @@
 
         return {
             recordIoInit, recordS2C, recordS2CError, recordClientTelemetry,
-            watchMenu, evaluate,
+            watchMenu, evaluate, bundleMismatch,
             // handy for diagnostics / the test harness
             _report: () => reportText(evaluate()),
+            _showOutdated: (bm) => showOutdated(evaluate(), bm || bundleMismatch() || { expected: expectedBundle || "?", actual: "?" }),
             _obs: obs
         };
     }

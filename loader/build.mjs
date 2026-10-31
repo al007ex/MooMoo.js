@@ -139,16 +139,41 @@ const iife = `(function bootstrap(){
 })();
 `;
 
+// Pin this build to the client bundle it is being made for: bake the served bundle's
+// content-hash stem (the `<stem>` in dist/official/assets/index-<stem>.js) into the loader's
+// EXPECTED_BUNDLE sentinel. At runtime the loader compares it to the bundle the page actually
+// loaded and warns if they differ (see loader/src/core/notice.js). Found via MOOMOO_SERVER_DIR
+// or a sibling moomoo-clone-main checkout; if none is built, the sentinel stays and the check is
+// simply off.
+function findBundleStem() {
+    const candidates = [
+        process.env.MOOMOO_SERVER_DIR,
+        path.join(here, "..", "moomoo-clone-main"),
+        path.join(here, "..", "..", "moomoo-clone-main"),
+        path.join(here, "..", "moomoo-server")
+    ].filter(Boolean);
+    for (const base of candidates) {
+        try {
+            const assets = path.join(base, "dist", "official", "assets");
+            const name = fs.readdirSync(assets).find((f) => /^index-[\w-]+\.js$/.test(f));
+            if (name) return name.slice("index-".length, -3);
+        } catch (e) { /* next candidate */ }
+    }
+    return null;
+}
+const bundleStem = findBundleStem();
+const pinnedIife = bundleStem ? iife.replace(/%BUNDLE_STEM%/g, bundleStem) : iife;
+
 // The body is left READABLE by default so the delivered userscript can be read and
 // audited. Set MOOMOO_MANGLE=1 to minify + mangle it instead (smaller, and a little
 // harder to eyeball on the page). Either way the UserScript header stays verbatim for
 // Tampermonkey, and only local identifiers are ever crushed, so the API is unaffected.
 const body = process.env.MOOMOO_MANGLE === "1"
-    ? await obfuscate(iife, { label: "loader", toplevel: true })
-    : iife;
+    ? await obfuscate(pinnedIife, { label: "loader", toplevel: true })
+    : pinnedIife;
 const bootstrap = `${HEADER}\n${body}\n`;
 
 fs.mkdirSync(distDir, { recursive: true });
 const outFile = path.join(distDir, "moomoo-loader.user.js");
 fs.writeFileSync(outFile, bootstrap);
-console.log("wrote " + path.relative(path.join(here, "..", ".."), outFile) + "  (" + bootstrap.length + " bytes" + (body !== iife ? ", mangled" : ", READABLE (not mangled)") + ")");
+console.log("wrote " + path.relative(path.join(here, "..", ".."), outFile) + "  (" + bootstrap.length + " bytes" + (body !== pinnedIife ? ", mangled" : ", READABLE (not mangled)") + ", bundle " + (bundleStem ? "index-" + bundleStem : "UNPINNED (no built client found; outdated-check off)") + ")");

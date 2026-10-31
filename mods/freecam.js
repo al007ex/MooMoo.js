@@ -55,21 +55,27 @@
 
             // ---------- who am I ----------
             let mySid = -1;
-            ctx.on("setup", (p) => { mySid = p.sid; });
 
             // ---------- capture the stock client's own player object ----------
-            // The stock camera eased-follows the client's player object; there is no
-            // reachable handle to it, so we latch onto it the moment the client builds it.
-            // Every player object gets `this.tmpScore = 0` in its constructor, so we put an
-            // accessor on Object.prototype.tmpScore: the first time any object sets it we
-            // turn it into a normal own property on that object (the game is unaffected) and,
-            // if it looks like a player, file it by sid. We then resolve OUR player by sid
-            // lookup — this way it doesn't matter whether our sid is known at the instant the
-            // object is built. Installed before we ever spawn (the mod is on by default at
-            // page load). Nothing here is on the server's probe surface, and it is torn down
+            // The stock camera eased-follows the client's player object; there is no reachable
+            // handle to it, so we latch onto it the moment the client builds it. Every player
+            // object gets `this.tmpScore = 0` in its constructor, so we put an accessor on
+            // Object.prototype.tmpScore: the first time any object sets it we turn it into a
+            // normal own property on that object (the game is unaffected) and, if it looks like a
+            // player, file it by sid, then resolve OUR player by sid lookup.
+            //
+            // UNDETECTION: an accessor on Object.prototype is the one thing here the server's
+            // integrity probes could in principle see (a kind-1/2 enumeration of Object.prototype),
+            // and the loader's telemetry sanitiser deliberately does NOT touch kind-1/2 bits (it
+            // assumes no mod adds enumerable window/proto props). So we keep the window vanishingly
+            // small: the hook is armed only while we're looking for our player — through the menu
+            // (before any connection, so unprobed) and for the split second a (re)spawn takes — and
+            // DISARMED the instant we have it. The server's first probe lands ~5s after spawn, by
+            // which point Object.prototype is already clean. Re-armed on each (re)spawn; torn down
             // with the mod.
             const seenBySid = new Map();     // sid -> stock player object
             let protoHooked = false;
+            let disarmTimer = null;
             function looksLikePlayer(o) {
                 return o && typeof o === "object" && "sid" in o && "id" in o && typeof o.sid === "number";
             }
@@ -84,7 +90,13 @@
                             // would otherwise break the client's own constructor and the game with it.
                             try { Object.defineProperty(this, "tmpScore", { value: v, writable: true, configurable: true, enumerable: true }); }
                             catch (e) { /* can't convert this one; leave it */ }
-                            try { if (looksLikePlayer(this)) seenBySid.set(this.sid, this); } catch (e) { /* ignore */ }
+                            try {
+                                if (looksLikePlayer(this)) {
+                                    seenBySid.set(this.sid, this);
+                                    // Got ours -> lift the Object.prototype accessor immediately.
+                                    if (this.sid === mySid) win.setTimeout(removeCapture, 0);
+                                }
+                            } catch (e) { /* ignore */ }
                         },
                         get() { return undefined; }
                     });
@@ -92,18 +104,33 @@
                 } catch (e) { /* ignore — freecam just won't pan until we find the player */ }
             }
             function removeCapture() {
+                if (disarmTimer) { try { win.clearTimeout(disarmTimer); } catch (e) {} disarmTimer = null; }
                 if (!protoHooked) return;
                 try { delete Object.prototype.tmpScore; } catch (e) { /* ignore */ }
                 protoHooked = false;
             }
-            // Resolve (and cache) the stock object for my own player.
+            // Arm around a (re)spawn, and GUARANTEE a disarm within 2s even if the respawn reused the
+            // existing player object (then no constructor runs, so the setter never fires) — still
+            // well before the server's first integrity probe (~5s after spawn). The map keeps the
+            // reused object, so freecam still finds it; we're only lifting the Object.prototype hook.
+            function armForSpawn() {
+                installCapture();
+                if (disarmTimer) { try { win.clearTimeout(disarmTimer); } catch (e) {} }
+                disarmTimer = (typeof win.setTimeout === "function") ? win.setTimeout(removeCapture, 2000) : null;
+            }
+            // Resolve the stock object for my own player (cached in the map even after disarming).
             function myStockPlayer() {
                 if (mySid === -1) return null;
                 const p = seenBySid.get(mySid);
                 return (p && p.sid === mySid) ? p : null;
             }
-            installCapture();
+            installCapture();                 // armed through the (unprobed) menu until the first spawn is caught
             ctx.onCleanup(removeCapture);
+            // Catch the (re)built player on each spawn/respawn/reconnect, then disarm. We DON'T drop
+            // the cached object: if the respawn reuses it, the map stays valid and the 2s fallback
+            // lifts the hook; if it rebuilds, the setter overwrites the entry and disarms at once.
+            ctx.on("setup", (p) => { mySid = p.sid; armForSpawn(); });
+            ctx.on("died", () => { armForSpawn(); });
 
             // ---------- true position of my body (for the ghost) ----------
             // The loader keeps its own interpolated mirror of every player straight off the
@@ -230,6 +257,7 @@
             const zoomFactor = () => clamp((ctx.settings.zoom || 100) / 100, 0.4, 3);
             const wrapped = new WeakSet();
             let noRendererWarned = false;
+            let configMutated = false, origCfg = null;   // the client's own config values, and whether we've changed them
 
             function wrapRenderer(r, canvas) {
                 if (!r || typeof r.setTransform !== "function" || wrapped.has(r)) return;
@@ -256,18 +284,34 @@
                         noRendererWarned = true;
                         ctx.log("Zoom scale needs the client's renderer (window.__renderer), which the stock production build hides. The cull box still widens; see the README for the one-line server patch that enables full zoom. Freecam works regardless.");
                     }
-                    // Culling reads window.config live, so widen it when zoomed out.
+                    // Culling reads window.config live, so widen it when a zoom-out is ACTUALLY in
+                    // effect (the renderer is reachable). Otherwise leave config exactly as the client
+                    // set it — including restoring it when zoom goes back to normal — so there is
+                    // nothing off-baseline on window.config for an integrity probe to notice. In the
+                    // common case (default zoom, or the production client that hides its renderer) we
+                    // never touch config at all.
                     const z = zoomFactor();
-                    const grow = z < 1 ? 1 / z : 1;
-                    if (win.config && typeof win.config === "object") {
-                        try { win.config.maxScreenWidth = Math.round(BASE_W * grow); } catch (e) { /* frozen */ }
-                        try { win.config.maxScreenHeight = Math.round(BASE_H * grow); } catch (e) { /* frozen */ }
+                    const cfg = win.config;
+                    if (cfg && typeof cfg === "object") {
+                        if (origCfg === null && typeof cfg.maxScreenWidth === "number") origCfg = { w: cfg.maxScreenWidth, h: cfg.maxScreenHeight };
+                        const base = origCfg || { w: BASE_W, h: BASE_H };
+                        const active = !!win.__renderer && z < 1;   // zoom-out that the renderer can honour
+                        if (active || configMutated) {
+                            const w = active ? Math.round(base.w / z) : base.w;
+                            const h = active ? Math.round(base.h / z) : base.h;
+                            try { cfg.maxScreenWidth = w; } catch (e) { /* frozen */ }
+                            try { cfg.maxScreenHeight = h; } catch (e) { /* frozen */ }
+                            configMutated = active;
+                        }
                     }
                 } catch (e) { /* ignore */ }
             }
+            function restoreConfig() {
+                try { if (configMutated && origCfg && win.config) { win.config.maxScreenWidth = origCfg.w; win.config.maxScreenHeight = origCfg.h; configMutated = false; } } catch (e) { /* ignore */ }
+            }
             const zoomPoll = win.setInterval(applyZoom, 500);
             applyZoom();
-            ctx.onCleanup(() => win.clearInterval(zoomPoll));
+            ctx.onCleanup(() => { win.clearInterval(zoomPoll); restoreConfig(); });
 
             // scroll wheel over the game area -> zoom
             function onWheel(e) {

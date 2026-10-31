@@ -67,6 +67,26 @@ re-host the new `moomoo-loader.user.js` at the **same url**. since every mod
 `@require`s that url, they all pick up the fix on the next load and nobody has to
 republish anything.
 
+## the loader tells players when it's out of date
+
+every build is pinned to the client bundle it was made for. `loader/build.mjs` reads
+the server's current `dist/official/assets/index-<stem>.js` (via `$MOOMOO_SERVER_DIR`
+or a sibling `moomoo-clone-main` checkout) and bakes that `<stem>` — the content hash
+FRVR puts in the file name — into the loader. at runtime the loader compares it to the
+bundle the page actually loaded:
+
+- **same stem** — the loader is current, nothing to see.
+- **different stem** — the client changed since this loader was built, so it shows a
+  dismissible "this loader may be out of date" card: the two stems, a copyable report,
+  and a link to grab the newest build from the Discord. the player can still join.
+
+so when you ship a new client and rebuild + re-host the loader, anyone still on the old
+one is told to update (and to report it, if they're already current). the check is off
+until a build pins a stem — the readable source and Node test runs leave it unpinned —
+and it keys on the file *name*, which the server's IS_SANDBOX byte transform never
+touches, so a dev server never false-alarms. none of it reaches the wire; it's a local
+heads-up, invisible to the server.
+
 ## checking it against the server
 
 the test suite round-trips the loader's codec against the real server protocol when
