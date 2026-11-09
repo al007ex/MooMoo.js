@@ -7,7 +7,7 @@
  *   - while freecam is on the client's own "move"/"stopMove" frames are DROPPED (they
  *     never reach the wire), so the server keeps your body parked; with freecam off the
  *     same keys DO send moves
- *   - the whole time the loader's outgoing telemetry "T" reports probeResult 0 — the
+ *   - the whole time the loader reports the client's own self-ID beacons in "T" (probeResult 3) and strips
  *     freecam touches nothing the anti-cheat can see, and the server logs no incident
  *   - zoom widens the live cull box and (on a localhost build) wraps the client renderer
  *
@@ -153,8 +153,11 @@ try {
     console.log("  · renderer reachable for zoom-scale (needs WebGL): " + zoom.renderer);
 
     // ---------- undetected throughout ----------
-    const Tbad = await page.evaluate(() => window.__T.filter((a) => Array.isArray(a) && a[2] !== 0).length);
-    check("every outgoing telemetry T reports probeResult 0 (undetected)", Tbad === 0, "T frames with a set probe bit=" + Tbad);
+    // probeResult must be 3 — ONLY the genuine client's 2 self-ID beacons (body.moomoo-io +
+    // moomoo.io:ready) that index-0e02c00e's anti-cheat expects present; every loader/mod footprint
+    // bit stripped. A value != 3 means either footprint leaked (>3) or a beacon got stripped (<3).
+    const Tbad = await page.evaluate(() => window.__T.filter((a) => Array.isArray(a) && a[2] !== 3).length);
+    check("every outgoing telemetry T reports probeResult 3 (client beacons only, no footprint)", Tbad === 0, "T frames whose probeResult != 3: " + Tbad);
     const inc = srv.incidents().filter((l) => !/leave sid/.test(l));
     check("no anti-cheat incident on the server", inc.length === 0, JSON.stringify(inc));
     check("no page errors", pageErrors.length === 0, JSON.stringify(pageErrors));

@@ -1381,12 +1381,14 @@
         h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0;
     }
     const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js)/i;   // the loader's / mods' own storage keys
-    const LOADER_CONTAINER_SEL = "[class*='mml-'],[class*='mmj-'],[class*='mdbg'],[class*='moomoo']";
+    // Our OWN class/id namespaces only — mml- (mods' GUIs), mmj- (the Mods tab + notice cards),
+    // mdbg (debug), moomoojs. Deliberately NOT a bare "moomoo", because the genuine client ships
+    // <body class="moomoo-io"> (a kind-8 self-identification beacon the anti-cheat expects to be
+    // PRESENT): matching it here would strip the beacon and get the real client flagged as fake.
+    const LOADER_CONTAINER_SEL = "[class*='mml-'],[class*='mmj-'],[class*='mdbg'],[class*='moomoojs']";
     function loaderOwnedElement(el) {
         try {
             const cn = el.className, cls = (cn && cn.baseVal != null ? cn.baseVal : cn) || "";
-            // our own class/id prefixes: mml- (mods' GUIs), mmj- (the Mods tab + notice cards,
-            // mmj-* / mmj-nt-*), mdbg (debug), moomoojs.
             if (/\bmml-|\bmmj-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mmj|mdbg|moomoojs/i.test(el.id || "")) return true;
             // ...and anything INSIDE one of our containers — e.g. the bots panel's inner .bbtn /
             // .bitem, which are scoped under .mml-bots in CSS and so carry no prefix of their own.
@@ -1414,7 +1416,7 @@
         const doc = telemetryGlobal().document; if (!doc || !doc.querySelectorAll) return false;
         // our containers AND their descendants (so an unprefixed inner class like .bbtn, scoped
         // under .mml-bots, is enumerated too). loaderOwnedElement below confirms each is ours.
-        const list = doc.querySelectorAll(LOADER_CONTAINER_SEL + ",[class*='mml-'] *,[class*='mmj-'] *,[class*='mdbg'] *,[class*='moomoo'] *");
+        const list = doc.querySelectorAll(LOADER_CONTAINER_SEL + ",[class*='mml-'] *,[class*='mmj-'] *,[class*='mdbg'] *,[class*='moomoojs'] *");
         for (let j = 0; j < list.length; j++) {
             const el = list[j]; if (!loaderOwnedElement(el)) continue;
             const tag = (el.tagName || "").toLowerCase();
@@ -1437,11 +1439,13 @@
             if (kind === 3) return hashHitsLoaderKey(hash, salt);
             if (kind === 4) return hashHitsLoaderId(hash, salt);
             if (kind === 8) return hashHitsLoaderClass(hash, salt);
-            // kind 9: a probe that dispatches a CustomEvent and watches for a listener to resolve
-            // it. The loader's API handshake ("moomoo.js:api") is the only event it resolves, and
-            // the name travels in clear in `path`; a clean client resolves no such event, so
-            // clearing it can never fail a canary.
-            if (kind === 9) return /moomoo/i.test(String(path));
+            // kind 9: a probe that dispatches a CustomEvent and watches for a listener to resolve it.
+            // Only the loader's OWN events live under the "moomoo.js:" namespace (the API handshake
+            // "moomoo.js:api"); the name travels in clear in `path`, so strip exactly those. Crucially
+            // NOT a bare /moomoo/, because the genuine client fires "moomoo.io:ready" as a kind-9
+            // self-identification beacon the anti-cheat expects PRESENT — stripping it would flag the
+            // real client as fake.
+            if (kind === 9) return /^moomoo\.js:/i.test(String(path));
         } catch (e) {}
         return false;   // kinds 1, 2, 6: the loader/mods add no window props or symbols, so never ours
     }
@@ -5912,7 +5916,7 @@
     // and, if it differs, warn that this loader may be out of date (see core/notice.js). The stem
     // is immune to the server's IS_SANDBOX byte transform (that rewrites content, never the file
     // name), so it never false-alarms on a sandbox/dev server.
-    const EXPECTED_BUNDLE = "993d072d";
+    const EXPECTED_BUNDLE = "0e02c00e";
 
     // The event a mod dispatches to fetch the API ({ detail: { resolve(MooMoo, MooMooLoader) } }),
     // and the signal the loader fires once that handshake is live so a mod that loaded first can

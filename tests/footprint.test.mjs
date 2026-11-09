@@ -34,7 +34,7 @@ function saltedHash(text, salt) {
 }
 
 // A loader/game element stub with the bits the stripper reads (tagName/className/id/closest).
-const LOADER = /mml-|mmj-|mdbg|moomoo/;
+const LOADER = /mml-|mmj-|mdbg|moomoojs/;   // our real namespaces (NOT a bare "moomoo" — see bodyBeacon)
 function mkEl(tag, cls, parent) {
     const e = { tagName: tag, className: cls, id: "" };
     e.closest = () => (LOADER.test(cls) ? e : (parent && LOADER.test(parent.className) ? parent : null));
@@ -46,7 +46,13 @@ const modsTab = mkEl("A", "mmj-tab");
 const noticeCard = mkEl("DIV", "mmj-nt-card");
 const botsRoot = mkEl("DIV", "mml-bots");
 const botsBtn = mkEl("DIV", "bbtn go", botsRoot);
-const LOADER_ELS = [modsTab, noticeCard, botsRoot, botsBtn];
+const mmjBody = mkEl("DIV", "mmj-body");    // the Mods tab panel (new server probe: div.mmj-body)
+const mmjMod = mkEl("DIV", "mmj-mod");      // a Mods tab entry   (new server probe: div.mmj-mod)
+// The GENUINE client's <body class="moomoo-io"> — a kind-8 self-ID beacon the anti-cheat EXPECTS
+// present. It carries "moomoo" but is NOT ours (no mml-/mmj-/mdbg/moomoojs), so its closest() to a
+// loader container is null: the stripper must leave it alone or the real client gets flagged fake.
+const bodyBeacon = mkEl("BODY", "moomoo-io");
+const LOADER_ELS = [modsTab, noticeCard, botsRoot, botsBtn, mmjBody, mmjMod, bodyBeacon];
 
 // telemetryGlobal() returns whichever global carries a document; give it a stub that serves our
 // loader elements for the class query (and [id] query). Game elements are simply not in it.
@@ -81,6 +87,29 @@ try {
         // bit0 mmj-tab (ours), bit1 bbtn (ours), bit2 gameCanvas (game) — all matched by the client
         const probes = [probe8("a.mmj-tab"), probe8("div.bbtn"), probe8("div.gameCanvas")];
         assert.strictEqual(cleanProbeResult(0b111, probes, SALT), 0b100);
+    });
+
+    // --- the index-0e02c00e anti-cheat update: direct mod-menu probes + self-ID beacons ---
+    ok("strips the new mod-menu class probes (div.mmj-body, div.mmj-mod)", () => {
+        assert.strictEqual(cleanProbeResult(0b1, [probe8("div.mmj-body")], SALT), 0);
+        assert.strictEqual(cleanProbeResult(0b1, [probe8("div.mmj-mod")], SALT), 0);
+    });
+
+    ok("KEEPS the kind-8 client beacon body.moomoo-io — stripping it would flag the real client fake", () => {
+        // <body class="moomoo-io"> is in the DOM, but it is NOT ours, so the bit must survive
+        assert.strictEqual(cleanProbeResult(0b1, [probe8("body.moomoo-io")], SALT), 1);
+    });
+
+    ok("KEEPS the kind-9 client beacon moomoo.io:ready, strips only our own moomoo.js: events", () => {
+        const probe9 = (ev) => [9, ev, 0];
+        assert.strictEqual(cleanProbeResult(0b1, [probe9("moomoo.io:ready")], SALT), 1);   // beacon kept
+        assert.strictEqual(cleanProbeResult(0b1, [probe9("moomoo.js:api")], SALT), 0);     // our handshake stripped
+    });
+
+    ok("full p=2 round: strip the mod menu, keep BOTH self-ID beacons", () => {
+        // bit0 div.mmj-body (ours -> strip), bit1 body.moomoo-io (beacon -> keep), bit2 moomoo.io:ready (beacon -> keep)
+        const probes = [probe8("div.mmj-body"), probe8("body.moomoo-io"), [9, "moomoo.io:ready", 0]];
+        assert.strictEqual(cleanProbeResult(0b111, probes, SALT), 0b110);
     });
 } finally {
     if (prevDoc) Object.defineProperty(globalThis, "document", prevDoc); else delete globalThis.document;

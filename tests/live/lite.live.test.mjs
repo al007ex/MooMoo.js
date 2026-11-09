@@ -279,7 +279,10 @@ try {
     const flagsSeen = [...new Set(tel.map(a => a[0]))];
     const probeSeen = [...new Set(tel.map(a => a[2]))];
     check("telemetry flags stay masked (0) while hooked", tel.length === 0 || tel.every(a => a[0] === 0), `T=${tel.length} flags=${JSON.stringify(flagsSeen)}`);
-    check("no integrity probe matched the loader/mods", tel.length === 0 || tel.every(a => a[2] === 0), `probeResults=${JSON.stringify(probeSeen)}`);
+    // probeResult carries ONLY the genuine client's 2 self-ID beacons (body.moomoo-io + moomoo.io:ready,
+    // bits 0,1 = value 3, which index-0e02c00e's anti-cheat expects PRESENT); every loader/mod footprint
+    // bit is stripped. (A 0 here would mean the loader also stripped the beacons -> "missing beacon" kick.)
+    check("probeResult = the client's own beacons only (3), no loader/mod footprint", tel.length === 0 || tel.every(a => a[2] === 3), `probeResults=${JSON.stringify(probeSeen)}`);
     // kind 3: nothing of ours is in localStorage mid-session (config lives in the loader's
     // hidden store; the seeded legacy "mml_v1" was migrated + wiped at startup).
     const lsOurs = await page.evaluate(() => Object.keys(localStorage).filter((k) => /^moomoojs:|^mml_v1$/.test(k)));

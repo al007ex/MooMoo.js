@@ -31,16 +31,21 @@ const LOADER = fs.readFileSync(path.join(ROOT, "loader", "dist", "moomoo-loader.
 const LITE = fs.readFileSync(path.join(ROOT, "mods", "lite.js"), "utf8");
 const ACMON = fs.readFileSync(path.join(ROOT, "mods", "ac-monitor.user.js"), "utf8");
 const PLAYER = { email: "live-lite@moomoojs.test", password: "local-test" };
+// Footprint probes that exist because of the loader/lite — the loader must STRIP every one so none
+// reaches the server. `always: true` (and minP: 2, since the client is index-0e02c00e / p=2) so they
+// ride EVERY round and the stripping is reliably exercised instead of being lost in the shuffle.
+// They're appended after the real config's two always-on self-identification beacons (body.moomoo-io
+// at bit 0, moomoo.io:ready at bit 1), which the loader must KEEP — so a correct sent result is 3.
 const PROBES = [
-    { kind: 8, path: "", value: "div.mml-gui", name: "MML_MENU", action: "kick" },
-    { kind: 8, path: "", value: "div.mdbg", name: "MML_DEBUG", action: "kick" },
-    // the in-game Mods tab (<a class="mmj-tab"> in the pause menu) — present even with the lite
-    // menu closed; proves the loader strips the mmj- class family, not just mml-/mdbg.
-    { kind: 8, path: "", value: "a.mmj-tab", name: "MML_MODSTAB", action: "kick" },
-    { kind: 9, path: "moomoo.js:api", name: "MML_LOADER", action: "kick" },
-    // A probe KIND the loader has no rule for (a stand-in for the next anticheat trick). The
-    // client can't evaluate it either, so it never matches — but the loader must still NOTICE it.
-    { kind: 10, path: "future.sig", value: "div.mml-gui", name: "FUTURE_PROBE", action: "flag" }
+    { kind: 8, minP: 2, value: "div.mml-gui", name: "MML_MENU", action: "kick", always: true },
+    { kind: 8, minP: 2, value: "div.mdbg", name: "MML_DEBUG", action: "kick", always: true },
+    { kind: 8, minP: 2, value: "a.mmj-tab", name: "MML_MODSTAB", action: "kick", always: true },
+    { kind: 8, minP: 2, value: "div.mmj-body", name: "MML_MODMENU", action: "kick", always: true },
+    { kind: 9, minP: 2, path: "moomoo.js:api", name: "MML_HANDSHAKE", action: "kick", always: true },
+    // A probe KIND the loader has no rule for (a stand-in for the next anticheat trick). The client
+    // can't evaluate it either, so it never matches — but the loader must still NOTICE it. `always`
+    // so the self-protection warning fires reliably every round.
+    { kind: 10, path: "future.sig", value: "div.mml-gui", name: "FUTURE_PROBE", action: "flag", always: true }
 ];
 
 let pass = 0, fail = 0;
@@ -94,9 +99,9 @@ try {
     check("server sends kind-8 probes (class signatures)", r.probedK8, JSON.stringify(r));
     check("server sends a kind-9 probe (handshake event)", r.probedK9);
     check("our footprint is present (.mml-gui + .mdbg + the mmj- Mods tab)", r.menu && r.panel && r.modsTab, "menu=" + r.menu + " panel=" + r.panel + " modsTab=" + r.modsTab);
-    check("the client DID match our footprint (test is meaningful)", r.seen.some((x) => x && x !== 0), "seen=" + JSON.stringify(r.seen));
-    check("the loader strips it: every outgoing T probeResult is 0", r.outT.length > 0 && r.outT.every((p) => p === 0), "outT=" + JSON.stringify(r.outT));
-    check("antiDetect reports a clean sent probe result", r.sent.every((p) => p === 0), "sent=" + JSON.stringify(r.sent));
+    check("the client matched footprint AND the beacons (seen has bits beyond the 2 beacons)", r.seen.length > 0 && r.seen.every((s) => (s & ~3) !== 0), "seen=" + JSON.stringify(r.seen));
+    check("the loader keeps the 2 client self-ID beacons + strips ALL footprint: every outgoing T probeResult is 3", r.outT.length > 0 && r.outT.every((p) => p === 3), "outT=" + JSON.stringify(r.outT));
+    check("antiDetect's sent probe result is the beacons only (3), footprint cleared", r.sent.length > 0 && r.sent.every((p) => p === 3), "sent=" + JSON.stringify(r.sent));
     check("no socket close / no kick", !wsClosed, "wsClosed=" + wsClosed);
     check("no anti-cheat incident on the server", inc.length === 0, JSON.stringify(inc));
     // self-protection

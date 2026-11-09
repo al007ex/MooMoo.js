@@ -129,6 +129,30 @@ quietly. this lives in `loader/src/net/binding.js` (`telemetry.scrub` /
 `cleanProbeResult` / `auditProbeResult`) and `loader/src/core/antidetect.js`, the
 changeable half, so it moves with the protocol.
 
+## self-identification beacons (the index-0e02c00e update)
+
+the sharpest anti-mod measure the server has. the `index-0e02c00e` client appends
+`&p=2` to its socket url — a **probe-protocol version** — and a `p>=2` client gets two
+extra integrity probes the server marks `expect`:
+
+- kind 8, `body.moomoo-io` — the genuine page ships `<body class="moomoo-io">`.
+- kind 9, `moomoo.io:ready` — the genuine client fires a `CustomEvent` a listener resolves.
+
+an `expect` probe inverts the usual logic: a normal probe flags when it **matches** (a
+hook or cheat is present); a beacon flags when it is **absent** — a client that doesn't
+match it "isn't the genuine client". they ride **every** round (`always`) and sit in the
+answer's lowest bits, so a vanilla client's `probeResult` is never 0.
+
+this is a trap for a lazy bypass. a loader that blanket-zeroes `probeResult`, or strips
+too broadly, drops the beacons with the footprint and gets **kicked for the absence**.
+the loader passes because `cleanProbeResult` clears only its **own** namespaces —
+`mml-` / `mmj-` / `mdbg` classes and ids, and `moomoo.js:` events — and never a bare
+`moomoo` (the beacons are `moomoo-io` / `moomoo.io:`). so it strips the mod menu the same
+update now probes for directly (kind 8 `div.mmj-body` / `div.mmj-mod`) while keeping both
+beacons: the `T` it sends is byte-for-byte what a vanilla client sends. the bots sidestep
+all of it by connecting as `p=1` (no beacons sent to an old client), so their plain
+`probeResult: 0` is still correct.
+
 ## the shame window
 
 not a hook check, but it bites auto heal. the server counts an eat as shame when it
