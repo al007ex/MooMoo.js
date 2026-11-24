@@ -127,6 +127,14 @@ the client answers a probe round it reconstructs the outgoing `T` so that
   genuinely has — in place. that's the subtle part: the server mixes in canary probes
   that a real client *must* match, so blanket-zeroing the result would itself be a
   tell. what remains is exactly what the original client would send;
+  - **window globals (kind 1).** the loader exposes no window property of its own
+    (the handshake is an event, invisible to a property scan), so by default it strips
+    no kind-1 bit. but a plain IIFE mod that can't hand its sub-modules the handshake API
+    often parks them on `window` (e.g. `window.AntimoocheatCombat`), and each one is a
+    kind-1 target. such a mod calls `MooMooLoader.hideGlobals(["Antimoocheat", "MooMoo"])`
+    to register its namespaces; `cleanProbeResult` then matches each kind-1 probe hash
+    against the **real** window's own-property names under those prefixes and strips only
+    the mod's own globals — never a genuine game/native property that might be a canary;
 - **seal**, **salt**, **seq** and **ledger** are carried through as the real values,
   the loader deriving the seal itself and reading the live seq + ledger off its own
   stream.

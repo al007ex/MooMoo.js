@@ -656,6 +656,10 @@
 
         MooMooLoader.config = MooMoo._config;   // hidden config store for mods (no localStorage key of their own)
         MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
+        // A mod that parks sub-modules on window (window.AntimoocheatCombat, …) registers its own
+        // namespaces here; the telemetry sanitiser then hides them from kind-1 (window-property)
+        // integrity probes. The loader exposes no window global of its own, so this is opt-in per mod.
+        MooMooLoader.hideGlobals = (patterns) => telemetry.hideGlobals(patterns);
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;

@@ -1381,7 +1381,31 @@
         for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619);
         h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0;
     }
-    const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js)/i;   // the loader's / mods' own storage keys
+    const LOADER_LS_KEY = /^(?:moomoojs:|mml[_:]|mmp[_:]|moomoo\.js|antimoocheat[.:])/i;   // the loader's / mods' own storage keys
+    // Window-global footprint a mod declares via telemetry.hideGlobals(): a plain IIFE mod that
+    // can't hand its sub-modules the loader's event-handshake API often parks them on `window`
+    // (e.g. window.AntimoocheatCombat), and a kind-1 integrity probe (window property NAME) would
+    // catch each one. The loader itself exposes NO window global, so historically it stripped no
+    // kind-1 bit; a mod registers its own namespaces here and the kind-1 sanitiser hides exactly
+    // those — matched by NAME PREFIX against the real window, so only the mod's own globals are
+    // cleared and a genuine game/native property (a possible canary) is always left intact.
+    const hiddenGlobalPrefixes = [];
+    function ownGlobalName(name) {
+        for (let i = 0; i < hiddenGlobalPrefixes.length; i++) if (name.indexOf(hiddenGlobalPrefixes[i]) === 0) return true;
+        return false;
+    }
+    // Register window-global name prefixes a mod owns, so kind-1 probes for them are stripped.
+    // Accepts a string or an array of strings; returns the current prefix list.
+    function hideGlobals(patterns) {
+        if (typeof patterns === "string") patterns = [patterns];
+        if (Array.isArray(patterns)) {
+            for (let i = 0; i < patterns.length; i++) {
+                const s = String(patterns[i] || "");
+                if (s && hiddenGlobalPrefixes.indexOf(s) < 0) hiddenGlobalPrefixes.push(s);
+            }
+        }
+        return hiddenGlobalPrefixes.slice();
+    }
     // Our OWN class/id namespaces only — mml- (mods' GUIs), mmj- (the Mods tab + notice cards),
     // mdbg (debug), moomoojs. Deliberately NOT a bare "moomoo", because the genuine client ships
     // <body class="moomoo-io"> (a kind-8 self-identification beacon the anti-cheat expects to be
@@ -1449,11 +1473,23 @@
         }
         return false;
     }
+    function hashHitsHiddenGlobal(hashVal, saltVal) {  // kind 1: a window property NAME a mod declared via hideGlobals
+        if (!hiddenGlobalPrefixes.length) return false;
+        const g = telemetryGlobal(); if (!g) return false;
+        let names;
+        try { names = Object.getOwnPropertyNames(g); } catch (e) { return false; }
+        for (let j = 0; j < names.length; j++) {
+            const name = names[j];
+            if (ownGlobalName(name) && telemetrySaltedHash(name, saltVal) === hashVal) return true;
+        }
+        return false;
+    }
     // Is bit `i`'s probe a match that exists only because of the loader / a mod?
     function loaderArtifactProbe(kind, path, hash, salt) {
         try {
             if (kind === 7) { const fn = telemetryResolve(path); return typeof fn === "function" && !telemetryNativeFn(fn); }
             if (kind === 5) { const o = telemetryResolve(path); return !!(o && o.prototype && o.prototype.constructor !== o); }
+            if (kind === 1) return hashHitsHiddenGlobal(hash, salt);   // a mod-declared window global (hideGlobals)
             if (kind === 3) return hashHitsLoaderKey(hash, salt);
             if (kind === 4) return hashHitsLoaderId(hash, salt);
             if (kind === 8) return hashHitsLoaderClass(hash, salt);
@@ -1465,7 +1501,7 @@
             // flag the real client. The only event the loader itself resolves is the API handshake.
             if (kind === 9) return String(path) === "moomoo.js:api";
         } catch (e) {}
-        return false;   // kinds 1, 2, 6: the loader/mods add no window props or symbols, so never ours
+        return false;   // kinds 2, 6: name=value tests and symbols — the loader/mods add none, so never ours
     }
     function cleanProbeResult(clientResult, probes, salt) {
         let result = clientResult | 0;
@@ -1585,6 +1621,9 @@
             construct: telemetryConstruct,
             // Strip loader/mod footprint bits from the client's probe answer, keeping canaries.
             cleanProbeResult,
+            // Register window-global name prefixes a mod owns (e.g. "Antimoocheat"), so kind-1
+            // window-property probes for them are stripped. Only the mod's own globals are hidden.
+            hideGlobals,
             // Self-protection: flags anything the sanitiser could NOT account for (a brand-new
             // probe kind, a strip that silently failed, a blinded telemetry global). Detection
             // only — it never changes what is sent. core/antidetect.js runs it on every "T".
@@ -6541,6 +6580,10 @@
 
         MooMooLoader.config = MooMoo._config;   // hidden config store for mods (no localStorage key of their own)
         MooMooLoader.antiDetect = antiDetect;   // the detection-packet canceller (toggle + log)
+        // A mod that parks sub-modules on window (window.AntimoocheatCombat, …) registers its own
+        // namespaces here; the telemetry sanitiser then hides them from kind-1 (window-property)
+        // integrity probes. The loader exposes no window global of its own, so this is opt-in per mod.
+        MooMooLoader.hideGlobals = (patterns) => telemetry.hideGlobals(patterns);
         MooMooLoader.input = input;
         MooMooLoader.gameData = D.GameData || null;
         MooMooLoader.objects = objects;

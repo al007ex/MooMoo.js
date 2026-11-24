@@ -83,6 +83,7 @@ const SALT = 0x12345678 >>> 0;
 const probe8 = (cls) => [8, "", saltedHash(cls, SALT)];        // kind 8: "tag.class", hashed
 const probe4 = (sel) => [4, "", saltedHash(sel, SALT)];        // kind 4: "tag#id", hashed
 const probe9 = (ev) => [9, ev, 0];                             // kind 9: CustomEvent name, cleartext
+const probe1 = (name) => [1, "window", saltedHash(name, SALT)]; // kind 1: window property NAME, hashed
 
 try {
     ok("strips the in-game Mods tab class (a.mmj-tab)", () => {
@@ -175,6 +176,31 @@ try {
         // client matched all eight (0xFF); the loader clears only bit0 -> 0xFE
         assert.strictEqual(cleanProbeResult(0xFF, probes, SALT), 0xFE);
     });
+
+    // --- kind 1 (window property names): a mod that parks globals on window (hideGlobals) ---
+    // A plain IIFE mod can't hand its sub-modules the loader's handshake API, so it parks them on
+    // window (window.AntimoocheatCombat, …). A kind-1 probe hashes a property NAME; after the mod
+    // registers its namespaces, the loader must strip a probe for one of its OWN globals (that is
+    // actually present) and leave every other window property — a possible game/native canary — alone.
+    globalThis.AntimoocheatCombat = {};   // a mod global the mod declared
+    globalThis.MooMooThreats = {};        // another, different prefix
+    binding.telemetry.hideGlobals(["Antimoocheat", "MooMoo"]);
+    try {
+        ok("strips a declared window global that is present (window.AntimoocheatCombat)", () => {
+            assert.strictEqual(cleanProbeResult(0b1, [probe1("AntimoocheatCombat")], SALT), 0);
+            assert.strictEqual(cleanProbeResult(0b1, [probe1("MooMooThreats")], SALT), 0);
+        });
+        ok("KEEPS a window property the mod did NOT declare (a game/native canary — e.g. Array)", () => {
+            assert.strictEqual(cleanProbeResult(0b1, [probe1("Array")], SALT), 1);
+            assert.strictEqual(cleanProbeResult(0b1, [probe1("unsafeWindow")], SALT), 1);
+        });
+        ok("KEEPS a declared-prefix name that is NOT actually on window (nothing to strip)", () => {
+            // the client never matched a non-existent global, so the loader must not invent a strip
+            assert.strictEqual(cleanProbeResult(0b1, [probe1("AntimoocheatGhost")], SALT), 1);
+        });
+    } finally {
+        delete globalThis.AntimoocheatCombat; delete globalThis.MooMooThreats;
+    }
 } finally {
     if (prevDoc) Object.defineProperty(globalThis, "document", prevDoc); else delete globalThis.document;
 }
