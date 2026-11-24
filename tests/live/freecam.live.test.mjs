@@ -7,7 +7,7 @@
  *   - while freecam is on the client's own "move"/"stopMove" frames are DROPPED (they
  *     never reach the wire), so the server keeps your body parked; with freecam off the
  *     same keys DO send moves
- *   - the whole time the loader reports the client's own self-ID beacons in "T" (probeResult 3) and strips
+ *   - the whole time the loader reports the client's own self-ID beacons + canary in "T" (clean flags + valid checksum) and strips
  *     freecam touches nothing the anti-cheat can see, and the server logs no incident
  *   - zoom widens the live cull box and (on a localhost build) wraps the client renderer
  *
@@ -30,8 +30,11 @@ const PLAYER = { email: "live-freecam@moomoojs.test", password: "local-test" };
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => { if (ok) { pass++; console.log("  ✓ " + name + (detail ? "  " + detail : "")); } else { fail++; console.log("  ✗ " + name + (detail ? "  " + detail : "")); } };
+// the server/client/loader FNV salted hash — to verify the salt-bound flags checksum in each "T".
+const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
 
-const srv = await startServer({ echo: !!process.env.LIVE_ECHO, env: { IS_SANDBOX: "1", SANDBOX_UNLIMITED: "1" } });
+// Shorten the 60 s probe interval so a probe round (and its "T") rides through during the test.
+const srv = await startServer({ echo: !!process.env.LIVE_ECHO, env: { IS_SANDBOX: "1", SANDBOX_UNLIMITED: "1" }, anticheatConfigJs: "ANTICHEAT_CONFIG.telemetry.firstProbeMs = 1500; ANTICHEAT_CONFIG.telemetry.intervalMs = 3000;" });
 console.log("live server on " + srv.base);
 let browser;
 try {
@@ -153,11 +156,14 @@ try {
     console.log("  · renderer reachable for zoom-scale (needs WebGL): " + zoom.renderer);
 
     // ---------- undetected throughout ----------
-    // probeResult must be 3 — ONLY the genuine client's 2 self-ID beacons (body.moomoo-io +
-    // moomoo.io:ready) that index-0e02c00e's anti-cheat expects present; every loader/mod footprint
-    // bit stripped. A value != 3 means either footprint leaked (>3) or a beacon got stripped (<3).
-    const Tbad = await page.evaluate(() => window.__T.filter((a) => Array.isArray(a) && a[2] !== 3).length);
-    check("every outgoing telemetry T reports probeResult 3 (client beacons only, no footprint)", Tbad === 0, "T frames whose probeResult != 3: " + Tbad);
+    // Every outgoing "T" must look like the genuine client's: real integrity flags (bits 0-9) = 0,
+    // and a VALID salt-bound checksum in bits 12-19 (index-3a141db7, p=4). The probe result carries
+    // the client's own self-ID beacons + per-round canary (freecam adds no probe footprint); a
+    // stripped beacon or a leaked flag would raise a server incident, asserted right below.
+    const Ts = await page.evaluate(() => window.__T.filter((a) => Array.isArray(a)).map((a) => ({ flags: a[0] >>> 0, salt: a[4] >>> 0 })));
+    const flagsBad = Ts.filter((t) => (t.flags & 0x3FF) !== 0).length;
+    const ckBad = Ts.filter((t) => ((t.flags >>> 12) & 0xFF) !== ((sh("flags", t.salt) & 255) || 1)).length;
+    check("every outgoing telemetry T has clean real flags (0) + a valid salt-bound checksum", Ts.length > 0 && flagsBad === 0 && ckBad === 0, "frames=" + Ts.length + " flagsBad=" + flagsBad + " ckBad=" + ckBad);
     const inc = srv.incidents().filter((l) => !/leave sid/.test(l));
     check("no anti-cheat incident on the server", inc.length === 0, JSON.stringify(inc));
     check("no page errors", pageErrors.length === 0, JSON.stringify(pageErrors));

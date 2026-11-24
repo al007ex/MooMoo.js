@@ -102,16 +102,20 @@ await ok("end-to-end: health event + telemetry scrub + injection", async () => {
     assert.strictEqual(MooMoo.self.health, 55);
     assert.deepStrictEqual(health.map((e) => [e.sid, e.value]), [[9, 55]]);
 
-    // telemetry scrub (simulate the client sending dirty flags). Seal mode 0 here, so the
-    // last two fields (seal, salt) stay 0; the three self-reporting fields must be zeroed.
+    // telemetry scrub (simulate the client sending dirty flags). Seal mode 0 here, so seal + salt
+    // stay 0; the real flags, untrusted count and probe result must be zeroed. T[0] is not a bare 0
+    // though: bits 12-19 carry the salt-bound checksum (salt 0 here) the genuine client always sets.
     const payload = [server.socketId, server.seed, Buffer.from(server.rawKey).toString("hex"), 1, server.pinned ? 1 : 0, server.sealMode | 0];
     // The loader keeps its modules off window now; they're reachable for tests under
     // MooMooLoader._deps.
     const Protocol = MooMooLoader._deps.Protocol;
     const client = new Protocol.ClientSession(payload, mod);
     clientSocket.send(client.encodeC2S("T", [2, 30, 4, 0, 0]));
+    const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
     const t = accepted.find((d) => d.name === "T");
-    assert.deepStrictEqual(t.args.slice(0, 3), [0, 0, 0], "telemetry scrubbed");
+    assert.strictEqual(t.args[0] & 0x3FF, 0, "real integrity flags scrubbed to 0");
+    assert.strictEqual((t.args[0] >>> 12) & 0xFF, (sh("flags", 0) & 255) || 1, "T[0] carries the salt-bound checksum");
+    assert.deepStrictEqual(t.args.slice(1, 3), [0, 0], "untrusted events + probe result scrubbed");
 
     // injection
     MooMoo.send.chat("from the bundle");

@@ -47,7 +47,10 @@ const LITE_CFG = {
     hats: [{ key: "k", id: 51 }, { key: "", id: 6 }, { key: "", id: 40 }, { key: "", id: 11 }, { key: "", id: 0 }, { key: "", id: 0 }]
 };
 
-const srv = await startServer({ echo: !!process.env.LIVE_ECHO, env: { OWNER_EMAIL: ATTACKER.email } });
+// Shorten the 60 s probe interval so probe rounds (and their "T") ride through during the test.
+const srv = await startServer({ echo: !!process.env.LIVE_ECHO, env: { OWNER_EMAIL: ATTACKER.email }, anticheatConfigJs: "ANTICHEAT_CONFIG.telemetry.firstProbeMs = 1500; ANTICHEAT_CONFIG.telemetry.intervalMs = 3000;" });
+// the server/client/loader FNV salted hash — to verify the salt-bound flags checksum in each "T".
+const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
 console.log("live server on " + srv.base);
 const T0 = Date.now();
 const log = [], errors = [];
@@ -276,13 +279,15 @@ try {
     const inc = srv.incidents().filter((l) => /player/.test(l) && !/leave sid/.test(l));
     check("no socket close / no anti-cheat action", !wsClosed && !inc.length, JSON.stringify(inc));
     const tel = await page.evaluate(() => window.__raw.filter(f => f.name === "T").map(f => f.args));
-    const flagsSeen = [...new Set(tel.map(a => a[0]))];
-    const probeSeen = [...new Set(tel.map(a => a[2]))];
-    check("telemetry flags stay masked (0) while hooked", tel.length === 0 || tel.every(a => a[0] === 0), `T=${tel.length} flags=${JSON.stringify(flagsSeen)}`);
-    // probeResult carries ONLY the genuine client's 2 self-ID beacons (body.moomoo-io + moomoo.io:ready,
-    // bits 0,1 = value 3, which index-0e02c00e's anti-cheat expects PRESENT); every loader/mod footprint
-    // bit is stripped. (A 0 here would mean the loader also stripped the beacons -> "missing beacon" kick.)
-    check("probeResult = the client's own beacons only (3), no loader/mod footprint", tel.length === 0 || tel.every(a => a[2] === 3), `probeResults=${JSON.stringify(probeSeen)}`);
+    const flagsSeen = [...new Set(tel.map(a => (a[0] >>> 0).toString(16)))];
+    // T[0] bits 0-9 = the real integrity flags (must be 0 while the loader is hooked); bits 12-19 =
+    // a salt-bound checksum the genuine client always sets (index-3a141db7, p=4). The probe result
+    // (a[2]) carries the client's own self-ID beacons + per-round canary, with every loader/mod
+    // footprint bit stripped — a stripped beacon or a leaked footprint bit trips the server's checks,
+    // so it is caught by "no socket close / no anti-cheat action" above.
+    const flagsBad = tel.filter(a => ((a[0] >>> 0) & 0x3FF) !== 0).length;
+    const ckBad = tel.filter(a => (((a[0] >>> 0) >>> 12) & 0xFF) !== ((sh("flags", a[4] >>> 0) & 255) || 1)).length;
+    check("telemetry real flags masked (0) + valid salt-bound checksum while hooked", tel.length === 0 || (flagsBad === 0 && ckBad === 0), `T=${tel.length} flags=${JSON.stringify(flagsSeen)} flagsBad=${flagsBad} ckBad=${ckBad}`);
     // kind 3: nothing of ours is in localStorage mid-session (config lives in the loader's
     // hidden store; the seeded legacy "mml_v1" was migrated + wiped at startup).
     const lsOurs = await page.evaluate(() => Object.keys(localStorage).filter((k) => /^moomoojs:|^mml_v1$/.test(k)));

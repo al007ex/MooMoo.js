@@ -2,8 +2,11 @@
  * Unit test for the detection-packet canceller (loader/src/core/antidetect.js).
  *
  * Proves it cancels the client's "T" and builds an empty replacement: the detection
- * fields (flags / untrusted / probe result) are zeroed while the crypto/transport
- * envelope (seal, probe salt, seq, ledger) carries the real values the server validates.
+ * fields (real integrity flags / untrusted / probe result) are zeroed while the crypto/transport
+ * envelope (seal, probe salt, seq, ledger) carries the real values the server validates. Since
+ * index-3a141db7 the flags field (T[0]) is NOT a bare 0 even for a clean client: bits 0-9 are the
+ * real flags (0) but bits 12-19 carry a salt-bound checksum the genuine client always sets, so the
+ * expected field is flagsField(realFlags, salt) = realFlags | (((saltedHash("flags",salt)&255)||1)<<12).
  *
  * Run:  node tests/antidetect.test.mjs
  */
@@ -24,6 +27,10 @@ const ok = (name, fn) => {
 };
 
 const tel = binding.telemetry;
+// FNV salted hash, identical to the server / client / binding, and the salt-bound T[0] builder.
+const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
+// T[0] = realFlags(bits 0-9) | checksum(bits 12-19), checksum = (saltedHash("flags", salt) & 255) || 1.
+const flagsField = (realFlags, salt) => (((realFlags & 0x3FF) | (((sh("flags", salt >>> 0) & 255) || 1) << 12)) >>> 0);
 const CTX = { sealReport: 123456, probeSalt: 777, seq: 42, ledger: 0xABCDEF };
 // A "dirty" client "T": flags USERSCRIPT_MANAGER(1)|SOCKET_HOOKED(2) = 3, 12 untrusted events,
 // a matched probe bit, and the client's OWN seal / salt / seq / ledger (all to be discarded).
@@ -38,14 +45,14 @@ ok("flag bits -> names", () => {
 });
 
 console.log("\n== telemetry.construct builds an empty T with the real envelope ==");
-ok("empty detection, correct seal/salt/seq/ledger", () => {
-    assert.deepStrictEqual(tel.construct(CTX), [0, 0, 0, 123456, 777, 42, 0xABCDEF]);
+ok("empty detection, correct seal/salt/seq/ledger (clean flags carry the salt checksum)", () => {
+    assert.deepStrictEqual(tel.construct(CTX), [flagsField(0, 777), 0, 0, 123456, 777, 42, 0xABCDEF]);
 });
 ok("5-field form when the connection carries no ledger", () => {
-    assert.deepStrictEqual(tel.construct({ sealReport: 1, probeSalt: 2 }), [0, 0, 0, 1, 2]);
+    assert.deepStrictEqual(tel.construct({ sealReport: 1, probeSalt: 2 }), [flagsField(0, 2), 0, 0, 1, 2]);
 });
 ok("construct(ctx, det) can carry detection (the disabled path)", () => {
-    assert.deepStrictEqual(tel.construct(CTX, { flags: 3, untrusted: 12, probeResult: 5 }), [3, 12, 5, 123456, 777, 42, 0xABCDEF]);
+    assert.deepStrictEqual(tel.construct(CTX, { flags: 3, untrusted: 12, probeResult: 5 }), [flagsField(3, 777), 12, 5, 123456, 777, 42, 0xABCDEF]);
 });
 
 console.log("\n== antiDetect cancels the client T and sends an empty one ==");
@@ -53,7 +60,7 @@ ok("enabled: output is empty no matter how dirty the client's T is", () => {
     const ad = AntiDetect.create({ telemetry: tel });
     ad.setEnabled(true);   // the fallback canceller is opt-in now (default is honest passthrough)
     const out = ad.handle(DIRTY, CTX);
-    assert.deepStrictEqual(out, [0, 0, 0, 123456, 777, 42, 0xABCDEF]);
+    assert.deepStrictEqual(out, [flagsField(0, 777), 0, 0, 123456, 777, 42, 0xABCDEF]);
     assert.strictEqual(ad.count, 1);
     assert.strictEqual(ad.caughtCount, 1);
     assert.strictEqual(ad.last.neutralised, true);
@@ -72,9 +79,10 @@ ok("onDetection reports what was cancelled", () => {
 ok("default: flags + untrusted masked (the irreducible socket hook), probe result passed through", () => {
     const ad = AntiDetect.create({ telemetry: tel });   // default: enabled=false
     const out = ad.handle(DIRTY, CTX);
-    // flags/untrusted -> 0 (a clean client reports 0 and the socket hook forces them), but the
-    // probe bit is passed through unchanged so a canary probe still reads true.
-    assert.deepStrictEqual(out, [0, 0, 5, 123456, 777, 42, 0xABCDEF]);
+    // real flags/untrusted -> 0 (a clean client reports 0 and the socket hook forces them), but the
+    // probe bit is passed through unchanged so a canary probe still reads true. T[0] still carries
+    // the salt-bound checksum in bits 12-19 — a bare 0 would fail the server's checksum check.
+    assert.deepStrictEqual(out, [flagsField(0, 777), 0, 5, 123456, 777, 42, 0xABCDEF]);
     assert.strictEqual(ad.last.neutralised, false);
 });
 ok("a clean client T is counted but not flagged as 'caught'", () => {
@@ -86,8 +94,6 @@ ok("a clean client T is counted but not flagged as 'caught'", () => {
 });
 
 console.log("\n== cleanProbeResult strips loader/mod footprint, keeps canaries ==");
-// FNV salted hash, identical to the server / client / binding.
-const sh = (text, salt) => { let h = (2166136261 ^ salt) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
 const SALT = 12345;
 // Set up a world with loader/mod artifacts AND clean "canary" equivalents for every probe kind.
 globalThis.__ad = {};
@@ -148,7 +154,7 @@ ok("kind 9: clears the loader handshake event, keeps another event", () => {
 ok("default handle() with a probe round sends the original-client answer (footprint stripped)", () => {
     const ad = AntiDetect.create({ telemetry: tel });            // default: enabled = false
     const out = ad.handle([3, 2, 0x1FF, 777, SALT, 5, 9], { sealReport: 1, probeSalt: SALT, probes: PROBES, seq: 5, ledger: 9 });
-    assert.deepStrictEqual(out, [0, 0, (0x1FF & ~CLEARED) >>> 0, 1, SALT, 5, 9]);
+    assert.deepStrictEqual(out, [flagsField(0, SALT), 0, (0x1FF & ~CLEARED) >>> 0, 1, SALT, 5, 9]);
     assert.strictEqual(ad.last.sentProbeResult, (0x1FF & ~CLEARED) >>> 0);
     assert.strictEqual(ad.last.strippedProbe, CLEARED);
     assert.ok(ad.last.caught, "masked flags + stripped bits count as a catch");

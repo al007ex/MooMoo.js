@@ -10,15 +10,19 @@ defense from both sides. don't use it to get an edge on servers you don't run.
 
 the reference server (`moomoo-clone`) trusts the client to tell on itself. once
 you're in, the server sends an **integrity probe** packet `q = [salt, probes]`
-(5s after you spawn, then every 60s) and the client has to answer with a telemetry
-packet:
+(5s after you spawn, then every 60s; a `p>=4` client gets a third field,
+`q = [salt, probes, canaries]` — see the beacons section) and the client has to answer
+with a telemetry packet:
 
 ```
 T = [flags, untrustedEvents, probeResult, seal, salt, seq, ledger]
 ```
 
-- **flags** — a bitfield. bit 2 is "socket hooked" and gets you kicked; the rest
-  (userscript manager, render hooked, debugger trap) are flags.
+- **flags** — a 20-bit field. bits 0-9 are the integrity flags (bit 2 is "socket
+  hooked" and gets you kicked; the rest — userscript manager, render hooked, debugger
+  trap — are flags); bits 12-19 are a **salt-bound checksum**,
+  `(saltedHash("flags", salt) & 255) || 1`, the genuine client always sets and the server
+  verifies (a mismatch is flagged), so a clean client's `flags` is not a bare 0.
 - **untrustedEvents** — how many script-dispatched (untrusted) inputs the client
   refused; a clean client reports 0.
 - **probeResult** — a bitmask of which probes matched. the probes are salted
@@ -107,7 +111,13 @@ its own gap-free sequence numbers on, which is what makes injection work), so wh
 the client answers a probe round it reconstructs the outgoing `T` so that
 
 - **flags** and **untrustedEvents** are zeroed — a clean, unmodified client always
-  reports 0 for both, so these are pure loader/mod footprint;
+  reports 0 for both, so these are pure loader/mod footprint. one wrinkle since
+  `index-3a141db7`: the flags field (`T[0]`) is a 20-bit value — bits 0-9 are the real
+  integrity flags (0 for a clean client) and bits 12-19 carry a **salt-bound checksum**,
+  `(saltedHash("flags", salt) & 255) || 1`, that the genuine client always sets. the
+  server rejects any `T` whose checksum doesn't match, so the loader can't just send a
+  bare `0` any more — `telemetryConstruct` recomputes the exact checksum (its `saltedHash`
+  is byte-for-byte the server's) and folds it into bits 12-19 while keeping the real flags 0;
 - **probeResult** is run through `cleanProbeResult`, which clears exactly the bits a
   probe matched *because of* the loader or a mod (a hooked function, a swapped
   constructor, one of our localStorage keys, one of our elements by id or class —
@@ -152,6 +162,40 @@ update now probes for directly (kind 8 `div.mmj-body` / `div.mmj-mod`) while kee
 beacons: the `T` it sends is byte-for-byte what a vanilla client sends. the bots sidestep
 all of it by connecting as `p=1` (no beacons sent to an old client), so their plain
 `probeResult: 0` is still correct.
+
+## more beacons + per-round canaries (the index-3a141db7 update)
+
+`index-3a141db7` appends `&p=4` and sharpens the trap in two ways.
+
+**beacons crafted to look like ours.** a `p>=4` client gets three more `expect` beacons,
+and they deliberately sit *inside the loader's namespace* so a naive matcher strips them:
+
+- kind 8, `span.ui-mml-gap` — the class **contains** `mml-`.
+- kind 4, `div#hmmjoin` — the id **contains** `mmj`.
+- kind 9, `moomoo.js:ping` — right in the `moomoo.js:` event namespace.
+
+the genuine page ships all three (`<span class="ui-mml-gap">`, `<div id="hmmjoin">`, and a
+`moomoo.js:ping` listener). the fix is to match **only at a token / id start**, never as a
+substring: `ownClassOrId` tests `/(?:^|\s)(?:mml-|mmj-|mdbg|moomoojs)/` on the class and
+`/^(?:mml-|mmj-|mdbg|moomoojs)/` on the id, and kind 9 strips the handshake by **exact**
+name (`=== "moomoo.js:api"`), not by prefix. so `ui-mml-gap` / `hmmjoin` / `moomoo.js:ping`
+are left alone while `mml-gui` / `mmj-body` / `moomoo.js:api` are still cleared. (the class
+enumerator still uses a loose `[class*='mml-']` selector to find candidates, so
+`loaderOwnedElement` re-checks every hit with `ownClassOrId` and walks ancestors before
+deciding a bit is ours.)
+
+**create-and-check canaries.** a `p>=4` `q` carries a third field, `q[2]` — a list of
+throwaway DOM/event canaries (`div.mmc-<rand>` / `mmc:<rand>`, a fresh tag each round) the
+client **creates** and then matches, with a paired `expect` rule confirming it could. they
+catch a hooked DOM / event layer. the loader keeps them for free: `mmc-` isn't in its
+namespace and it hooks neither `createElement` nor `addEventListener`, so the bits ride
+through untouched.
+
+the live proof is `tests/live/ac-log.live.mjs` — it logs every probe of every round,
+classified (beacon / canary / footprint / env), and shows the client's match vs what the
+loader sends: every beacon + canary kept, every footprint bit stripped, real flags 0 and a
+valid checksum, no kick, no incident. the unit side is `tests/footprint.test.mjs` (the
+keep/strip matrix) and `tests/antidetect.test.mjs` (the checksum-bearing `T`).
 
 ## the shame window
 

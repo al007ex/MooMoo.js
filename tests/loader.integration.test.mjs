@@ -208,12 +208,17 @@ await ok("the client's dirty T packet reaches the server with clean flags", asyn
     const client = new g.MooMooProtocol.ClientSession(payload, mod);
     // The current server's "T" = [flags, untrusted, probeResult, seal, salt]. The real client
     // would report SOCKET_HOOKED (2) | USERSCRIPT (1), 25 untrusted events and some matched probes;
-    // the loader must zero the three self-reporting fields and echo the probe salt untouched.
+    // the loader must zero the three self-reporting fields and echo the probe salt untouched. Since
+    // index-3a141db7 the flags field (T[0]) is not a bare 0: bits 0-9 are the real flags (0) and
+    // bits 12-19 carry a salt-bound checksum the genuine client always sets, so a bare 0 is rejected.
     env.clientSocket.send(client.encodeC2S("T", [1 | 2, 25, 7, 123456, 424242]));
 
+    const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
     const t = env.acceptedByServer.find((d) => d.name === "T");
     assert.ok(t && !t.error, "server accepted the T packet");
-    assert.deepStrictEqual(t.args.slice(0, 3), [0, 0, 0], "flags, untrusted events and probe result must be scrubbed to 0");
+    assert.strictEqual(t.args[0] & 0x3FF, 0, "the real integrity flags (bits 0-9) must be scrubbed to 0");
+    assert.strictEqual((t.args[0] >>> 12) & 0xFF, (sh("flags", 424242) & 255) || 1, "T[0] carries the salt-bound checksum");
+    assert.deepStrictEqual(t.args.slice(1, 3), [0, 0], "untrusted events and probe result must be scrubbed to 0");
     assert.strictEqual(t.args[4], 424242, "the probe salt must be echoed back unchanged");
 });
 

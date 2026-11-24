@@ -78,8 +78,15 @@ function emulateClient(ws, mod, hooks, seal) {
         if (event === "health" && payload.sid === st.sid) st.health = payload.value;
         if (event === "playersUpdate") for (const p of payload.positions) { const o = st.players.get(p.sid) || {}; Object.assign(o, p); st.players.set(p.sid, o); }
         // The current server asks for telemetry with "q" and expects a "T" in answer, with the
-        // round's salt and the right seal. A clean client reports no flags / no matched probes.
-        if (event === "probes") { try { st.send("T", [0, 0, 0, (st.session && st.session.sealReport) || 0, payload.salt]); } catch (_) {} }
+        // round's salt and the right seal. A clean client reports no flags / no matched probes — but
+        // T[0] still carries the salt-bound checksum (index-3a141db7) the server validates for every
+        // client, so we build the "T" via binding.telemetry.construct instead of hand-rolling [0,...].
+        if (event === "probes") {
+            try {
+                const tctx = { sealReport: (st.session && st.session.sealReport) || 0, probeSalt: payload.salt };
+                st.send("T", Binding.telemetry.construct(tctx, { flags: 0, untrusted: 0, probeResult: 0 }));
+            } catch (_) {}
+        }
         hooks.onPacket && hooks.onPacket(event, payload);
     });
     ws.addEventListener("close", (ev) => { st.closed = { code: ev.code, reason: ev.reason, at: Date.now() }; hooks.onClose && hooks.onClose(ev); });

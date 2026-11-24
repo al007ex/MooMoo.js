@@ -45,7 +45,10 @@ function makeIsolatedCopy() {
     const dst = (...p) => path.join(dir, ...p);
     fs.cpSync(src("server", "src"), dst("server", "src"), { recursive: true });
     fs.copyFileSync(src("server", "package.json"), dst("server", "package.json"));
-    fs.cpSync(src("server", "data"), dst("server", "data"), { recursive: true });
+    // server/data (accounts / bans / protocol-build) is runtime state the server creates on first
+    // run, so a fresh checkout may not have it yet — copy it when present, else start empty.
+    if (fs.existsSync(src("server", "data"))) fs.cpSync(src("server", "data"), dst("server", "data"), { recursive: true });
+    else fs.mkdirSync(dst("server", "data"), { recursive: true });
     fs.rmSync(dst("server", "data", "protocol-build.json"), { force: true }); // fresh build for the copy
     fs.mkdirSync(dst("dist"), { recursive: true });
     fs.mkdirSync(dst("client"), { recursive: true });
@@ -65,12 +68,22 @@ function patchAnticheatProbes(dir, probes) {
     fs.writeFileSync(cfg, fs.readFileSync(cfg, "utf8") + "\nANTICHEAT_CONFIG.probes.list.push(" + extra + ");\n");
 }
 
+// Append raw config-mutation JS to the isolated copy's anticheat config (runs in module scope
+// after `export const ANTICHEAT_CONFIG = {...}`, so it can tweak live values, e.g. the probe
+// interval for a test that wants several rounds without waiting a minute each).
+function patchAnticheatConfig(dir, js) {
+    const cfg = path.join(dir, "server", "src", "anticheat", "config.js");
+    fs.appendFileSync(cfg, "\n" + js + "\n");
+}
+
 // Start an isolated server. opts.env adds env vars (e.g. OWNER_EMAIL, DEBUG_PACKETS).
 // opts.anticheatProbes appends probes (each {kind, path?, value?, name, action}) to the config.
+// opts.anticheatConfigJs appends raw JS that mutates ANTICHEAT_CONFIG (e.g. a shorter interval).
 export async function startServer(opts = {}) {
     const port = await freePort();
     const dir = makeIsolatedCopy();
     if (opts.anticheatProbes && opts.anticheatProbes.length) patchAnticheatProbes(dir, opts.anticheatProbes);
+    if (opts.anticheatConfigJs) patchAnticheatConfig(dir, opts.anticheatConfigJs);
     const lines = [];
     const taps = new Set();
     const child = spawn(process.execPath, [path.join(dir, "server", "src", "index.js")], {

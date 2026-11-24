@@ -42,6 +42,9 @@ const outDir = path.join(os.tmpdir(), "moomoojs-ledger-" + Date.now());
 const build = await createProtocolBuild({ outDir, pinFile: null });
 const mod = { mixKey: build.mixKey, BUILD_SALT: build.BUILD_SALT, BUILD_ID: build.BUILD_ID };
 const SALT = 424242;
+// T[0] since index-3a141db7 = realFlags(bits 0-9) | checksum(bits 12-19); checksum = (saltedHash("flags",salt)&255)||1.
+const sh = (text, salt) => { let h = (2166136261 ^ (salt >>> 0)) >>> 0; for (let i = 0; i < text.length; i++) h = Math.imul(h ^ (text.charCodeAt(i) & 255), 16777619); h ^= h >>> 15; h = Math.imul(h, 739982445); h ^= h >>> 12; return h >>> 0; };
+const flagsField = (realFlags, salt) => (((realFlags & 0x3FF) | (((sh("flags", salt >>> 0) & 255) || 1) << 12)) >>> 0);
 
 // A server session + a loader session that share keys through the handshake, plus an
 // AntiCheat wired to that server session with a probe round already pending.
@@ -82,9 +85,9 @@ function play(server, client) {
 console.log("\n== scrub shape ==");
 ok("telemetry.scrub emits 7 fields when given seq + ledger, 5 without", () => {
     const seven = binding.telemetry.scrub([1, 2, 3, 4, 5, 6, 7], { sealReport: 0, probeSalt: 5, seq: 11, ledger: 0xdeadbeef });
-    assert.deepStrictEqual(seven, [0, 0, 0, 0, 5, 11, 0xdeadbeef]);
+    assert.deepStrictEqual(seven, [flagsField(0, 5), 0, 0, 0, 5, 11, 0xdeadbeef]);
     const five = binding.telemetry.scrub([1, 2, 3, 4, 5], { sealReport: 0, probeSalt: 5 });
-    assert.deepStrictEqual(five, [0, 0, 0, 0, 5]);
+    assert.deepStrictEqual(five, [flagsField(0, 5), 0, 0, 0, 5]);
 });
 
 console.log("\n== the loader's scrubbed T passes the server's ledger check ==");

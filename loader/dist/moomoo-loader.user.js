@@ -1332,11 +1332,12 @@
 
     // Decode a raw client "T" into what it WOULD have told the server (for the anti-detect log).
     function telemetryInspect(args) {
-        const flags = args && args.length > 0 ? (args[0] | 0) : 0;
+        const raw = args && args.length > 0 ? (args[0] | 0) : 0;
+        const flags = raw & 0x3FF;   // low 10 bits are the real integrity flags; bits 12-19 are the salt checksum
         const names = [];
         for (const bit in FLAG_NAMES) if (flags & Number(bit)) names.push(FLAG_NAMES[bit]);
         return {
-            flags, flagNames: names,
+            flags, flagsRaw: raw, flagNames: names,
             untrusted: args && args.length > 1 ? (args[1] | 0) : 0,
             probeResult: args && args.length > 2 ? (args[2] | 0) : 0
         };
@@ -1386,14 +1387,31 @@
     // <body class="moomoo-io"> (a kind-8 self-identification beacon the anti-cheat expects to be
     // PRESENT): matching it here would strip the beacon and get the real client flagged as fake.
     const LOADER_CONTAINER_SEL = "[class*='mml-'],[class*='mmj-'],[class*='mdbg'],[class*='moomoojs']";
+    // An element is OURS when a class TOKEN starts with mml- / mmj- / mdbg / moomoojs, or its id
+    // starts with one. This is a strict START-of-token match, NOT a substring: index-3a141db7 ships
+    // self-identification beacons crafted to look like ours — <span class="ui-mml-gap"> (contains
+    // "mml-") and <div id="hmmjoin"> (contains "mmj") — which the anti-cheat expects PRESENT. A
+    // loose match would strip them, the server would see them absent, and the real client gets
+    // flagged as fake. So we match only our own prefixes at a token/id boundary.
+    const OURS_CLASS = /(?:^|\s)(?:mml-|mmj-|mdbg|moomoojs)/i;
+    const OURS_ID = /^(?:mml-|mmj-|mdbg|moomoojs)/i;
+    function ownClassOrId(el) {
+        const cn = el.className, cls = String((cn && cn.baseVal != null ? cn.baseVal : cn) || "");
+        return OURS_CLASS.test(cls) || OURS_ID.test(el.id || "");
+    }
     function loaderOwnedElement(el) {
         try {
-            const cn = el.className, cls = (cn && cn.baseVal != null ? cn.baseVal : cn) || "";
-            if (/\bmml-|\bmmj-|\bmdbg\b|moomoojs/i.test(String(cls)) || /mml|mmj|mdbg|moomoojs/i.test(el.id || "")) return true;
-            // ...and anything INSIDE one of our containers — e.g. the bots panel's inner .bbtn /
-            // .bitem, which are scoped under .mml-bots in CSS and so carry no prefix of their own.
-            // Their classes are loader-made, never a game class (a game class could be a canary).
-            if (typeof el.closest === "function" && el.closest(LOADER_CONTAINER_SEL)) return true;
+            if (ownClassOrId(el)) return true;
+            // ...or a descendant of one of OUR containers (e.g. the bots panel's inner .bbtn / .bitem,
+            // scoped under .mml-bots with no prefix of their own). closest() uses the loose substring
+            // selector above, which would ALSO catch a ui-mml-gap ancestor, so re-verify each candidate
+            // with ownClassOrId and keep walking up — only a true loader container counts.
+            let anc = (typeof el.closest === "function") ? el.closest(LOADER_CONTAINER_SEL) : null;
+            while (anc) {
+                if (ownClassOrId(anc)) return true;
+                const p = anc.parentElement;
+                anc = (p && typeof p.closest === "function") ? p.closest(LOADER_CONTAINER_SEL) : null;
+            }
             return false;
         } catch (e) { return false; }
     }
@@ -1440,12 +1458,12 @@
             if (kind === 4) return hashHitsLoaderId(hash, salt);
             if (kind === 8) return hashHitsLoaderClass(hash, salt);
             // kind 9: a probe that dispatches a CustomEvent and watches for a listener to resolve it.
-            // Only the loader's OWN events live under the "moomoo.js:" namespace (the API handshake
-            // "moomoo.js:api"); the name travels in clear in `path`, so strip exactly those. Crucially
-            // NOT a bare /moomoo/, because the genuine client fires "moomoo.io:ready" as a kind-9
-            // self-identification beacon the anti-cheat expects PRESENT — stripping it would flag the
-            // real client as fake.
-            if (kind === 9) return /^moomoo\.js:/i.test(String(path));
+            // Strip ONLY the loader's own handshake event, by exact name — not the "moomoo.js:"
+            // namespace. index-3a141db7 added a beacon the anti-cheat expects PRESENT, "moomoo.js:ping",
+            // right in that namespace as a trap; the p>=2 beacon "moomoo.io:ready" and the per-round
+            // "mmc:<tag>" event canaries are genuine too. A loose namespace match would strip them and
+            // flag the real client. The only event the loader itself resolves is the API handshake.
+            if (kind === 9) return String(path) === "moomoo.js:api";
         } catch (e) {}
         return false;   // kinds 1, 2, 6: the loader/mods add no window props or symbols, so never ours
     }
@@ -1521,8 +1539,15 @@
     function telemetryConstruct(ctx, det) {
         det = det || {};
         const seal = ctx && ctx.sealReport != null ? ctx.sealReport : 0;
-        const salt = ctx && ctx.probeSalt != null ? ctx.probeSalt : 0;
-        const out = [det.flags | 0, det.untrusted | 0, det.probeResult | 0, seal, salt];
+        const salt = (ctx && ctx.probeSalt != null ? ctx.probeSalt : 0) >>> 0;
+        // T[0] is a 20-bit field (index-3a141db7): bits 0-9 are the real integrity flags (0 for a
+        // clean, unmodified client), and bits 12-19 carry a SALT-BOUND CHECKSUM the genuine client
+        // always sets — `(saltedHash("flags", salt) & 255) || 1`. The server rejects any "T" whose
+        // bits 12-19 don't equal that, so an empty flags field (0) now fails the check. telemetry-
+        // SaltedHash is byte-for-byte the server's saltedHash, so we reproduce the checksum exactly.
+        const realFlags = (det.flags | 0) & 0x3FF;
+        const checksum = (telemetrySaltedHash("flags", salt) & 255) || 1;
+        const out = [realFlags | (checksum << 12), det.untrusted | 0, det.probeResult | 0, seal, salt];
         // Pinned connections also report seq + ledger; ctx supplies them.
         if (ctx && ctx.seq != null && ctx.ledger != null) out.push(ctx.seq, ctx.ledger >>> 0);
         return out;
@@ -5916,7 +5941,7 @@
     // and, if it differs, warn that this loader may be out of date (see core/notice.js). The stem
     // is immune to the server's IS_SANDBOX byte transform (that rewrites content, never the file
     // name), so it never false-alarms on a sandbox/dev server.
-    const EXPECTED_BUNDLE = "0e02c00e";
+    const EXPECTED_BUNDLE = "3a141db7";
 
     // The event a mod dispatches to fetch the API ({ detail: { resolve(MooMoo, MooMooLoader) } }),
     // and the signal the loader fires once that handshake is live so a mod that loaded first can
